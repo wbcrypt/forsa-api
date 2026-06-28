@@ -1,0 +1,12 @@
+export declare const CurrentUser: (...dataOrPipes: (string | import("@nestjs/common").PipeTransform<any, any> | import("@nestjs/common").Type<import("@nestjs/common").PipeTransform<any, any>>)[]) => ParameterDecorator;
+export declare const CurrentTenant: (...dataOrPipes: unknown[]) => ParameterDecorator;
+export declare const PERMISSIONS_KEY = "permissions";
+export declare const RequirePermissions: (...permissions: string[]) => import("@nestjs/common").CustomDecorator<string>;
+export declare const IS_PUBLIC_KEY = "isPublic";
+export declare const Public: () => import("@nestjs/common").CustomDecorator<string>;
+export declare const IS_HIGH_IMPACT_KEY = "isHighImpact";
+export declare const HighImpact: () => import("@nestjs/common").CustomDecorator<string>;
+export declare const REQUIRES_AUDIT_REASON_KEY = "requiresAuditReason";
+export declare const RequiresAuditReason: () => import("@nestjs/common").CustomDecorator<string>;
+export declare const ClientIp: (...dataOrPipes: unknown[]) => ParameterDecorator;
+export declare const UserAgent: (...dataOrPipes: unknown[]) => ParameterDecorator;
