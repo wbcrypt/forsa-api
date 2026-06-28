@@ -809,7 +809,7 @@ export class PipelineService {
     }
 
     // Create multi-approval set
-    const sequencing = requiredApprovers > 1 ? ApprovalSequencing.SEQUENTIAL : ApprovalSequencing.SEQUENTIAL;
+    const sequencing = (requiredApprovers as number) > 1 ? ApprovalSequencing.SEQUENTIAL : ApprovalSequencing.SEQUENTIAL;
 
     const [approvalSet] = await this.dataSource.query<any[]>(
       `INSERT INTO multi_approval_sets
