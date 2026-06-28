@@ -1,15 +1,13 @@
-import { Module } from '@nestjs/common';
-import { PaymentsController } from './payments.controller';
-import { PaymentsService } from './payments.service';
-import { KonnectService } from './konnect.service';
-import { PolicyModule } from '../policy/policy.module';
-import { ScoreModule } from '../score/score.module';
-import { NotificationsModule } from '../notifications/notifications.module';
+import { Module } from '@nestjs/common'
+import { PaymentsController } from './payments.controller'
+import { PaymentsService } from './payments.service'
+import { KonnectService } from './konnect.service'
+import { ScoreModule } from '../score/score.module'
 
 @Module({
-  imports: [PolicyModule, ScoreModule, NotificationsModule],
+  imports: [ScoreModule],
   controllers: [PaymentsController],
-  providers: [PaymentsService, { provide: 'KonnectService', useClass: require('./konnect.service').KonnectService }],
-  exports: [PaymentsService],
+  providers: [PaymentsService, KonnectService],
+  exports: [PaymentsService, KonnectService],
 })
 export class PaymentsModule {}
