@@ -1,0 +1,39 @@
+-- =============================================================================
+-- FORSA OS — Master Migration Entry Point
+-- File: 00_master.sql
+-- =============================================================================
+-- Execute files in this exact order.
+-- Each file is idempotent where possible.
+-- Run as forsa_migration role.
+-- =============================================================================
+--
+-- \i schema/01_tenants_users.sql
+-- \i schema/02_audit_policy.sql
+-- \i schema/03_universities_partners_students.sql
+-- \i schema/04_applications_pipeline.sql
+-- \i schema/05_execution_contracts_payments.sql
+-- \i schema/07_score_documents_notifications.sql
+-- \i schema/06_security.sql          ← Security LAST (applies RLS to all tables)
+--
+-- ENVIRONMENT VARIABLES REQUIRED (never hardcoded):
+--   DATABASE_URL              — connection string for forsa_app role
+--   DATABASE_READONLY_URL     — connection string for forsa_readonly role
+--   DATABASE_MIGRATION_URL    — connection string for forsa_migration role
+--   ENCRYPTION_KEY_ALIAS      — KMS key alias for PII encryption
+--   S3_BUCKET_NAME            — document storage bucket
+--   S3_ENDPOINT               — S3-compatible endpoint URL
+--   JWT_SECRET                — session token signing secret (min 256 bits)
+--   MFA_ENCRYPTION_KEY        — key for encrypting MFA secrets at rest
+--
+-- SECURITY CHECKLIST (verify before production):
+--   [ ] forsa_app password set via environment variable
+--   [ ] forsa_readonly password set via environment variable
+--   [ ] No application code connects as superuser
+--   [ ] pg_hba.conf restricts connections to application server IPs only
+--   [ ] SSL enforced on all connections (ssl=require in connection string)
+--   [ ] S3 bucket has server-side encryption enabled (AES-256 or KMS)
+--   [ ] S3 bucket blocks all public access
+--   [ ] Backup encryption enabled
+--   [ ] audit_logs table excluded from TRUNCATE permissions
+--   [ ] Database firewall blocks all public internet access
+-- =============================================================================

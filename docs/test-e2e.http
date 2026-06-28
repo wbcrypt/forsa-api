@@ -1,0 +1,619 @@
+### FORSA OS — End-to-End Test File
+### Works with VS Code REST Client extension, IntelliJ HTTP Client, or convert to curl
+###
+### SETUP: Run these in order. Copy values from responses into variables below.
+### BASE_URL: http://localhost:3000/api/v1
+
+@base = http://localhost:3000/api/v1
+
+### ============================================================
+### STEP 0: Get Tenant ID (from seed:admin output)
+### Set this variable from the seed:admin script output:
+@tenantId = PASTE_TENANT_ID_FROM_SEED_OUTPUT_HERE
+
+### ============================================================
+### STEP 1: LOGIN
+### ============================================================
+
+# @name login
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@forsa.tn",
+  "password": "Admin123!dev",
+  "tenantId": "{{tenantId}}"
+}
+
+###
+# Copy accessToken from response into @token below
+@token = PASTE_ACCESS_TOKEN_HERE
+
+
+### ============================================================
+### STEP 2: VERIFY YOU'RE LOGGED IN
+### ============================================================
+
+GET {{base}}/auth/me
+Authorization: Bearer {{token}}
+
+###
+
+### ============================================================
+### STEP 3: CREATE A UNIVERSITY
+### ============================================================
+
+# @name createUniversity
+POST {{base}}/universities
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Université de Tunis El Manar",
+  "shortName": "UTM",
+  "countryCode": "TN",
+  "city": "Tunis",
+  "address": "Campus Universitaire, Tunis 1068",
+  "website": "https://www.utm.rnu.tn",
+  "accreditationStatus": "accredited",
+  "accreditationBody": "Ministère de l'Enseignement Supérieur",
+  "status": "active",
+  "riskLevel": "low"
+}
+
+###
+@universityId = PASTE_UNIVERSITY_ID_HERE
+
+### ============================================================
+### STEP 4: CREATE UNIVERSITY AGREEMENT (defines payment model + commission)
+### ============================================================
+
+# @name createAgreement
+POST {{base}}/universities/{{universityId}}/agreements
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "paymentModel": "concurrent",
+  "discountPercentage": 5,
+  "referralCommission": {
+    "basis": "percentage_tuition",
+    "percentage": 3,
+    "partner_percentage": 60
+  },
+  "financingLevels": ["level1", "level2", "level3"],
+  "maxFinancingAmount": 50000,
+  "currency": "TND",
+  "effectiveDate": "2026-01-01",
+  "notes": "Standard agreement for UTM"
+}
+
+###
+@agreementId = PASTE_AGREEMENT_ID_HERE
+
+### Approve the agreement
+POST {{base}}/universities/agreements/{{agreementId}}/approve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### ============================================================
+### STEP 5: CREATE A PROGRAM
+### ============================================================
+
+POST {{base}}/universities/{{universityId}}/programs
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Licence en Informatique",
+  "code": "LI-UTM",
+  "level": "licence",
+  "durationYears": 3,
+  "tuitionMin": 2000,
+  "tuitionMax": 4000,
+  "currency": "TND",
+  "accreditationStatus": "accredited"
+}
+
+###
+@programId = PASTE_PROGRAM_ID_HERE
+
+### ============================================================
+### STEP 6: CREATE A PARTNER (for Level 3 referral)
+### ============================================================
+
+# @name createPartner
+POST {{base}}/partners
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "EduLead TN",
+  "type": "platform",
+  "countryCode": "TN",
+  "website": "https://edulead.tn"
+}
+
+###
+@partnerId = PASTE_PARTNER_ID_HERE
+
+### ============================================================
+### STEP 7: CREATE A STUDENT
+### ============================================================
+
+# @name createStudent
+POST {{base}}/students
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "firstName": "Mohamed Ali",
+  "lastName": "Ben Salah",
+  "dateOfBirth": "2002-03-15",
+  "gender": "male",
+  "nationality": "TN",
+  "nationalId": "12345678",
+  "email": "mohamedalibensalah@gmail.com",
+  "phonePrimary": "+21620123456",
+  "city": "Tunis",
+  "academicLevel": "terminale",
+  "preferredLanguage": "ar"
+}
+
+###
+@studentId = PASTE_STUDENT_ID_HERE
+
+### ============================================================
+### STEP 8: ADD A GUARANTOR
+### ============================================================
+
+POST {{base}}/students/{{studentId}}/guarantors
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "firstName": "Kamel",
+  "lastName": "Ben Salah",
+  "relationship": "father",
+  "employmentStatus": "employed",
+  "employerName": "Tunisie Telecom",
+  "incomeStability": "stable",
+  "email": "kamel.bensalah@email.com",
+  "phone": "+21625987654",
+  "role": "primary"
+}
+
+###
+
+### ============================================================
+### STEP 9: CREATE AN APPLICATION
+### ============================================================
+
+# @name createApplication
+POST {{base}}/applications
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "studentId": "{{studentId}}",
+  "universityId": "{{universityId}}",
+  "programId": "{{programId}}",
+  "partnerId": "{{partnerId}}",
+  "tuitionAmount": 3500,
+  "requestedSupportAmount": 3500,
+  "currency": "TND",
+  "academicYear": "2026-2027",
+  "isRenewal": false,
+  "referralSourceId": null
+}
+
+###
+@applicationId = PASTE_APPLICATION_ID_HERE
+
+### ============================================================
+### STEP 10: SET REQUIRED POLICIES (needed for pipeline to pass)
+### ============================================================
+
+### 10a: Document requirements
+# @name createDocPolicy
+POST {{base}}/policy/versions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "policyKey": "document.requirements.standard",
+  "scopeType": "global",
+  "value": ["national_id", "university_acceptance", "income_proof"],
+  "effectiveDate": "2026-01-01",
+  "changeReason": "Initial document requirements"
+}
+
+###
+@docPolicyVersionId = PASTE_VERSION_ID_HERE
+
+POST {{base}}/policy/versions/{{docPolicyVersionId}}/approve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### 10b: Eligibility minimum score
+# @name createScorePolicy
+POST {{base}}/policy/versions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "policyKey": "eligibility.score.minimum",
+  "scopeType": "global",
+  "value": 300,
+  "effectiveDate": "2026-01-01",
+  "changeReason": "Minimum FORSA score for eligibility"
+}
+
+###
+@scorePolicyVersionId = PASTE_VERSION_ID_HERE
+
+POST {{base}}/policy/versions/{{scorePolicyVersionId}}/approve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### 10c: Approval thresholds
+# @name createThresholdPolicy
+POST {{base}}/policy/versions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "policyKey": "approval.thresholds",
+  "scopeType": "global",
+  "value": {
+    "auto_approve_max": 5000,
+    "level1_max": 15000,
+    "level2_max": 50000
+  },
+  "effectiveDate": "2026-01-01",
+  "changeReason": "Approval thresholds V1"
+}
+
+###
+@thresholdPolicyVersionId = PASTE_VERSION_ID_HERE
+
+POST {{base}}/policy/versions/{{thresholdPolicyVersionId}}/approve
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### 10d: Guarantor not required (simplified for test)
+POST {{base}}/policy/versions
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "policyKey": "guarantor.required",
+  "scopeType": "global",
+  "value": false,
+  "effectiveDate": "2026-01-01",
+  "changeReason": "Guarantor optional for initial testing"
+}
+
+###
+# Approve this policy version (paste its ID)
+
+### ============================================================
+### STEP 11: UPLOAD DOCUMENTS
+### ============================================================
+
+### Get upload URL for national_id
+# @name uploadNationalId
+POST {{base}}/documents/upload-url
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "entityType": "application",
+  "entityId": "{{applicationId}}",
+  "documentTypeCode": "national_id",
+  "fileName": "carte_identite.pdf",
+  "contentType": "application/pdf"
+}
+
+###
+# The response gives you: uploadUrl, documentId
+# Use curl to upload: curl -X PUT "<uploadUrl>" -H "Content-Type: application/pdf" --data-binary @yourfile.pdf
+# OR for testing, just confirm upload directly:
+
+@docId1 = PASTE_DOCUMENT_ID_HERE
+
+POST {{base}}/documents/{{docId1}}/confirm-upload
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fileSize": 102400
+}
+
+###
+
+### Repeat for university_acceptance
+POST {{base}}/documents/upload-url
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "entityType": "application",
+  "entityId": "{{applicationId}}",
+  "documentTypeCode": "university_acceptance",
+  "fileName": "lettre_admission.pdf",
+  "contentType": "application/pdf"
+}
+
+###
+@docId2 = PASTE_DOCUMENT_ID_HERE
+
+POST {{base}}/documents/{{docId2}}/confirm-upload
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "fileSize": 204800 }
+
+###
+
+### Repeat for income_proof
+POST {{base}}/documents/upload-url
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "entityType": "application",
+  "entityId": "{{applicationId}}",
+  "documentTypeCode": "income_proof",
+  "fileName": "fiche_salaire.pdf",
+  "contentType": "application/pdf"
+}
+
+###
+@docId3 = PASTE_DOCUMENT_ID_HERE
+
+POST {{base}}/documents/{{docId3}}/confirm-upload
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "fileSize": 51200 }
+
+###
+
+### Check document checklist — all 3 should show 'uploaded'
+GET {{base}}/documents/checklist/applications/{{applicationId}}
+Authorization: Bearer {{token}}
+
+###
+
+### ============================================================
+### STEP 12: RUN THE FINANCING DECISION PIPELINE
+### ============================================================
+
+# @name runPipeline
+POST {{base}}/pipeline/applications/{{applicationId}}/run
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+###
+# Check the response:
+# - If decisionResult = "approved_level1" → auto-approved! Go to step 13.
+# - If requiresHumanReview = true → submit human decision (step 12b)
+# - If blockedAtStage → see blockReason and fix the issue
+
+@pipelineRunId = PASTE_PIPELINE_RUN_ID_HERE
+
+### 12b: Submit human decision (only if requiresHumanReview = true)
+POST {{base}}/pipeline/runs/{{pipelineRunId}}/human-decision
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "decision": "approved",
+  "approvedAmount": 3500,
+  "notes": "Application reviewed — approved at Level 1"
+}
+
+###
+
+### View full pipeline trace
+GET {{base}}/pipeline/runs/{{pipelineRunId}}
+Authorization: Bearer {{token}}
+
+###
+
+### ============================================================
+### STEP 13: GENERATE CONTRACT
+### ============================================================
+
+POST {{base}}/execution
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "actionType": "contract.generate",
+  "payload": {
+    "applicationId": "{{applicationId}}",
+    "contractType": "student_forsa",
+    "financingDecisionId": "PASTE_DECISION_ID_FROM_PIPELINE_RESPONSE"
+  }
+}
+
+###
+@contractId = PASTE_CONTRACT_ID_HERE
+
+### Send contract for signature
+POST {{base}}/contracts/{{contractId}}/send
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{}
+
+### Record student signature
+POST {{base}}/contracts/{{contractId}}/sign
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "signatoryType": "student",
+  "signatoryId": "{{studentId}}",
+  "signatureReference": "SIGNED-2026-06-25-001"
+}
+
+###
+
+### Record FORSA signature (fully signed)
+POST {{base}}/contracts/{{contractId}}/sign
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "signatoryType": "forsa",
+  "signatoryId": "PASTE_YOUR_USER_ID",
+  "signatureReference": "FORSA-2026-06-25-001"
+}
+
+###
+
+### ============================================================
+### STEP 14: GENERATE PAYMENT SCHEDULE
+### ============================================================
+
+POST {{base}}/execution
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "actionType": "payment_schedule.generate",
+  "payload": {
+    "applicationId": "{{applicationId}}",
+    "contractId": "{{contractId}}"
+  }
+}
+
+###
+
+### View the payment schedule
+GET {{base}}/payments/schedules/applications/{{applicationId}}
+Authorization: Bearer {{token}}
+
+###
+# Copy an installment ID from the response
+
+@installmentId = PASTE_FIRST_INSTALLMENT_ID_HERE
+
+### ============================================================
+### STEP 15: RECORD A PAYMENT
+### ============================================================
+
+POST {{base}}/execution
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "actionType": "payment.record",
+  "payload": {
+    "installmentId": "{{installmentId}}",
+    "amount": 350,
+    "currency": "TND",
+    "paymentMethod": "bank_transfer",
+    "referenceNumber": "VIR-2026-06-001",
+    "paymentDate": "2026-06-25",
+    "notes": "First installment received"
+  }
+}
+
+###
+
+### ============================================================
+### STEP 16: CHECK STUDENT SCORE (should have improved)
+### ============================================================
+
+GET {{base}}/scores/students/{{studentId}}
+Authorization: Bearer {{token}}
+
+###
+
+### ============================================================
+### STEP 17: CHECK DASHBOARDS
+### ============================================================
+
+GET {{base}}/reports/ceo
+Authorization: Bearer {{token}}
+
+###
+
+GET {{base}}/reports/finance
+Authorization: Bearer {{token}}
+
+###
+
+GET {{base}}/reports/sales
+Authorization: Bearer {{token}}
+
+###
+
+GET {{base}}/collections/dashboard
+Authorization: Bearer {{token}}
+
+###
+
+### ============================================================
+### BONUS: OTHER USEFUL ENDPOINTS
+### ============================================================
+
+### View application detail
+GET {{base}}/applications/{{applicationId}}
+Authorization: Bearer {{token}}
+
+###
+
+### View application status history
+GET {{base}}/applications/{{applicationId}}/status-history
+Authorization: Bearer {{token}}
+
+###
+
+### View student with all info
+GET {{base}}/students/{{studentId}}
+Authorization: Bearer {{token}}
+
+###
+
+### View FORSA score history
+GET {{base}}/scores/students/{{studentId}}/history
+Authorization: Bearer {{token}}
+
+###
+
+### View audit log
+GET {{base}}/reports/audit?limit=50
+Authorization: Bearer {{token}}
+
+###
+
+### List all policies
+GET {{base}}/policy/definitions
+Authorization: Bearer {{token}}
+
+###
+
+### List all users
+GET {{base}}/users
+Authorization: Bearer {{token}}
+
+###
+
+### View execution ledger
+GET {{base}}/execution/history
+Authorization: Bearer {{token}}
