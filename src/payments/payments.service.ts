@@ -600,7 +600,7 @@ export class PaymentsService {
          CASE p.status WHEN 'receipt_uploaded' THEN 0 WHEN 'pending_verification' THEN 1 ELSE 2 END,
          p.receipt_uploaded_at DESC NULLS LAST,
          p.created_at DESC
-       LIMIT $${limitIdx - 1} OFFSET $${offsetIdx - 1}`,
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       queryParams,
     );
 
