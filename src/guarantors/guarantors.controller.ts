@@ -1,11 +1,8 @@
 import { Controller, Get, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
-import { ApiTags, ApiOperation } from '@nestjs/swagger'
+import { ApiTags } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
+import { CurrentUser, CurrentTenant } from '../common/decorators'
 import { GuarantorsService } from './guarantors.service'
-
-function RequirePermissions(...perms: string[]) { return (t: any, k: any, d: any) => d }
-function CurrentUser(field?: string) { return (t: any, k: any, i: any) => {} }
-function CurrentTenant() { return (t: any, k: any, i: any) => {} }
 
 @ApiTags('Guarantors')
 @UseGuards(JwtAuthGuard)
@@ -14,19 +11,38 @@ export class GuarantorsController {
   constructor(private readonly service: GuarantorsService) {}
 
   @Get('my-student')
-  getMyStudent() { return this.service.getLinkedStudent('', '') }
+  getMyStudent(
+    @CurrentUser('id') userId: string,
+    @CurrentTenant() tenantId: string,
+  ) { return this.service.getLinkedStudent(userId, tenantId) }
 
   @Get('my-student/payments')
-  getMyStudentPayments() { return this.service.getLinkedStudentPayments('', '') }
+  getMyStudentPayments(
+    @CurrentUser('id') userId: string,
+    @CurrentTenant() tenantId: string,
+  ) { return this.service.getLinkedStudentPayments(userId, tenantId) }
 
   @Post('my-student/payment-receipt')
   @HttpCode(HttpStatus.OK)
-  submitReceipt(@Body() body: any) { return this.service.submitReceiptOnBehalf('', '', body) }
+  submitReceipt(
+    @CurrentUser('id') userId: string,
+    @CurrentTenant() tenantId: string,
+    @Body() body: any,
+  ) { return this.service.submitReceiptOnBehalf(userId, tenantId, body) }
 
   @Post('my-student/konnect')
   @HttpCode(HttpStatus.OK)
-  initiateKonnect(@Body() body: any) { return this.service.initiateKonnectOnBehalf('', '', '', '', body) }
+  initiateKonnect(
+    @CurrentUser('id') userId: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser('email') email: string,
+    @CurrentUser('fullName') fullName: string,
+    @Body() body: any,
+  ) { return this.service.initiateKonnectOnBehalf(userId, tenantId, email, fullName, body) }
 
   @Get('notifications')
-  getNotifications() { return this.service.getNotifications('', '') }
+  getNotifications(
+    @CurrentUser('id') userId: string,
+    @CurrentTenant() tenantId: string,
+  ) { return this.service.getNotifications(userId, tenantId) }
 }
