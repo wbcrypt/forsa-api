@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { MembershipService, generateForsaId } from './membership.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DigitalPassService } from '../digital-pass/digital-pass.service';
 import { MembershipStatus } from '../common/enums';
 
 // Phase 2 T-203/T-204 — Membership Request -> Bronze. The approve() flow is
@@ -13,6 +14,7 @@ describe('MembershipService', () => {
   let query: jest.Mock;
   let managerQuery: jest.Mock;
   let notifications: jest.Mocked<Pick<NotificationsService, 'send'>>;
+  let digitalPass: jest.Mocked<Pick<DigitalPassService, 'issueForStudentTx'>>;
 
   const pendingRequest = {
     id: 'req-1', tenant_id: 'tenant-1', status: 'pending',
@@ -24,6 +26,7 @@ describe('MembershipService', () => {
     query = jest.fn();
     managerQuery = jest.fn();
     notifications = { send: jest.fn().mockResolvedValue(undefined) };
+    digitalPass = { issueForStudentTx: jest.fn().mockResolvedValue({ verificationToken: 'tok' }) };
     const dataSource = {
       query,
       transaction: jest.fn((cb: any) => cb({ query: managerQuery })),
@@ -31,6 +34,7 @@ describe('MembershipService', () => {
     service = new MembershipService(
       dataSource as unknown as DataSource,
       notifications as unknown as NotificationsService,
+      digitalPass as unknown as DigitalPassService,
     );
   });
 
@@ -107,6 +111,12 @@ describe('MembershipService', () => {
       // must be true (the account only becomes usable via /auth/set-password).
       const usersInsertCall = managerQuery.mock.calls[1];
       expect(usersInsertCall[0]).toContain('INSERT INTO users');
+
+      // T-205 — a Digital Student Pass must be issued in the same
+      // transaction, never as an optional/best-effort afterthought.
+      expect(digitalPass.issueForStudentTx).toHaveBeenCalledWith(
+        expect.anything(), 'student-1', 'tenant-1',
+      );
 
       // A set-password email must actually be sent, with a link and the
       // assigned FORSA ID — not silently skipped.

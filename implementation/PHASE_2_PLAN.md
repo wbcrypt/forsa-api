@@ -48,16 +48,11 @@ parallelization risk in §6) · `forsa-dashboard` · `forsa-student` ·
 **Repos**: `forsa-os`, `forsa-dashboard`, `forsa-student`.
 **Complexity actual**: **Medium**, matching the estimate.
 
-### M2 — Digital Student Pass (T-205, T-206)
-**Delivers**: pass generation + public QR verification.
-- Pass content: FORSA logo, student name, FORSA ID, member-since date, membership level, university, academic year, QR code
-- `GET /pass/verify/:token` (`@Public()`) — live status check (valid/level/expired), not a static payload
-- Student portal: pass display page
-- Admin Dashboard: pass admin view (reissue/revoke)
-
+### M2 — Digital Student Pass (T-205, T-206) — ✅ DONE 2026-07-05
+**Delivered**: new migration `008_digital_student_pass.sql` (`digital_student_passes`, one row per student, `UNIQUE(student_id)`, nullable wallet-provider columns reserved unused). `DigitalPassService.issueForStudentTx()` is called *inside* `MembershipService.approve()`'s existing transaction — a Bronze member can never exist without a pass. `GET /pass/verify/:token` (`@Public()`) is a genuinely live check every call (both pass-row status and current student membership status — a blacklist invalidates the pass immediately without a separate revoke action). QR code generated server-side via the `qrcode` package (already a dependency, used for MFA setup) as a data URL — no new frontend dependency. `forsa-student` gained `/pass` (full display, linked from a top-bar icon matching the existing Notifications-icon convention); `forsa-dashboard`'s `DigitalPassPage.tsx` (was an empty placeholder) now has real list + revoke. University/academic year read live via a join to the student's originating `membership_requests` row rather than denormalized onto the pass — one source of truth. 8 new tests, 78/78 backend tests passing. Verified by actually running the migration against a real local Postgres instance.
 **Repos**: `forsa-os`, `forsa-student`, `forsa-dashboard`.
-**Depends on**: M0 (table), M1 (needs a Bronze member to generate a pass for).
-**Complexity**: **Medium**. QR generation is a well-understood library integration (no novel design); the "generate-once, update-status-only" constraint from T-205 is the one thing to get right structurally — do not let pass regeneration become implicit anywhere (e.g., don't regenerate on every profile edit).
+**Complexity actual**: **Medium**, matching the estimate.
+**Note**: checked whether this could also resolve T-509 (replace `api.qrserver.com`, a Post-Launch item) — it doesn't; that third-party call lives in `forsa-partner`'s referral-link QR feature, genuinely unrelated to this milestone. The fix pattern is proven out and directly reusable there if picked up later.
 **Can run in parallel with**: M3 (different repos/surface area, no shared files).
 
 ### M3 — Financing-request gating & document requirements (T-207, T-208, T-209)

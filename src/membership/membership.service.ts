@@ -7,6 +7,7 @@ import { hashPassword } from '../common/utils/password.util';
 import { generateSecureToken, hashToken } from '../common/utils/encryption.util';
 import { MembershipStatus, MembershipRequestStatus, UserStatus, NotificationChannel } from '../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { DigitalPassService } from '../digital-pass/digital-pass.service';
 import { CreateMembershipRequestDto } from './dto/create-membership-request.dto';
 
 const PASSWORD_SETUP_TOKEN_TTL_HOURS = 48;
@@ -31,6 +32,7 @@ export class MembershipService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly notifications: NotificationsService,
+    private readonly digitalPass: DigitalPassService,
   ) {}
 
   // T-203 — genuinely public, no auth. Deliberately minimal fields only
@@ -159,6 +161,10 @@ export class MembershipService {
       );
 
       await manager.query(`UPDATE students SET user_id = $2 WHERE id = $1`, [student.id, user.id]);
+
+      // T-205 — issued in the same transaction as Bronze itself: a Bronze
+      // member should never exist without a pass, or vice versa.
+      await this.digitalPass.issueForStudentTx(manager, student.id, tenantId);
 
       await manager.query(
         `INSERT INTO membership_status_history

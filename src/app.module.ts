@@ -14,6 +14,7 @@ import { UniversitiesModule } from './universities/universities.module';
 import { PartnersModule } from './partners/partners.module';
 import { StudentsModule } from './students/students.module';
 import { MembershipModule } from './membership/membership.module';
+import { DigitalPassModule } from './digital-pass/digital-pass.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { PipelineModule } from './pipeline/pipeline.module';
 import { ScoreModule } from './score/score.module';
@@ -46,6 +47,7 @@ import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
     PartnersModule,
     StudentsModule,
     MembershipModule,
+    DigitalPassModule,
     ApplicationsModule,
     PipelineModule,
     ScoreModule,

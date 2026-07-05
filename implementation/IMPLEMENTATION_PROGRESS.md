@@ -481,3 +481,54 @@ Milestone 2 since `forsa_id` had been left `null` there.
 - 2 new tests (retry-on-collision, `generateForsaId` format assertion).
   70/70 backend tests passing. `tsc --noEmit`/`npm run build` clean on
   `forsa-os` and `forsa-student`.
+
+**Milestone 4 — Digital Student Pass (M2) — DONE.**
+- New migration `008_digital_student_pass.sql`: `digital_student_passes`,
+  one row per student (`UNIQUE(student_id)` — generate-once enforced at
+  the DB level, not just application convention), nullable
+  `apple_wallet_pass_id`/`google_wallet_pass_id` reserved unused per the
+  task's own explicit instruction. Actually ran the full 001→008 chain
+  against a real local Postgres instance again (started the service,
+  scratch DB, verified, dropped, stopped the service) rather than trusting
+  the SQL by eye.
+- New `src/digital-pass/` module. `issueForStudentTx(manager, ...)` takes
+  an `EntityManager` directly so it can be called *inside*
+  `MembershipService.approve()`'s existing transaction — wired in right
+  after the `students`/`users` provisioning, before the notification send.
+  A Bronze member can never exist without a pass, or vice versa, since
+  they commit or fail together.
+- `GET /pass/verify/:token` (`@Public()`): genuinely live on every call —
+  checks both the pass row's own `status` and the student's current
+  `membership_status`, so a blacklist action immediately invalidates the
+  pass without needing a separate revoke step on every affected member.
+  University/academic year are read via a join back to the student's
+  originating `membership_requests` row (through
+  `provisioned_student_id`) rather than copied onto the pass row — kept
+  exactly one source of truth instead of a value that could silently
+  drift from it.
+- QR code: reused the `qrcode` npm package, already a dependency (used
+  for MFA setup's `generateQrCode`) — `QRCode.toDataURL()` server-side,
+  rendered by the frontend as a plain `<img src=...>`. No new frontend
+  dependency needed for either portal.
+- Checked whether this incidentally resolves T-509 (replace the
+  third-party `api.qrserver.com` QR dependency) before claiming it did —
+  it doesn't: that call lives in `forsa-partner`'s unrelated referral-link
+  QR feature. Corrected an initial overclaim in `MASTER_TASK_LIST.md`
+  before committing, once this was actually checked with a repo-wide grep
+  rather than assumed.
+- `forsa-student`: new `/pass` page (full pass card + QR code), linked
+  from a new top-bar icon — deliberately placed next to the existing
+  Notifications bell rather than added to the 5-slot bottom nav, matching
+  that exact established "secondary page" convention already in the
+  layout. `HomePage.tsx`'s Digital Pass tile now infers "issued" from
+  `student.membership_status` being set (since the pass is now issued
+  atomically alongside it) rather than making a second fetch just for the
+  tile.
+- `forsa-dashboard`: `DigitalPassPage.tsx` (was an empty placeholder) now
+  has a real list + revoke-with-reason modal, same UI pattern as
+  `MembershipQueuePage.tsx`.
+- 8 new tests (`digital-pass.service.spec.ts`), plus 1 updated assertion
+  in `membership.service.spec.ts` confirming the pass issuance call
+  actually happens inside `approve()`. 78/78 backend tests passing.
+  `tsc --noEmit`/`npm run build` clean on `forsa-os`, `forsa-dashboard`,
+  `forsa-student`.

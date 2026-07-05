@@ -434,15 +434,52 @@ resolve them before writing code that depends on the answer).
       (`membership.service.spec.ts`), 70/70 total passing.
 
 ### 2.3 Digital Student Pass
-- [ ] T-205 Build pass generation (FORSA logo, student name, FORSA ID, member
+- [x] T-205 Build pass generation (FORSA logo, student name, FORSA ID, member
       since, membership level, university, academic year, QR verification,
       status). Design the data model so wallet-provider fields (Apple
       Wallet/Google Wallet pass identifiers, signing certs) can be added later
       without a breaking migration — don't build the wallet integration itself
       yet, just don't block it.
-- [ ] T-206 QR verification: a scan should resolve to a live status check
+      **2026-07-05 — DONE.** New migration `008_digital_student_pass.sql`:
+      `digital_student_passes` (one row per student, `UNIQUE(student_id)` —
+      generate-once/status-updates-only, enforced by application logic
+      never inserting a second row, not just convention). Nullable
+      `apple_wallet_pass_id`/`google_wallet_pass_id` columns reserved now
+      per the task's own instruction, unused. New `src/digital-pass/`
+      module: `DigitalPassService.issueForStudentTx(manager, ...)` is
+      called *inside* `MembershipService.approve()`'s existing transaction
+      (not as a separate best-effort step) — a Bronze member can never
+      exist without a pass, or vice versa. University/academic year are
+      **not** denormalized onto the pass row — read live via a join back
+      to the student's originating `membership_requests` row, so there's
+      exactly one place that data can drift from. QR code generated
+      server-side via the `qrcode` npm package (already a dependency, used
+      for MFA setup) as a data URL — no new frontend dependency needed.
+      **Note on T-509**: does NOT resolve it — checked, and the
+      third-party `api.qrserver.com` call T-509 flags is in
+      `forsa-partner/src/pages/referrals/ReferralsPage.tsx` (partner
+      referral-link QR codes), a genuinely separate feature this
+      milestone never touches. This pass's QR code uses the self-hosted
+      `qrcode` package server-side — T-509 remains open, but the fix
+      pattern (swap to `qrcode`, already an existing dependency) is now
+      proven out and directly reusable there.
+      `forsa-student` gained `/pass` (full pass display + QR code, linked
+      from a new top-bar icon next to Notifications, matching that exact
+      secondary-page convention) and `forsa-dashboard`'s
+      `DigitalPassPage.tsx` (was an empty placeholder) now has a real
+      list + revoke action.
+- [x] T-206 QR verification: a scan should resolve to a live status check
       (membership valid/level/expired), not a static payload — needs a
       lightweight public verification endpoint.
+      **2026-07-05 — DONE.** `GET /pass/verify/:token` (`@Public()`) —
+      queries current pass status + student membership status live on
+      every call (no caching, no static payload embedded in the QR image
+      itself — the QR only encodes the verify URL). Reports `valid: false`
+      both when the pass row itself is revoked *and* when the underlying
+      student has been blacklisted, even if the pass row's own status is
+      still `active` — a blacklist should immediately invalidate the pass
+      without requiring a separate revoke action on every blacklisted
+      member's pass.
 
 ### 2.4 Financing request (post-Bronze only)
 - [ ] T-207 Gate the existing financing/application flow behind an active

@@ -1,5 +1,25 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — Phase 2 Milestone 4: Digital Student Pass)
+- New migration `008_digital_student_pass.sql`: `digital_student_passes`,
+  one row per student, generate-once enforced via `UNIQUE(student_id)`.
+  Verified against a real local Postgres instance.
+- New `src/digital-pass/` module. Pass issuance happens *inside*
+  `MembershipService.approve()`'s existing transaction — never a separate
+  best-effort step.
+- `GET /pass/verify/:token` (public): live check on both pass status and
+  current membership status, so a blacklist immediately invalidates the
+  pass.
+- QR code generated server-side via the existing `qrcode` dependency — no
+  new frontend dependency.
+- `forsa-student`: new `/pass` page + top-bar nav icon.
+- `forsa-dashboard`: `DigitalPassPage.tsx` (was an empty placeholder) now
+  has real list + revoke.
+- Checked and confirmed this does NOT resolve T-509 (a different,
+  unrelated third-party QR call in `forsa-partner`) — corrected an
+  initial overclaim before committing.
+- 8 new tests, 78/78 backend tests passing.
+
 ## 2026-07-05 (continued — Phase 2 Milestone 3: FORSA ID generation)
 - `generateForsaId()`: `FORSA-<year>-<6 hex chars>`, assigned in
   `MembershipService.approve()`. Uniqueness resolved via a pre-transaction
