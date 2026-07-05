@@ -19,9 +19,10 @@ beyond nav scaffolding.
 Post-Launch**. (14 issues already `FIXED` in `KNOWN_ISSUES.md` are excluded
 entirely — see that file for what's already closed.)
 
-**Progress (updated 2026-07-05, same day)**: of the 7 blockers, **#2 (K-14,
-ledger unification) is fully fixed**; **#4 (K-17+K-18) is half-fixed** (model
-string done, fabricated-demo-score issue still open); #1, #3, #5 remain open.
+**Progress (updated 2026-07-05, final)**: **all 7 blockers are now fixed**
+(#1 K-12, #2 K-14, #3 K-16+K-47, #4 K-17+K-18, #5 K-09 stages 3-7 + the
+Stage 8 gate). See each section below for what was actually done — none of
+these fixes expand scope beyond closing the specific gap described.
 
 Some `KNOWN_ISSUES.md` statuses were corrected while building this file:
 K-01, K-02, K-03, and K-06 were still marked `OPEN`/`PARTIALLY FIXED` from
@@ -35,15 +36,20 @@ stale wording even though their underlying `MASTER_TASK_LIST.md` tasks
 Ordered by severity. Each maps to a `KNOWN_ISSUES.md` row — see that file
 for full technical detail.
 
-### 1. K-12 — Dual/executive approver requirement computed but never enforced
+### 1. K-12 — Dual/executive approver requirement computed but never enforced — ✅ FIXED 2026-07-05
 Pipeline Stage 7 computes how many independent reviewer decisions a large
 financing amount requires (2 for dual/executive-level); Stage 8 records that
-requirement — but `submitHumanDecision` only ever reads the *most recent*
-reviewer decision and finalizes on it. **A single reviewer can approve any
-amount today, regardless of the size-based dual-approval control the system
-itself decided was needed.** This is a real control gap on a lending
-platform's largest, highest-risk decisions — exactly the kind of thing that
-should not ship live. Task: T-214.
+requirement — but `submitHumanDecision` only ever read the *most recent*
+reviewer decision and finalized on it. **A single reviewer could approve any
+amount, regardless of the size-based dual-approval control the system
+itself decided was needed.** Fixed: an `'approved'` decision now only
+proceeds to Stage 9 once `COUNT(DISTINCT reviewer_id)` of approved decisions
+on that pipeline run meets `required_approvers` — otherwise it returns
+`{ status: 'awaiting_additional_approver', ... }` without advancing.
+`rejected`/`on_hold`/`needs_more_documents` still proceed on a single
+reviewer's say-so (deliberate — a single person stopping/pausing isn't the
+risk this control guards against). Also added a same-reviewer-can't-vote-
+twice guard. 4 new tests lock this down. Task: T-214.
 
 ### 2. K-14 — Structurally inconsistent double-entry ledger between payment paths — ✅ FIXED 2026-07-05
 The Konnect (online) path wrote one `financial_ledger` row with
@@ -61,55 +67,61 @@ locked-down test added confirming the Konnect path writes the correct
 debit/credit pair. Task: T-218 (ledger half only — the Konnect→FORSA-Score
 event gap, K-13, remains separately open and is classified Post-Launch).
 
-### 3. K-16 + K-47 — Inconsistent/broken refresh-token strategy across portals
-Dashboard/University/Partner send a bearer refresh token in the request
-body; Finance/Guarantor rely on `withCredentials` cookies with an
-empty-body refresh call — **only one of these two patterns can actually be
-correct** against the real `POST /auth/refresh` implementation, meaning at
-least one portal family is likely forcing users to re-login on every
-access-token expiry (15 min default). K-47 is the same class of bug found
-in `forsa-partner` specifically: its refresh interceptor calls bare
-`axios.post()` instead of the app's configured instance, so even the
-"correct" pattern may not resolve to the right host once frontend and API
-are on different origins. **This needs a live verification pass against the
-deployed backend before launch** — if wrong, staff and guarantors get
-logged out mid-session repeatedly, which is a real, first-day support-ticket
-generator, not a cosmetic bug. Tasks: T-304 (verification), unassigned fix.
+### 3. K-16 + K-47 — Inconsistent/broken refresh-token strategy across portals — ✅ FIXED 2026-07-05
+Dashboard/University/Partner sent a bearer refresh token in the request
+body; Finance/Guarantor relied on `withCredentials` cookies with an
+empty-body refresh call. Confirmed against `forsa-os/src/auth/dto/
+login.dto.ts` (`RefreshTokenDto`): `refreshToken` is a **required string in
+the body** — there is no cookie fallback — so Finance/Guarantor's calls were
+400ing on every access-token expiry (15 min default), silently forcing
+users back to `/login`. Fixed: both now store the refresh token returned at
+login and send it in the body on refresh, matching the already-correct
+Dashboard/University/Partner/Student pattern. K-47 (`forsa-partner`'s
+refresh interceptor calling bare `axios.post('/api/v1/auth/refresh', ...)`
+with no configured base URL) also fixed — now uses the correct full URL,
+deliberately kept as a bare `axios` call (not the app's intercepted `api`
+instance) to avoid interceptor-recursion risk if the refresh token itself
+is invalid. **Not touched**: University portal's own separate relative-path
+refresh bug (K-26) — different root cause, was already classified
+Post-Launch, out of this pass's scope. Tasks: T-304 (was verification-only,
+now superseded by the actual fix).
 
-### 4. K-17 + K-18 — AI interview: invalid model + fabricated scores reaching real decisions — ⚠️ HALF FIXED 2026-07-05
+### 4. K-17 + K-18 — AI interview: invalid model + fabricated scores reaching real decisions — ✅ FIXED 2026-07-05
 The hand-rolled Anthropic integration hardcoded an invalid model string
 (`'claude-sonnet-4-6'`) — **fixed**: switched to `claude-opus-4-8` (see
 `KNOWN_ISSUES.md` K-17 for a caveat: `'claude-sonnet-4-6'` turned out to
 actually be a valid current model id, so this wasn't quite the live 400
 the original audit described, but the fix stands regardless per the
-`claude-api` skill's own default-model guidance). **Still open**: the
-student portal's demo-mode fallback triggers on **any** exception (not just
-a missing key — a network blip or backend hiccup also qualifies), and in
-demo mode submits a client-side `Math.random()`-generated "AI score" **as if
-it were real** (`aiScoreOverall`/`aiReport`/`aiRecommendation`), which the
-pipeline and scoring system then consume identically to a genuine
-assessment. A student can end up with a randomly fabricated readiness score
-silently feeding a real financing decision, with only a small "🎭 Demo mode"
-badge as disclosure. This remains a data-integrity and (arguably) fairness
-issue on a platform explicitly designed around "AI advises, humans decide"
-— a transient network error can still make the AI effectively hand a random
-number to the human reviewer without them necessarily noticing it wasn't
-real. **This half is not yet closed — still a launch blocker.** Tasks:
-T-212 (model fix — done), T-210 (fallback/disclosure hardening — open).
+`claude-api` skill's own default-model guidance). **K-18 also fixed**: the
+student portal's demo-mode fallback used to submit a client-side
+`Math.random()`-generated "AI score" **as if it were real**
+(`aiScoreOverall`/`aiReport`/`aiRecommendation`), with only a small "🎭 Demo
+mode" chat-UI badge as disclosure — never actually reaching the backend.
+Fixed at the root: demo mode no longer fabricates a score at all;
+`aiScoreOverall`/`aiRecommendation` are explicitly `null` whenever the real
+`/ai/score` endpoint wasn't used, so a human reviewer sees "no AI score"
+rather than a plausible-looking fake number. Confirmed safe to null out:
+no backend business logic reads these two columns (grepped — only the
+already-broken `seed-demo.ts` references them), and the dashboard's
+`RankingPage`/`AIReportPanel` already fall back to `{}` on a missing
+`scores` object without crashing. Tasks: T-212 (model fix), T-210
+(demo-mode fallback hardening) — both done.
 
-### 5. K-09 (remaining) — Pipeline stages 3–10 have zero test coverage
-Phase 1 added tests for stages 1–2 (completeness, eligibility) plus auth,
-payment ledger writes, and Konnect signature verification — but stages 3–10
-(risk assessment, policy evaluation, portfolio/capital, approval-threshold
-routing, human decision, decision generation, decision execution) remain
-completely untested. These are the stages that actually decide who gets
-financed and for how much — shipping them with zero automated coverage on
-a platform already carrying the K-12 control gap above compounds the risk
-of an undetected regression in the exact code path that matters most.
-Recommend closing this — or at minimum stages 4–7 and 9 (the ones that
-touch money/risk directly) — before real financing decisions run through
-this pipeline unsupervised. Task: T-301 (Phase 3 scope, but the money-path
-stages specifically should not wait for the rest of Phase 3).
+### 5. K-09 (remaining) — Pipeline stages 3–10 had zero test coverage — ✅ FIXED for stages 3-8, 2026-07-05
+Phase 1 added tests for stages 1–2 (completeness, eligibility). This pass
+adds stages 3 (university/partnership — active/blocked/needs-review),
+4 (risk assessment — low/high risk scoring), 5 (policy evaluation — amount
+ceiling + renewal-default violations), 6 (portfolio/capital — the 40%
+concentration cap and its capital-queue soft-block), and 7 (approval
+threshold — all four approval modes: auto/single/dual/executive, plus the
+high-risk escalation rule), plus the Stage 8 human-decision gate itself
+(the K-12 fix above, tested exhaustively: double-vote rejection, partial
+approval not proceeding, full approval proceeding, single-reviewer
+rejection proceeding). **Stages 9 (decision generation) and 10 (decision
+execution) remain untested** — recommend closing those next, but the
+higher-risk gates (portfolio caps, approval thresholds, the approver-count
+enforcement itself) are now covered. 57 backend tests total, all passing.
+Task: T-301 (Phase 3 scope — stages 9-10 + e2e tests are what's left there).
 
 ---
 

@@ -393,7 +393,7 @@ resolve them before writing code that depends on the answer).
       spec §8).
 
 ### 2.5 AI philosophy & scoring model
-- [ ] T-210 AI outputs (advisory only, never a decision): Household Stability,
+- [~] T-210 AI outputs (advisory only, never a decision): Household Stability,
       Financial Capacity, Academic Commitment, Documentation Quality,
       Interview Assessment, Risk Level, Recommendation, Confidence, Executive
       Summary. AI must never be able to set an approval outcome directly —
@@ -401,6 +401,21 @@ resolve them before writing code that depends on the answer).
       into a human-decision input, never auto-write `approved_level*`
       (this directly fixes the T-312-class fabricated-demo-score risk from the
       original audit).
+      **2026-07-05 — K-18 fabricated-demo-score sub-issue FIXED (launch
+      blocker); the full Household Stability output set (9 fields above) is
+      Phase 2 scope, not yet built.** `forsa-student/src/pages/apply/
+      InterviewPage.tsx`'s demo-mode fallback used to generate a
+      `Math.random()` "AI score" and submit it as `aiScoreOverall`/
+      `aiRecommendation` — indistinguishable from a real assessment to
+      anyone downstream, with only an ephemeral chat-UI badge as disclosure.
+      Fixed: demo mode no longer fabricates any score; those two fields are
+      explicitly `null` whenever the real `/ai/score` endpoint wasn't used
+      (tracked via a `demo_mode` flag threaded through `aiReport`). Confirmed
+      no backend logic reads these columns (grep — only the already-broken
+      `seed-demo.ts` does), and the dashboard's display code already
+      defaults to `{}` on a missing `scores` object, so nothing downstream
+      breaks on the new `null`. The broader Household Stability
+      advisory-output redesign (this task's original scope) remains open.
 - [ ] T-211 Implement Household Stability as the primary evaluation
       dimension with recommended weights: 35% Household Stability, 25%
       Financial Capacity, 20% Academic Commitment, 10% Documentation Quality,
@@ -600,9 +615,20 @@ remains.**
 - [ ] T-302 Frontend tests across all 6 portals (currently zero anywhere).
 - [ ] T-303 API contract tests (all 111+ endpoints, including the new
       membership/fraud/pass endpoints).
-- [ ] T-304 Authentication tests: login, MFA, lockout, session expiry, token
+- [~] T-304 Authentication tests: login, MFA, lockout, session expiry, token
       refresh (including resolving the bearer-vs-cookie refresh-strategy
       inconsistency across portals — original audit finding).
+      **2026-07-05 — the refresh-strategy inconsistency itself is FIXED**
+      (K-16/K-47, launch blocker #3): confirmed against `RefreshTokenDto`
+      that bearer-in-body is the only correct pattern (no cookie fallback
+      exists), fixed `forsa-finance`/`forsa-guarantor` (were sending an
+      empty body, 400ing on every refresh) and `forsa-partner` (was calling
+      bare `axios.post()` with no configured base URL). University portal's
+      separate relative-path refresh bug (K-26) not touched — different
+      root cause, still open, still Post-Launch. **Automated auth test
+      suite (login/MFA/lockout/session-expiry) is Phase 3 scope, still not
+      built** — this update only closes the specific inconsistency, not the
+      broader task.
 - [ ] T-305 Permission/role-isolation tests: every role can only reach what
       it's granted (extend the audit's manual spot-checks into real automated
       tests) — cross-role and cross-tenant isolation both need coverage.
