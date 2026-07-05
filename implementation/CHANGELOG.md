@@ -1,5 +1,32 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — Phase 2 Milestone 5: Financing Request)
+- **Found the entire student-facing Financing Request submission flow was
+  already broken**, independent of the new membership gate: (1)
+  `POST /applications` requires a staff-only permission no self-registered
+  student ever holds, (2) `InterviewPage.tsx` never sent `studentId`,
+  (3) `NewApplicationPage.tsx` sent the wrong id (`user!.id`, not
+  `students.id`), (4) `applications.ai_score_overall`/`ai_recommendation`/
+  `ai_report`/`interview_language`/`interview_transcript` were referenced
+  by the frontend and `seed-demo.ts` but never migrated — AI data was
+  silently dropped on every submission.
+- Fixed all four with one new route: `POST /applications/me`
+  (`createForSelf`) — resolves the student via JWT identity, includes the
+  AI fields, and gates on `membership_status IN ('bronze','silver','gold')`
+  (T-207).
+- New migration `009_financing_request.sql`: the 5 missing `applications`
+  columns, plus `document_types.validity_months`/`documents.expires_at`
+  (T-208/T-209 — confirmed, again, that "already scaffolded" per the task
+  description was wrong). `DocumentsService.confirmUpload()` computes a
+  real expiry; `stage1Completeness`'s document check now excludes expired
+  documents even if still `verified`.
+- Fixed `InterviewPage.tsx`'s submission error handling — used to
+  silently swallow any failure and show a false success screen. Now
+  shows a real error state with a link to `/join` on the gate rejection.
+- Verified the migration against a real local Postgres instance (fourth
+  time this phase).
+- 7 new tests, 84/84 backend tests passing.
+
 ## 2026-07-05 (continued — Phase 2 Milestone 4: Digital Student Pass)
 - New migration `008_digital_student_pass.sql`: `digital_student_passes`,
   one row per student, generate-once enforced via `UNIQUE(student_id)`.

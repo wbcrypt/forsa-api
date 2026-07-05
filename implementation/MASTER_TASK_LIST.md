@@ -482,16 +482,76 @@ resolve them before writing code that depends on the answer).
       member's pass.
 
 ### 2.4 Financing request (post-Bronze only)
-- [ ] T-207 Gate the existing financing/application flow behind an active
+- [x] T-207 Gate the existing financing/application flow behind an active
       Bronze (or higher) membership — a visitor with no membership should not
       be able to reach it.
-- [ ] T-208 Student-side required documents for financing: identity, address,
+      **2026-07-05 — DONE, and surfaced a much bigger pre-existing bug along
+      the way: the entire student-facing Financing Request submission flow
+      was completely broken before this fix, independent of any membership
+      gating.** Three separate, compounding problems, discovered while
+      wiring the gate: (1) `POST /applications` requires
+      `@RequirePermissions('application.create')`, a staff-only CRM
+      permission — but no role is ever assigned to a self-registered
+      student account (`registerSelf`/`MembershipService.approve()` never
+      insert a `user_roles` row), so a real student calling this route
+      would always 403. (2) `forsa-student/src/pages/apply/
+      InterviewPage.tsx`'s submission payload never included `studentId`
+      at all — the INSERT would have hit `applications.student_id`'s
+      `NOT NULL` constraint. (3) `NewApplicationPage.tsx` *did* send a
+      `studentId`, but it was `user!.id` (the auth user's row), not the
+      actual `students.id` — a different UUID entirely, which would have
+      violated the FK constraint. **None of this was caught before now
+      because nothing had ever actually exercised this code path
+      end-to-end.** Fixed by adding a new self-scoped `POST /applications/me`
+      (`ApplicationsService.createForSelf`) that resolves the student
+      server-side from the JWT identity (never a client-supplied
+      `studentId` — same pattern as `findMe`/`findMyPayments`/`findMyPass`)
+      and gates on `membership_status IN ('bronze','silver','gold')`
+      before creating. Both `forsa-student` callers (`InterviewPage.tsx`,
+      `NewApplicationPage.tsx`) now call this route instead of the
+      generic staff one. Also fixed: `InterviewPage.tsx`'s submission
+      error handling used to be a bare `catch { /* still show done */ }` —
+      any failure (including the new 403 gate) was silently swallowed and
+      the user saw a false "Interview Complete!" success screen with no
+      application actually created. Now shows a real error state
+      directing the user to `/join` (Membership Request) when the gate
+      rejects them, or a support-contact message for any other failure.
+      Also added the missing `applications.ai_score_overall`/
+      `ai_recommendation`/`ai_report`/`interview_language`/
+      `interview_transcript` columns (migration 009) — these were
+      referenced by `src/seeds/seed-demo.ts` and the K-18 fix's frontend
+      payload but had never actually been migrated, meaning AI interview
+      data was being silently dropped by every submission even before
+      today. 4 new tests, 84/84 backend tests passing.
+- [x] T-208 Student-side required documents for financing: identity, address,
       university documents, tuition, academic records.
-- [ ] T-209 Guarantor-side required documents: identity, employment
+      **2026-07-05 — document *requirement checklist* itself unchanged
+      (already existed via `document.requirements.standard` policy +
+      Stage 1 completeness); this pass's scope was specifically the
+      freshness/expiry half — see T-209.**
+- [x] T-209 Guarantor-side required documents: identity, employment
       certificate, payslips, last 3 bank statements, existing loans, financial
       commitments. All documents must be current — add an expiry/freshness
       check (leverage `document_types.expiry`-tracking already scaffolded per
       spec §8).
+      **2026-07-05 — freshness/expiry check DONE; confirmed the
+      "already scaffolded" claim in this task's own description is
+      wrong.** Checked directly against the live schema: neither
+      `document_types` nor `documents` had any expiry-tracking column at
+      all before today. New migration `009_financing_request.sql` adds
+      `document_types.validity_months` (NULL = never expires) and
+      `documents.expires_at`. `DocumentsService.confirmUpload()` now
+      computes `expires_at` from the matching document type's
+      `validity_months` at the moment a document is confirmed uploaded.
+      `PipelineService.stage1Completeness`'s document-completeness query
+      now excludes expired documents from counting as satisfying a
+      requirement, even if their verification `status` is still
+      `verified`/`under_review` — a document verified 18 months ago can be
+      stale without ever being re-reviewed. No new admin UI for
+      configuring which document types expire and after how long — that's
+      a reasonable fast-follow (a single `validity_months` field per
+      document type in an existing settings page), deliberately deferred
+      to keep this pass's scope to making the mechanism actually work.
 
 ### 2.5 AI philosophy & scoring model
 - [~] T-210 AI outputs (advisory only, never a decision): Household Stability,

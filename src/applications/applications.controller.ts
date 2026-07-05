@@ -20,9 +20,22 @@ export class ApplicationsController {
 
   @Post()
   @RequirePermissions('application.create')
-  @ApiOperation({ summary: 'Create a new application / lead' })
+  @ApiOperation({ summary: 'Create a new application / lead (staff CRM path)' })
   create(@Body() dto: any, @CurrentTenant() t: string, @CurrentUser('id') u: string) {
     return this.service.create(dto, t, u);
+  }
+
+  // T-207 — the route the student portal actually calls. No
+  // @RequirePermissions(): a self-registered student holds none of the
+  // staff `application.*` grants (no role is ever assigned to those
+  // accounts) — same "no permissions required -> PermissionsGuard allows
+  // it through" pattern as GET /students/me. Registered before any
+  // param-shaped routes for clarity, though 'me' as a literal POST
+  // sub-path has no :id sibling to collide with here.
+  @Post('me')
+  @ApiOperation({ summary: 'Submit a Financing Request as the logged-in student (T-207, gated on active membership)' })
+  createForSelf(@Body() dto: any, @CurrentTenant() t: string, @CurrentUser('id') u: string) {
+    return this.service.createForSelf(u, t, dto);
   }
 
   @Get()

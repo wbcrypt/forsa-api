@@ -84,6 +84,12 @@ describe('PipelineService — stage gates', () => {
       const result = await (service as any).stage1Completeness(baseCtx);
 
       expect(result.status).toBe('passed');
+      // T-208/T-209 — the query itself must exclude expired documents at
+      // the SQL level (a document verified 18 months ago can be stale
+      // without ever being re-reviewed) — confirm this safety clause isn't
+      // silently dropped by a future refactor of this query.
+      const docsQueryCall = query.mock.calls[0];
+      expect(docsQueryCall[0]).toContain('expires_at');
     });
   });
 

@@ -122,3 +122,59 @@ describe('ApplicationsService.transitionStatus', () => {
     }));
   });
 });
+
+// T-207 — the student portal's actual entry point into the Financing
+// Request flow. Locks down two things that used to be silently broken:
+// (1) a self-registered student (who holds zero role/permission grants
+// today) can now reach this without the staff-only application.create
+// permission, and (2) it's gated on active Bronze+ membership per D-004 —
+// a Visitor/non-member/blacklisted account cannot reach financing.
+describe('ApplicationsService.createForSelf', () => {
+  let service: ApplicationsService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new ApplicationsService(
+      { query } as unknown as DataSource,
+      {} as unknown as NotificationsService,
+    );
+  });
+
+  it('throws NotFoundException when no student profile is linked to this user', async () => {
+    query.mockResolvedValueOnce([]);
+    await expect(service.createForSelf('user-1', 'tenant-1', {})).rejects.toThrow('No student profile linked to this user');
+  });
+
+  it('rejects a visitor with no membership status at all', async () => {
+    query.mockResolvedValueOnce([{ id: 'student-1', membership_status: null }]);
+    await expect(service.createForSelf('user-1', 'tenant-1', {})).rejects.toThrow(
+      'Submit a Membership Request and wait for Bronze approval before requesting financing.',
+    );
+  });
+
+  it('rejects a blacklisted member with a distinct message', async () => {
+    query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'blacklisted' }]);
+    await expect(service.createForSelf('user-1', 'tenant-1', {})).rejects.toThrow(
+      'This account cannot submit financing requests.',
+    );
+  });
+
+  it('resolves studentId from the caller identity and never trusts a client-supplied one', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }]) // membership check
+      .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }]) // INSERT applications
+      .mockResolvedValueOnce(undefined) // INSERT application_status_history
+      .mockResolvedValueOnce(undefined) // audit
+      .mockResolvedValueOnce([]); // notifyStudent's student lookup
+
+    // A malicious/confused client-supplied studentId in the body must be
+    // ignored — the resolved identity always wins.
+    await service.createForSelf('user-1', 'tenant-1', { studentId: 'someone-elses-student-id', tuitionAmount: 5000 });
+
+    const insertCall = query.mock.calls[1];
+    expect(insertCall[0]).toContain('INSERT INTO applications');
+    expect(insertCall[1]).toContain('student-1');
+    expect(insertCall[1]).not.toContain('someone-elses-student-id');
+  });
+});

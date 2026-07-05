@@ -532,3 +532,79 @@ Milestone 2 since `forsa_id` had been left `null` there.
   actually happens inside `approve()`. 78/78 backend tests passing.
   `tsc --noEmit`/`npm run build` clean on `forsa-os`, `forsa-dashboard`,
   `forsa-student`.
+
+**Milestone 5 — Financing Request (M3) — DONE. Scope grew significantly
+beyond the estimate.** Started as "gate applications behind Bronze
+membership" (T-207) and "document freshness" (T-208/T-209); wiring the
+gate surfaced that the entire student-facing submission flow was already
+broken, independent of membership entirely:
+1. `POST /applications` requires `@RequirePermissions('application.create')`
+   — a staff-only CRM permission. Checked: no role is ever assigned to a
+   self-registered student account (`registerSelf`/
+   `MembershipService.approve()` never insert a `user_roles` row), so a
+   real student calling this route would always get a 403. This has
+   apparently never been caught because nothing had exercised this path
+   end-to-end with a real self-registered account before now.
+2. `InterviewPage.tsx`'s submission payload never included `studentId` at
+   all — would have hit `applications.student_id`'s `NOT NULL` constraint.
+3. `NewApplicationPage.tsx` *did* send a `studentId`, but it was
+   `user!.id` — the authenticated user's own row id, not the actual
+   `students.id` (a different UUID entirely, linked only via
+   `students.user_id`) — would have violated the FK constraint.
+4. `applications.ai_score_overall`/`ai_recommendation`/`ai_report`/
+   `interview_language`/`interview_transcript` — referenced by
+   `src/seeds/seed-demo.ts` and the K-18 fix's frontend payload — were
+   never actually migrated. AI interview data was being silently
+   discarded on every submission, gate or no gate, this whole time.
+
+Fixed all four together with one new route: `POST /applications/me`
+(`ApplicationsService.createForSelf`), which resolves the student
+server-side from the JWT identity (never a client-supplied `studentId` —
+same "resolve via user_id, never trust the client" pattern as every
+`findMe`/`findMyPayments`/`findMyPass` this phase has built), includes
+the previously-dropped AI/interview fields in the INSERT, and — the
+actual T-207 deliverable — rejects with a clear message unless
+`membership_status IN ('bronze','silver','gold')`. Both
+`forsa-student` callers (`InterviewPage.tsx`, `NewApplicationPage.tsx`)
+now call this route; `NewApplicationPage.tsx`'s now-unused `user!.id`
+reference and its `useAuth` import were removed rather than left as dead
+code implying it still mattered.
+
+**New migration `009_financing_request.sql`** bundles both discoveries
+since they surfaced in the same pass: the 5 missing `applications` AI/
+interview columns, plus (T-208/T-209) `document_types.validity_months`
+and `documents.expires_at` — confirmed directly against the live schema,
+again, that the "already scaffolded" expiry tracking `MASTER_TASK_LIST.md`'s
+own T-209 description assumed does not actually exist (this is the third
+time this exact "spec says it's already built, schema says otherwise"
+pattern has shown up this phase — worth remembering as a standing
+skepticism default for this codebase's task descriptions, not just a
+one-off). `DocumentsService.confirmUpload()` now computes a real
+`expires_at` from the matching document type's `validity_months` at
+upload-confirm time. `PipelineService.stage1Completeness`'s document
+query now excludes expired documents from satisfying a requirement even
+if the verification `status` is still `verified` — a document verified
+18 months ago can be stale without ever being re-reviewed. No new admin
+UI for configuring `validity_months` per document type — deliberately
+deferred, noted as a fast-follow rather than silently skipped.
+
+Also fixed `InterviewPage.tsx`'s submission error handling, a genuinely
+new UX bug my own gate directly creates: it used to be a bare
+`catch { /* still show done */ }` — any failure was silently swallowed
+and the user saw a false "Interview Complete!" success screen with no
+application ever actually created. The `'error'` phase already existed
+in the component's own type union but was never rendered anywhere — now
+it is, showing an honest message and, specifically for the 403 gate
+case, a direct link to `/join` (Membership Request).
+
+Verified the migration by actually running the full 001→009 chain
+against a real local Postgres instance again (started the service,
+scratch DB, confirmed the exact column types/defaults, dropped, stopped
+the service) — this is now the fourth migration in this phase verified
+this way, not just reviewed by eye.
+
+4 new tests (`applications.service.spec.ts#createForSelf`), 2 new
+(`documents.service.spec.ts`, new file), 1 new assertion in
+`pipeline.service.spec.ts` confirming the expiry-safety clause stays in
+the query. 84/84 backend tests passing. `tsc --noEmit`/`npm run build`
+clean on `forsa-os` and `forsa-student`.

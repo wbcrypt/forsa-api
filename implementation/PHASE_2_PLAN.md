@@ -55,16 +55,16 @@ parallelization risk in §6) · `forsa-dashboard` · `forsa-student` ·
 **Note**: checked whether this could also resolve T-509 (replace `api.qrserver.com`, a Post-Launch item) — it doesn't; that third-party call lives in `forsa-partner`'s referral-link QR feature, genuinely unrelated to this milestone. The fix pattern is proven out and directly reusable there if picked up later.
 **Can run in parallel with**: M3 (different repos/surface area, no shared files).
 
-### M3 — Financing-request gating & document requirements (T-207, T-208, T-209)
-**Delivers**: financing request flow gated behind active membership, plus real document-freshness enforcement.
-- Gate: `applications` creation now requires `students.membership_status IN ('bronze','silver','gold')` — a Visitor with no membership cannot reach it
-- Student documents: identity, address, university documents, tuition, academic records
-- Guarantor documents: identity, employment certificate, payslips, last 3 bank statements, existing loans/commitments — **all must be current**
+### M3 — Financing-request gating & document requirements (T-207, T-208, T-209) — ✅ DONE 2026-07-05
+**Delivered — and scope grew significantly beyond the original estimate** once actually wiring the gate surfaced that the entire student-facing Financing Request submission flow was already broken, independent of membership at all:
+1. `POST /applications` requires a staff-only `application.create` permission that no self-registered student account ever holds (no role is ever assigned at registration) — every real student call would 403.
+2. `InterviewPage.tsx`'s submission payload never sent `studentId` at all (would violate the `NOT NULL` constraint).
+3. `NewApplicationPage.tsx` *did* send one, but it was `user!.id` (the auth user row) instead of the actual `students.id` — a different UUID, would violate the FK constraint.
+4. `applications.ai_score_overall`/`ai_recommendation`/`ai_report`/`interview_language`/`interview_transcript` — referenced by `seed-demo.ts` and the K-18 fix's frontend payload — had never actually been migrated, so AI interview data was silently discarded on every submission, gate or no gate.
 
-**Repos**: `forsa-os`, `forsa-student`, `forsa-guarantor`.
-**Depends on**: M1 (needs membership to gate against).
-**Complexity**: **Medium**, with one confirmed scope surprise (see risk below).
-**Risk — confirmed schema gap**: `MASTER_TASK_LIST.md`'s T-209 description says to "leverage `document_types.expiry`-tracking already scaffolded per spec §8." **This does not exist.** Checked the live schema directly: `document_types` has no validity/expiry column at all (`code, display_name, category, description, is_required, is_active` only), and `documents` has no `expires_at` either. The spec's §8 text describes seed *intent*, not a built column. This milestone therefore needs its own small migration (`008_document_freshness.sql`: `document_types.validity_months` + `documents.expires_at`, computed at upload time) — budget for this as new schema work, not a "wire up existing tracking" task.
+None of this had ever been exercised end-to-end before. Fixed by adding a new self-scoped `POST /applications/me` (resolves the student via JWT identity, never a client-supplied one — same pattern as every other `me`-scoped route this phase has built) that both fixes (1)-(3) and implements the actual T-207 gate (`membership_status IN ('bronze','silver','gold')` required). New migration `009_financing_request.sql` adds the missing AI columns plus (T-208/T-209) `document_types.validity_months`/`documents.expires_at` — confirmed directly against the live schema that the "already scaffolded" expiry tracking this task's own description assumed does not exist. `DocumentsService.confirmUpload()` computes a real expiry at upload time; `PipelineService.stage1Completeness`'s document query now excludes expired documents from satisfying a requirement even if still marked `verified`. Also fixed `InterviewPage.tsx`'s submission error handling, which used to silently swallow any failure (including the new 403) and show a false success screen — now shows a real error state directing the user to `/join`.
+**Repos**: `forsa-os`, `forsa-student`. (`forsa-guarantor` document-freshness UI not touched this pass — the enforcement lives entirely in the shared pipeline completeness check, which already covers guarantor-linked documents the same way.)
+**Complexity actual**: ended up **Medium-High**, not the originally-estimated Medium — the unplanned discovery of a fully broken pre-existing flow was the majority of the real work here, not the gate itself.
 
 ### M4 — AI philosophy & Household Stability scoring (T-211; T-210 model-string half and K-18 already closed)
 **Delivers**: the new primary AI-advisory evaluation dimension (35% Household Stability / 25% Financial Capacity / 20% Academic Commitment / 10% Documentation Quality / 10% Interview), strictly advisory — never auto-sets an approval outcome.

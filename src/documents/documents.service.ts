@@ -117,9 +117,24 @@ export class DocumentsService {
     );
     if (!doc) throw new NotFoundException('Document not found or upload not pending');
 
+    // T-208/T-209 — "all documents must be current": compute a real
+    // expiry at upload time from document_types.validity_months (a gap
+    // the spec described as already scaffolded but, confirmed directly
+    // against the live schema, was not — see migrations/009). NULL
+    // validity_months (the default) means this document type never
+    // expires.
+    const [docType] = await this.dataSource.query<any[]>(
+      `SELECT validity_months FROM document_types WHERE code = $1`,
+      [doc.document_type_code],
+    );
+    const documentExpiresAt = docType?.validity_months
+      ? `NOW() + INTERVAL '${parseInt(docType.validity_months, 10)} months'`
+      : null;
+
     await this.dataSource.query(
       `UPDATE documents
-       SET status = 'uploaded', file_size_bytes = $3, checksum_sha256 = $4, uploaded_at = NOW()
+       SET status = 'uploaded', file_size_bytes = $3, checksum_sha256 = $4, uploaded_at = NOW(),
+           expires_at = ${documentExpiresAt || 'NULL'}
        WHERE id = $1 AND tenant_id = $2`,
       [documentId, tenantId, fileSize, checksum || null],
     );

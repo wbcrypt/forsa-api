@@ -251,10 +251,16 @@ export class PipelineService {
       'national_id', 'bac_diploma', 'university_acceptance', 'income_proof',
     ];
 
-    // Check uploaded documents
+    // Check uploaded documents — T-208/T-209: an expired document does not
+    // satisfy the requirement even if its verification status is still
+    // 'verified'/'under_review' (a document verified 18 months ago can be
+    // stale without ever being re-reviewed). d.expires_at IS NULL means
+    // that document type never expires (see migrations/009).
     const uploadedDocs = await this.dataSource.query<any[]>(
-      `SELECT document_type_code, status FROM application_documents
-       WHERE application_id = $1 AND status IN ('verified','under_review')`,
+      `SELECT ad.document_type_code, ad.status FROM application_documents ad
+       LEFT JOIN documents d ON d.id = ad.document_id
+       WHERE ad.application_id = $1 AND ad.status IN ('verified','under_review')
+         AND (d.expires_at IS NULL OR d.expires_at > CURRENT_DATE)`,
       [ctx.applicationId],
     );
 

@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Logger,
+  Injectable, NotFoundException, BadRequestException, ForbiddenException, Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -77,8 +77,11 @@ export class ApplicationsService {
          referral_source_id, partner_id, campaign_id,
          tuition_amount, requested_support_amount, currency,
          academic_year, current_status, lead_date, is_renewal,
-         previous_application_id, assigned_to_user_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new_lead',CURRENT_DATE,$12,$13,$14,$15)
+         previous_application_id, assigned_to_user_id, created_by,
+         ai_score_overall, ai_recommendation, ai_report,
+         interview_language, interview_transcript)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new_lead',CURRENT_DATE,$12,$13,$14,$15,
+               $16,$17,$18,$19,$20)
        RETURNING *`,
       [
         tenantId, dto.studentId, dto.universityId, dto.programId,
@@ -86,6 +89,13 @@ export class ApplicationsService {
         dto.tuitionAmount, dto.requestedSupportAmount, dto.currency || 'TND',
         dto.academicYear, dto.isRenewal || false,
         dto.previousApplicationId, dto.assignedToUserId, createdBy,
+        // K-18/D-008 — dto.aiScoreOverall/aiRecommendation are already null
+        // whenever a demo-mode fallback was used (InterviewPage.tsx never
+        // sends a fabricated score as real) — these columns simply store
+        // whatever the frontend already decided was safe to submit.
+        dto.aiScoreOverall ?? null, dto.aiRecommendation ?? null,
+        dto.aiReport ? (typeof dto.aiReport === 'string' ? dto.aiReport : JSON.stringify(dto.aiReport)) : null,
+        dto.interviewLanguage ?? null, dto.interviewTranscript ?? null,
       ],
     );
 
@@ -103,6 +113,32 @@ export class ApplicationsService {
     });
 
     return application;
+  }
+
+  // T-207 — self-scoped Financing Request submission for the student
+  // portal. This is the route real students must use (the generic
+  // create() above is @RequirePermissions('application.create')-gated —
+  // a staff-only CRM lead-creation permission a self-registered student
+  // never holds, since no role is ever assigned to those accounts today).
+  // Resolves studentId server-side from the caller's own user_id, never a
+  // client-supplied value, and gates on active membership (D-004: a
+  // Visitor/non-member cannot reach financing).
+  async createForSelf(userId: string, tenantId: string, dto: any) {
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT id, membership_status FROM students WHERE user_id = $1 AND tenant_id = $2`,
+      [userId, tenantId],
+    );
+    if (!student) throw new NotFoundException('No student profile linked to this user');
+
+    if (!['bronze', 'silver', 'gold'].includes(student.membership_status)) {
+      throw new ForbiddenException(
+        student.membership_status === 'blacklisted'
+          ? 'This account cannot submit financing requests.'
+          : 'Submit a Membership Request and wait for Bronze approval before requesting financing.',
+      );
+    }
+
+    return this.create({ ...dto, studentId: student.id }, tenantId, userId);
   }
 
   async findAll(tenantId: string, pagination: PaginationDto, filters: any = {}) {
