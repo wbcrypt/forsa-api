@@ -1,5 +1,34 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — Phase 2 Milestone 7: Admin decision flow)
+- New migration `010_admin_decision_flow.sql`: `applications
+  .financing_tier`, `reviewer_decisions.financing_tier`/`is_override`,
+  new `fraud_records` table. Verified against a real Postgres instance.
+- Full outcome set (T-213): `submitHumanDecision` gained `waiting_list`
+  (reuses the existing `capital_queue` mechanism); `ApplicationStatus`
+  gained `MORE_INFO_REQUIRED`/`FRAUD_FLAGGED` — and the 6 dead V2-vocabulary
+  enum values (deferred since Milestone 2) were finally retired here.
+- Found and fixed a real bug: Stage 10 never had a status-map entry for
+  `DecisionResult.CAPITAL_QUEUE`, so a soft-blocked application's status
+  silently never updated.
+- Financing tier + membership ratchet: approval can set silver/gold,
+  ratchets `students.membership_status` up (never down, per D-004).
+- CEO override (T-214 remainder): new `financing.override` permission,
+  dedicated `overrideDecision()` method (never a branch inside the normal
+  decision path), always distinctly audited.
+- Risk rules (T-215): high-risk capital cap (10% default) and the
+  D-010-resolved family exposure cap (100,000 TND default, grouped by
+  primary guarantor) added to Stage 6. Returning-member-priority and
+  first-year-risk deliberately deferred, flagged not dropped.
+- Fraud/blacklist (T-217): dedicated `POST /pipeline/runs/:id/fraud`,
+  blacklists the student + flags the application in one transaction.
+  Matching key is a normalized-email hash for V1 (national ID isn't a
+  structured field anywhere yet) — flagged honestly in the migration.
+- Built the human-decision review UI in `forsa-dashboard`, which turned
+  out not to exist at all despite the API helper existing since Phase 1.
+  New Fraud Records admin page (was an empty placeholder).
+- 12 new tests, 97/97 backend tests passing.
+
 ## 2026-07-05 (continued — Phase 2 Milestone 6: Household Stability / AI Review)
 - New `src/ai/household-stability.util.ts`: the approved D-003 weights
   (35/25/20/10/10) + a pure `computeHouseholdStabilityScore()`. Stored in

@@ -665,3 +665,97 @@ clean on `forsa-os` and `forsa-student`.
   `applications.service.spec.ts` for the deterministic-scoring behavior).
   92/92 backend tests passing. `tsc --noEmit`/`npm run build` clean on
   `forsa-os`, `forsa-student`, `forsa-dashboard`.
+
+**Milestone 7 — Admin decision flow (M5 + M7) — DONE.** The largest
+milestone in the phase so far, covering T-213 (full outcome set), T-214
+remainder (CEO override), T-215 (risk rules — 2 of 4 sub-items), and
+T-217 (fraud/blacklist).
+
+- **New migration `010_admin_decision_flow.sql`**: `applications
+  .financing_tier`, `reviewer_decisions.financing_tier`/`is_override`,
+  and the new `fraud_records` table (append-only, `RULE`-enforced like
+  the platform's other audit tables). Verified by running the full
+  001→010 chain against a real local Postgres instance — the fifth
+  migration verified this way this phase.
+- **Full outcome set (T-213)**: `submitHumanDecision`'s decision union
+  gained `'waiting_list'` — Stage 9 maps it to the *existing*
+  `DecisionResult.CAPITAL_QUEUE`/`capital_queue` mechanism, per the
+  instruction not to build a parallel one. `ApplicationStatus` gained
+  `MORE_INFO_REQUIRED` and `FRAUD_FLAGGED`. **This was also the point
+  where the 6 dead V2-dashboard vocabulary enum values (deferred back in
+  Milestone 2) finally got retired** — not a speculative cleanup this
+  time, since this milestone genuinely needed the replacement values.
+  Confirmed via repo-wide grep they were unreferenced before removing.
+- **Found and fixed a real latent bug while wiring Waiting List**: Stage
+  9 could already produce `DecisionResult.CAPITAL_QUEUE` (the automatic
+  Stage-6 university-concentration soft-block already used it), but
+  Stage 10's status-map never actually included an entry for it — an
+  application soft-blocked into the capital queue never had its
+  `current_status` updated to match, silently stuck at whatever it was
+  before. Fixed as part of this task.
+- **Financing tier + membership ratchet**: `applications.financing_tier`
+  (silver/gold) is set by the reviewer alongside an `approved` decision
+  (via a new `reviewer_decisions.financing_tier` column), and Stage 10
+  applies it to the application *and* ratchets `students.membership_status`
+  up to match — but only upward (a rank-comparison check: bronze=0,
+  silver=1, gold=2), never down, per D-004's pure-ratchet decision. A
+  student already at gold approving a new silver-tier renewal keeps gold.
+- **CEO override (T-214 remainder)**: confirmed via schema check that no
+  CEO-override permission existed (only a generic `report.ceo` reporting
+  one). New `financing.override` permission, and a dedicated
+  `overrideDecision()` method — deliberately **not** a branch inside
+  `submitHumanDecision`, so the consensus-bypass logic can never
+  accidentally leak into a normal reviewer decision path. Always sets a
+  new `reviewer_decisions.is_override = true` column and writes a
+  distinctly-named `pipeline.ceo_override` audit log entry — an override
+  is never indistinguishable from a normal decision in the trail.
+- **Risk rules (T-215) — the two hard caps done, two explicitly
+  deferred**: added a high-risk capital-exposure cap (default 10%) and
+  the D-010-resolved family-exposure cap (default 100,000 TND, grouped by
+  `student_guarantors.guarantor_id` where `role='primary'`) to Stage 6,
+  alongside the existing university-concentration cap — three
+  independent exposure axes, any one can soft-block into `capital_queue`.
+  The high-risk cap needed a `LEFT JOIN LATERAL` to find each deployed
+  application's *most recent* risk profile (an application can have more
+  than one pipeline run over its lifetime — renewals, re-entries) —
+  **tested this exact query against a real Postgres instance** (not just
+  the schema) before trusting it, since it's meaningfully more complex
+  SQL than this session's other queries. "Returning members get
+  priority" and "first-year students treated as higher risk" were
+  **deliberately not built** — these are queue-ordering/risk-scoring-
+  input concerns rather than hard caps (the existing
+  `capital_queue.priority_score` column and Stage 4's risk weights are
+  the natural homes for them respectively), flagged explicitly as
+  deferred rather than silently dropped.
+- **Fraud & blacklist (T-217)**: new dedicated `POST /pipeline/runs/:id/
+  fraud` (`flagFraud`) — deliberately separate from the human-decision
+  outcome set, since fraud permanently blocks the *student*, not just
+  this one financing decision, and warrants its own more-restrictive
+  `fraud.flag` permission. One transaction: `fraud_records` insert +
+  `students.membership_status = 'blacklisted'` (+ history row) +
+  `FRAUD_FLAGGED` application status (made terminal in
+  `STATUS_TRANSITIONS` — no outgoing transition, since reopening a
+  confirmed-fraud application would undermine the permanent-blacklist
+  guarantee this status exists to enforce). **Matching-key reality
+  check**: the task calls for a national-ID-hash key, but confirmed
+  (again) national ID isn't a structured field anywhere in the current
+  flow — only ever an uploaded document image. Used a deterministic hash
+  of normalized email for V1 instead (the one identity signal actually
+  collected from Visitor onward), with the migration's own comment
+  flagging this honestly as a gap to close once national ID is captured
+  structurally earlier in intake — not silently presented as solved.
+- **Built the actual review UI, which turned out not to exist at all**:
+  grepped `forsa-dashboard` and found `pipelineApi.submitDecision` had
+  existed in `lib/api.ts` since Phase 1, but no page anywhere ever called
+  it — a pipeline run pausing at Stage 8 for human review had no UI path
+  to actually submit that decision. New `HumanDecisionPanel` component on
+  `ApplicationDetailPage.tsx` (shown when `current_status ===
+  'under_review'`): outcome select spanning the full new outcome set,
+  amount + financing-tier inputs, notes, and permission-gated Flag Fraud
+  / CEO Override action buttons and modals. New `FraudRecordsPage.tsx`
+  (was an empty Phase 1 placeholder) now lists real fraud records via a
+  new `GET /pipeline/fraud-records`.
+- 12 new backend tests (dual-approver/K-12 tests already existed;
+  added tests for the 2 new Stage 6 caps, `flagFraud`, and
+  `overrideDecision`). 97/97 backend tests passing. `tsc --noEmit`/
+  `npm run build` clean on `forsa-os` and `forsa-dashboard`.

@@ -74,16 +74,15 @@ None of this had ever been exercised end-to-end before. Fixed by adding a new se
 **Repos**: `forsa-os`, `forsa-student`, `forsa-dashboard` (the last one wasn't in the original plan — added once the dimension rename's downstream impact was traced).
 **Complexity actual**: **Medium-High**, matching the estimate.
 
-### M5 — Human decision outcomes, CEO override, risk rules (T-213, T-214 remainder, T-215)
-**Delivers**: the full outcome set and the remaining control-tightening work around it.
-- Full outcome set: Bronze, Silver, Gold, Waiting List, More Information Required, Financing Not Approved At This Time, Fraud — **Waiting List must never mean "rejected because capital is exhausted"**; reconcile with (not duplicate) the existing `capital_queue` soft-block mechanism (Pipeline Stage 6) — same underlying concept, correct user-facing name
-- CEO-sole-override role: confirmed via schema check that no such role/permission exists today (only a generic `report.ceo` reporting permission) — this is genuinely new: a scoped permission (e.g. `financing.override`) restricted to a CEO-designated role, layered on top of the already-fixed (K-12) dual/executive-approver gate, not replacing it
-- Risk rules: max 10% of available capital in high-risk exposure; max exposure per family (**the spec never defines what "family" means here** — shared guarantor? shared national-ID? shared household address? this needs a decision before the rule can be written, not an assumption); returning members get priority; first-year students treated as higher risk by default. Reconcile with the existing 40%-portfolio university-concentration cap (Stage 6) — these are different exposure axes and both must hold simultaneously
+### M5 — Human decision outcomes, CEO override, risk rules (T-213, T-214 remainder, T-215) — ✅ DONE 2026-07-05 (T-215's two hard caps; priority/first-year-risk deferred)
+**Delivered**: full outcome set (`submitHumanDecision` gained `'waiting_list'`, mapped to the existing `capital_queue` mechanism, not a parallel one — plus new `ApplicationStatus.MORE_INFO_REQUIRED`/`FRAUD_FLAGGED`, and the 6 dead V2-vocabulary enum values were finally retired since this milestone is the first real need for the replacement values). Bronze/Silver/Gold is `applications.financing_tier` (new column), set on approval and ratcheted onto `students.membership_status` in Stage 10 (upward only, per D-004). **Found and fixed a real latent bug while wiring this**: Stage 9 could already produce `DecisionResult.CAPITAL_QUEUE` but Stage 10's status-map never included it — an application soft-blocked this way never actually had its status updated.
+**CEO override**: new `financing.override` permission (confirmed via schema check no such permission existed — only a generic `report.ceo` reporting one), a dedicated `overrideDecision()` method (not a branch inside `submitHumanDecision`, so the bypass can never leak into a normal decision), always flags `reviewer_decisions.is_override = true` and writes a distinct `pipeline.ceo_override` audit entry.
+**Risk rules — both hard caps done**: high-risk capital cap (10% default, via each deployed application's most recent risk profile, `LEFT JOIN LATERAL`, verified against real Postgres) and the D-010-resolved family exposure cap (grouped by `student_guarantors.guarantor_id` where `role='primary'`, 100,000 TND default) — both live in Stage 6 alongside the existing university-concentration cap, three independent axes. **"Returning member priority" and "first-year higher risk" deliberately deferred** — queue-ordering/risk-scoring-input concerns, not hard caps; noted as open rather than silently dropped.
+**Also built the review UI, which turned out not to exist at all**: `pipelineApi.submitDecision` existed in `forsa-dashboard` since Phase 1 but no page ever called it. New `HumanDecisionPanel` on `ApplicationDetailPage.tsx`.
+**Repos**: `forsa-os`, `forsa-dashboard`.
+**Complexity actual**: **High**, matching the estimate — this was the single largest milestone in the phase so far.
 
-**Repos**: `forsa-os` (`src/pipeline/`, `src/auth/` permissions), `forsa-dashboard` (review UI, override action).
-**Depends on**: M0 (status model), M4 (Household Stability output feeds the human decision).
-**Complexity**: **High** — this is the single most business-logic-dense milestone, touching pipeline Stages 4/6/7/8/9 again on top of the K-12 fix already landed, plus a genuinely new permissions concept (CEO override).
-**Open sub-decision to resolve before starting**: definition of "family" for the per-family exposure cap.
+### D-010 (resolved during this milestone's original planning) confirmed "family" = student + primary guarantor household — implementation matches exactly.
 
 ### M6 — Renewal (T-216)
 **Delivers**: every financing period requires a brand-new financing request; returning members get priority, updated documents, and FORSA Score as a real input to the renewal decision (not just displayed).
@@ -91,15 +90,11 @@ None of this had ever been exercised end-to-end before. Fixed by adding a new se
 **Depends on**: M4/M5 (needs the Household-Stability-vs-FORSA-Score relationship resolved — D-008 — since renewal is exactly where both systems' outputs meet), M0 (`is_renewal`/`previous_application_id` chaining already exists in schema, reused as-is).
 **Complexity**: **Low-Medium** — mostly wiring an existing chaining mechanism to a real decision input; the hard part (D-008) is resolved upstream in M4, not duplicated here.
 
-### M7 — Fraud & blacklist (T-217)
-**Delivers**: permanent blacklist + internal fraud record on confirmed fraud, blocking all future membership/financing requests for that identity.
-- New table (part of `007_membership_lifecycle.sql` or a dedicated `008_fraud_records.sql`): `fraud_records` (hashed matching key, reason, evidence references, blacklisted_at)
-- **Matching key decision needed**: `students.national_id_reference` today is stored *encrypted* (per the schema comment), not hashed — encryption alone does not support exact-match blacklist lookups unless it's deterministic. This milestone needs a separate deterministic hash column (e.g., HMAC-SHA256 of the normalized national ID with a server-side secret) purpose-built for blacklist matching, distinct from the existing encrypted-storage column. This is new design work, not a reuse of an existing field.
-
-**Repos**: `forsa-os`, `forsa-dashboard` (Fraud Records admin section).
-**Depends on**: M0 (blacklist status value on `membership_status`).
-**Complexity**: **Medium** — the blacklist-enforcement logic itself is simple; the hashing/matching-key design is the part that needs care (get it wrong and either miss real matches or, worse, create false-positive collisions blocking an innocent applicant).
-**Can run in parallel with**: M4, M5, M6 — genuinely independent of the AI/scoring/renewal work, only needs M0.
+### M7 — Fraud & blacklist (T-217) — ✅ DONE 2026-07-05
+**Delivered**: new `fraud_records` table (migration 010, append-only via `RULE`, matching the platform's other audit tables), a dedicated `POST /pipeline/runs/:id/fraud` (not folded into the human-decision outcome set — fraud is an identity-trust action, not a financing-amount decision, and needs its own more-restrictive `fraud.flag` permission). One transaction: fraud record + `students.membership_status = 'blacklisted'` + `FRAUD_FLAGGED` application status (terminal, no outgoing transition).
+**Matching-key decision — resolved honestly, not glossed over**: the plan anticipated a national-ID-hash key, but confirmed national ID isn't captured as a structured field anywhere in the current flow (only ever an uploaded document image) — used a deterministic hash of normalized email for V1 instead (the one identity signal actually collected from Visitor onward), with the migration's own comment flagging this as a real gap to close once national ID is captured structurally earlier in intake.
+**Repos**: `forsa-os`, `forsa-dashboard` (new `FraudRecordsPage.tsx`, was an empty placeholder; new `GET /pipeline/fraud-records`).
+**Complexity actual**: **Medium**, matching the estimate.
 
 ### M8 — Payment system remainder (T-218 remainder = K-13, T-219) — ✅ DONE 2026-07-05
 **Delivered**: Konnect confirmations now fire a FORSA Score event, matching the manual-verification path. Student dashboard now shows complete end-to-end payment history via a new self-scoped `GET /students/me/payments`, rendered independently of whether a *current* schedule exists (important for renewed students between financing periods). **Bonus find**: fixed a live, silently-swallowed bug where `recordedBy: 'system'` was inserted into a `UUID` column (`score_events.recorded_by`), throwing on every automated score event including the pre-existing daily overdue-installment cron job — `PAYMENT_OVERDUE` events were never actually being recorded before this fix. 60/60 backend tests passing (2 new: `konnect.service.spec.ts`, new `students.service.spec.ts`).

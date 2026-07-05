@@ -266,7 +266,7 @@ concept (per-application/per-student financing limits).
 `applications.student_id` alone. Matches this decision's household
 definition exactly — no new "family" table/concept needed, this reuses the
 existing guarantor linkage.
-**Gates**: T-215. No longer blocks starting M5/M7.
+**Gates**: T-215. **Implemented 2026-07-05** — `stage6PortfolioCapital` groups by `student_guarantors.guarantor_id` (`role='primary'`, `status='active'`) exactly as decided, no new schema needed.
 
 ---
 

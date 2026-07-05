@@ -646,20 +646,40 @@ resolve them before writing code that depends on the answer).
       blocker.
 
 ### 2.6 Human decision & outcomes
-- [ ] T-213 Implement the full outcome set: Bronze, Silver, Gold, Waiting
+- [x] T-213 Implement the full outcome set: Bronze, Silver, Gold, Waiting
       List, More Information Required, Financing Not Approved At This Time,
       Fraud. Waiting List must be used specifically when funding is
       unavailable — **never reject solely because capital is exhausted**;
       this replaces/extends the existing `capital_queue` soft-block concept
       (Pipeline Stage 6) — reconcile the two rather than building a parallel
       mechanism.
-- [~] T-214 Enforce that only a human can approve financing, and that CEO is
+      **2026-07-05 — DONE.** `submitHumanDecision`'s decision union extended
+      with `'waiting_list'` (Stage 9 maps it to `DecisionResult
+      .CAPITAL_QUEUE`, reusing the existing `capital_queue` table/mechanism
+      per the instruction — not a parallel one). `ApplicationStatus` gained
+      `MORE_INFO_REQUIRED` and `FRAUD_FLAGGED` (and the enum's 6 dead
+      V2-vocabulary values were finally retired here — this is the first
+      point Phase 2 actually needed the new values, not a speculative
+      cleanup; confirmed via repo-wide grep they were unreferenced). Bronze/
+      Silver/Gold is `applications.financing_tier` (new column, migration
+      010), set by the reviewer alongside an `approved` decision and applied
+      in Stage 10 — which also ratchets `students.membership_status` up to
+      match (never down, per D-004). **Found and fixed a real latent bug
+      while wiring Waiting List**: Stage 9 could already produce
+      `DecisionResult.CAPITAL_QUEUE` (the automatic Stage-6 soft-block
+      already used it), but Stage 10's status-map never actually included
+      it — an application soft-blocked this way had its `current_status`
+      silently left unchanged forever. Fixed as part of this task, not
+      separately. Financing Not Approved At This Time reuses the existing
+      `rejected` outcome (already the correct semantic, no new status value
+      needed). Fraud is a dedicated `POST /pipeline/runs/:id/fraud` action
+      (see T-217), deliberately not folded into this decision union.
+- [x] T-214 Enforce that only a human can approve financing, and that CEO is
       the sole override role — this is also where the existing but unenforced
       dual/executive multi-approver requirement (Stage 7/8 gap from the
       original audit) should finally be gated for real.
       **2026-07-05 — dual/executive multi-approver enforcement DONE (K-12,
-      launch blocker #1); CEO-sole-override role gating NOT done (that's a
-      Phase 2 permissions-model question, out of scope for this pass).**
+      launch blocker #1, prior session); CEO-override DONE this session.**
       `submitHumanDecision` (`src/pipeline/pipeline.service.ts`) previously
       inserted a `reviewer_decisions` row and unconditionally continued the
       pipeline to Stage 9 — a single reviewer could finalize any decision
@@ -675,18 +695,62 @@ resolve them before writing code that depends on the answer).
       single-handedly approving a large amount, not about slowing down a
       stop/pause action). Also added a same-reviewer-can't-vote-twice guard
       (`ConflictException`), since without it the same person could satisfy
-      a "2 distinct approvers" requirement by submitting twice. 10 new tests
-      in `pipeline.service.spec.ts` lock this down, including the exact
-      partial-approval-doesn't-proceed case.
+      a "2 distinct approvers" requirement by submitting twice.
+      **CEO-override**: new `POST /pipeline/runs/:id/override`
+      (`PipelineService.overrideDecision`) — a dedicated method, not a
+      branch inside `submitHumanDecision`, so the consensus bypass can
+      never accidentally apply to a normal reviewer decision. Gated behind
+      a new, distinct `financing.override` permission (not
+      `pipeline.review`) — "CEO is the sole override role" is enforced by
+      which role a tenant assigns this permission to, not a hardcoded
+      user/role check in code (matching how every other role/permission
+      assignment in this platform already works). Always writes
+      `reviewer_decisions.is_override = true` (new column) and a distinct
+      `pipeline.ceo_override` audit log entry — an override is never
+      indistinguishable from a normal decision in the audit trail.
+      **Also built the actual review UI, which turned out not to exist at
+      all**: `pipelineApi.submitDecision` existed in
+      `forsa-dashboard/lib/api.ts` since Phase 1 but no page anywhere ever
+      called it — a pipeline run pausing at Stage 8 for human review had
+      no UI path to submit that decision. New `HumanDecisionPanel` on
+      `ApplicationDetailPage.tsx` (shown when `current_status ===
+      'under_review'`): outcome select (including the new Waiting List/
+      More Info outcomes), amount + financing-tier inputs, notes, and
+      permission-gated Flag Fraud / CEO Override buttons.
 
 ### 2.7 Risk rules
-- [ ] T-215 Implement: max 10% of available capital in high-risk exposure;
+- [~] T-215 Implement: max 10% of available capital in high-risk exposure;
       define and enforce max exposure per family; returning members get
       priority; first-year students are treated as generally higher risk than
       continuing students. Reconcile with the existing 40%-portfolio
       university-concentration cap (Stage 6) — these are different exposure
       axes (per-family/risk-tier vs. per-university) and both need to hold
       simultaneously.
+      **2026-07-05 — the two hard caps DONE; "returning member priority" and
+      "first-year higher risk" deliberately deferred (not forgotten).** Both
+      new caps live in Stage 6 (`stage6PortfolioCapital`) alongside the
+      existing university-concentration cap — three exposure axes, all
+      three checked independently, any one can soft-block into
+      `capital_queue`. **High-risk cap**: projects this application's
+      requested amount onto total deployed high-risk exposure (via each
+      deployed application's *most recent* `risk_profiles` row — an
+      application can have more than one pipeline run over its lifetime —
+      matched with a `LEFT JOIN LATERAL`, verified executing correctly
+      against a real Postgres instance, not just reviewed by eye) —
+      policy-configurable, defaults to 10%. **Family exposure cap
+      (D-010)**: sums exposure across every student sharing the same
+      `student_guarantors.guarantor_id` (`role='primary'`, `status=
+      'active'`) — matches D-010's definition exactly (family = student +
+      primary guarantor household; a guarantor backing multiple students
+      has their exposure summed, not capped per-student). Policy-
+      configurable, defaults to 100,000 TND per tenant.
+      **Deferred, not built**: "returning members get priority" and
+      "first-year students are generally higher risk" are queue-ordering/
+      risk-scoring-input concerns rather than hard caps — the existing
+      `capital_queue.priority_score` column and Stage 4's risk-assessment
+      weights are the natural places for these respectively, but neither
+      was touched this pass. Flagging explicitly rather than silently
+      dropping.
 
 ### 2.8 Renewal
 - [ ] T-216 Every financing period requires a brand-new financing request
@@ -696,12 +760,38 @@ resolve them before writing code that depends on the answer).
       renewal decision (not just displayed).
 
 ### 2.9 Fraud
-- [ ] T-217 Build a permanent blacklist + internal fraud record on confirmed
+- [x] T-217 Build a permanent blacklist + internal fraud record on confirmed
       fraud (forged documents, false identity, false guarantor, material
       misrepresentation) that permanently prohibits financing for that
       individual/family. This must survive and block any future membership
       request or financing request from the same identity — decide the
       matching key (national ID hash, not raw PII) up front.
+      **2026-07-05 — DONE, with an honest caveat on the matching key.** New
+      `POST /pipeline/runs/:id/fraud` (`PipelineService.flagFraud`) —
+      deliberately a dedicated action, not folded into
+      `submitHumanDecision`'s outcome set, since fraud is an identity-trust
+      action (permanently blocks the student) rather than a financing-
+      amount decision, and warrants its own more-restrictive permission
+      (`fraud.flag`). One transaction: inserts an append-only
+      `fraud_records` row (new table, migration 010, `RULE`-enforced no
+      update/delete like the platform's other audit tables), sets
+      `students.membership_status = 'blacklisted'` (+ history row), and
+      transitions the application to the new `FRAUD_FLAGGED` status
+      (terminal — no outgoing transition, reopening would undermine the
+      permanent-blacklist guarantee). **Matching key caveat, decided
+      explicitly rather than silently assumed solved**: the task asks for
+      a national-ID-hash key, but national ID is not captured as a
+      structured field anywhere in the current flow (Membership Request
+      intake is deliberately minimal; it only ever exists later as an
+      uploaded document image) — `fraud_records.identity_hash` is
+      therefore a deterministic hash of normalized email for V1, the one
+      identity signal actually collected from Visitor onward. Upgrading to
+      a true national-ID-based key is a real follow-up once that's
+      captured as a structured field earlier in the intake flow — this is
+      flagged in the migration's own comment, not glossed over. New
+      `GET /pipeline/fraud-records` + `forsa-dashboard`'s
+      `FraudRecordsPage.tsx` (was an empty Phase 1 placeholder) now lists
+      them.
 
 ### 2.10 Payment system
 - [x] T-218 Keep the three payment methods (bank transfer, cash deposit,

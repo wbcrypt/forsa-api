@@ -35,20 +35,73 @@ export class PipelineController {
     return this.service.getPipelineRun(id, t);
   }
 
+  // T-217 — Admin Dashboard's Fraud Records section. Registered before
+  // any :id-shaped routes for clarity, though 'fraud-records' as a
+  // literal path segment has no collision risk with 'runs/:id' anyway.
+  @Get('fraud-records')
+  @RequirePermissions('fraud.flag')
+  @ApiOperation({ summary: 'List fraud records (Admin Dashboard Fraud Records)' })
+  findAllFraudRecords(@CurrentTenant() t: string) {
+    return this.service.findAllFraudRecords(t);
+  }
+
   @Post('runs/:id/human-decision')
   @RequirePermissions('pipeline.review')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Submit human review decision — continues pipeline from stage 9' })
+  @ApiOperation({ summary: 'Submit human review decision — continues pipeline from stage 9 (T-213: full outcome set)' })
   submitHumanDecision(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() body: {
-      decision: 'approved' | 'rejected' | 'on_hold' | 'needs_more_documents';
+      decision: 'approved' | 'rejected' | 'on_hold' | 'needs_more_documents' | 'waiting_list';
       approvedAmount?: number;
       notes?: string;
+      financingTier?: 'silver' | 'gold';
     },
     @CurrentTenant() t: string,
     @CurrentUser('id') u: string,
   ) {
-    return this.service.submitHumanDecision(id, t, u, body.decision, body.approvedAmount, body.notes);
+    return this.service.submitHumanDecision(id, t, u, body.decision, body.approvedAmount, body.notes, body.financingTier);
+  }
+
+  // T-217 — a dedicated action, deliberately not folded into
+  // submitHumanDecision's decision union: fraud is an identity-trust
+  // action (permanently blocks this student, not just this one financing
+  // decision), not a financing-amount decision, and warrants its own,
+  // more restrictive permission.
+  @Post('runs/:id/fraud')
+  @RequirePermissions('fraud.flag')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Flag confirmed fraud — permanently blacklists the student (T-217)' })
+  flagFraud(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { reason: string; evidenceNotes?: string },
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.flagFraud(id, t, u, body.reason, body.evidenceNotes);
+  }
+
+  // T-214 — CEO-sole-override: bypasses the dual/executive-approver
+  // consensus requirement (K-12) entirely, but is itself gated behind a
+  // separate, more restrictive permission than pipeline.review, and
+  // always writes an explicit, distinctly-labeled audit trail — this is
+  // an override of the control, not a way to quietly avoid ever
+  // triggering it.
+  @Post('runs/:id/override')
+  @RequirePermissions('financing.override')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'CEO override — finalizes a decision regardless of pending multi-approver consensus (T-214)' })
+  overrideDecision(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: {
+      decision: 'approved' | 'rejected';
+      approvedAmount?: number;
+      notes: string;
+      financingTier?: 'silver' | 'gold';
+    },
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.overrideDecision(id, t, u, body.decision, body.notes, body.approvedAmount, body.financingTier);
   }
 }

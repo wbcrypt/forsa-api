@@ -4,6 +4,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
+import { hashToken } from '../common/utils/encryption.util';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
 import { ApplicationsService } from '../applications/applications.service';
@@ -731,6 +732,131 @@ export class PipelineService {
       }
     }
 
+    // T-215 — max 10% of available capital in high-risk exposure. A
+    // different axis from the university-concentration cap above (per
+    // student risk tier, not per university) — both must hold
+    // simultaneously, neither replaces the other. Uses each deployed
+    // application's most recent risk_profile (DISTINCT ON, ordered by
+    // computed_at DESC) since an application can have more than one
+    // pipeline run over its lifetime (renewals, re-entries).
+    const highRiskCapPolicy = await this.policyService.resolve(
+      'portfolio.risk.high_risk_max_pct', { tenantId: ctx.tenantId },
+    );
+    if (highRiskCapPolicy) policyVersionIds.push(highRiskCapPolicy.policyVersionId);
+    const maxHighRiskPct = (highRiskCapPolicy?.value as number) || 10;
+
+    const [currentRisk] = await this.dataSource.query<any[]>(
+      `SELECT risk_level FROM risk_profiles WHERE pipeline_run_id = $1`,
+      [ctx.pipelineRunId],
+    );
+
+    if (currentRisk?.risk_level === 'high') {
+      const [highRiskStats] = await this.dataSource.query<any[]>(
+        `SELECT
+           COALESCE(SUM(a.tuition_amount) FILTER (WHERE latest_risk.risk_level = 'high'), 0) AS high_risk_exposure,
+           COALESCE(SUM(a.tuition_amount), 0) AS total_deployed
+         FROM applications a
+         LEFT JOIN LATERAL (
+           SELECT rp.risk_level FROM risk_profiles rp
+           WHERE rp.application_id = a.id
+           ORDER BY rp.created_at DESC LIMIT 1
+         ) latest_risk ON true
+         WHERE a.tenant_id = $1
+           AND a.current_status IN ('contract_signed','university_paid','active_student')`,
+        [ctx.tenantId],
+      );
+
+      const requestedAmount = ctx.application.requested_support_amount || ctx.application.tuition_amount || 0;
+      const projectedHighRisk = parseFloat(highRiskStats?.high_risk_exposure || 0) + requestedAmount;
+      const projectedTotal = parseFloat(highRiskStats?.total_deployed || 0) + requestedAmount;
+      const projectedHighRiskPct = projectedTotal > 0 ? (projectedHighRisk / projectedTotal) * 100 : 0;
+
+      if (projectedHighRiskPct > maxHighRiskPct) {
+        const queueEnabled = ((capitalQueuePolicy?.value as boolean) ?? true);
+        if (queueEnabled) {
+          await this.dataSource.query(
+            `INSERT INTO capital_queue
+              (pipeline_run_id, application_id, reason, priority_score, queued_at)
+             VALUES ($1,$2,$3,$4,NOW())
+             ON CONFLICT DO NOTHING`,
+            [
+              ctx.pipelineRunId, ctx.applicationId,
+              `High-risk exposure would reach ${projectedHighRiskPct.toFixed(1)}% of deployed capital, exceeding the ${maxHighRiskPct}% limit`,
+              400,
+            ],
+          );
+          return {
+            status: 'blocked',
+            outputs: {
+              capitalQueue: true,
+              projectedHighRiskPct, maxHighRiskPct,
+              blockReason: 'Placed in capital queue: high-risk exposure limit',
+            },
+            policyVersionIds,
+          };
+        }
+      }
+    }
+
+    // T-215/D-010 — max exposure per family. D-010: family = student +
+    // primary guarantor household, grouped by student_guarantors
+    // .guarantor_id (role='primary') — one guarantor backing multiple
+    // students has their exposure summed across all of them, not capped
+    // per-student. A third exposure axis alongside university
+    // concentration and high-risk %, above — all three hold
+    // simultaneously.
+    const [primaryGuarantor] = await this.dataSource.query<any[]>(
+      `SELECT guarantor_id FROM student_guarantors
+       WHERE student_id = $1 AND role = 'primary' AND status = 'active' LIMIT 1`,
+      [ctx.studentId],
+    );
+
+    if (primaryGuarantor) {
+      const familyCapPolicy = await this.policyService.resolve(
+        'portfolio.risk.max_family_exposure', { tenantId: ctx.tenantId },
+      );
+      if (familyCapPolicy) policyVersionIds.push(familyCapPolicy.policyVersionId);
+      const maxFamilyExposure = (familyCapPolicy?.value as number) || 100000; // TND, per-tenant default
+
+      const [familyStats] = await this.dataSource.query<any[]>(
+        `SELECT COALESCE(SUM(a.tuition_amount), 0) AS family_exposure
+         FROM applications a
+         JOIN student_guarantors sg ON sg.student_id = a.student_id AND sg.role = 'primary' AND sg.status = 'active'
+         WHERE sg.guarantor_id = $1 AND a.tenant_id = $2
+           AND a.current_status IN ('contract_signed','university_paid','active_student')`,
+        [primaryGuarantor.guarantor_id, ctx.tenantId],
+      );
+
+      const requestedAmount = ctx.application.requested_support_amount || ctx.application.tuition_amount || 0;
+      const projectedFamilyExposure = parseFloat(familyStats?.family_exposure || 0) + requestedAmount;
+
+      if (projectedFamilyExposure > maxFamilyExposure) {
+        const queueEnabled = ((capitalQueuePolicy?.value as boolean) ?? true);
+        if (queueEnabled) {
+          await this.dataSource.query(
+            `INSERT INTO capital_queue
+              (pipeline_run_id, application_id, reason, priority_score, queued_at)
+             VALUES ($1,$2,$3,$4,NOW())
+             ON CONFLICT DO NOTHING`,
+            [
+              ctx.pipelineRunId, ctx.applicationId,
+              `Family exposure would reach ${projectedFamilyExposure.toFixed(0)} TND, exceeding the ${maxFamilyExposure} TND limit for this primary guarantor household`,
+              450,
+            ],
+          );
+          return {
+            status: 'blocked',
+            outputs: {
+              capitalQueue: true,
+              projectedFamilyExposure, maxFamilyExposure,
+              blockReason: 'Placed in capital queue: family exposure limit',
+            },
+            policyVersionIds,
+          };
+        }
+      }
+    }
+
     // Compute portfolio impact score
     const portfolioImpactScore = Math.max(0, 100 - concentrationPct);
 
@@ -893,6 +1019,21 @@ export class PipelineService {
       decisionResult = DecisionResult.ON_HOLD;
       approvedLevel = '';
       approvedAmount = 0;
+    } else if (humanDecision?.decision === 'waiting_list') {
+      // T-213 — Waiting List must never mean "rejected because capital is
+      // exhausted" (spec). Reuses the same capital_queue mechanism Stage 6
+      // already uses for the automatic university-concentration soft-block
+      // — one mechanism, two entry points (automatic vs. human-chosen),
+      // not a second parallel one.
+      decisionResult = DecisionResult.CAPITAL_QUEUE;
+      approvedLevel = '';
+      approvedAmount = 0;
+      await this.dataSource.query(
+        `INSERT INTO capital_queue (pipeline_run_id, application_id, reason, priority_score, queued_at)
+         VALUES ($1,$2,$3,$4,NOW())
+         ON CONFLICT DO NOTHING`,
+        [ctx.pipelineRunId, ctx.applicationId, 'Placed on Waiting List by reviewer decision', 500],
+      );
     } else {
       // Auto-decide based on risk and availability
       if (risk?.risk_level === 'low' && availableLevels.includes('level1')) {
@@ -965,13 +1106,18 @@ export class PipelineService {
       };
     }
 
-    // Map decision to application status
+    // Map decision to application status. CAPITAL_QUEUE was missing here
+    // before T-213 — Stage 9 could produce that DecisionResult (the
+    // automatic Stage-6 capital-queue path already existed) but Stage 10
+    // never actually transitioned the application's status to match,
+    // silently leaving it at whatever it was previously.
     const statusMap: Record<string, ApplicationStatus> = {
       [DecisionResult.APPROVED_LEVEL1]: ApplicationStatus.APPROVED_LEVEL1,
       [DecisionResult.APPROVED_LEVEL2]: ApplicationStatus.APPROVED_LEVEL2,
       [DecisionResult.APPROVED_LEVEL3]: ApplicationStatus.APPROVED_LEVEL3,
       [DecisionResult.REJECTED]: ApplicationStatus.REJECTED,
       [DecisionResult.ON_HOLD]: ApplicationStatus.ON_HOLD,
+      [DecisionResult.CAPITAL_QUEUE]: ApplicationStatus.CAPITAL_QUEUE,
     };
 
     const targetStatus = statusMap[decisionResult];
@@ -988,6 +1134,50 @@ export class PipelineService {
         `UPDATE applications SET current_financing_level = $3 WHERE id = $1 AND tenant_id = $2`,
         [ctx.applicationId, ctx.tenantId, approvedLevel],
       );
+    }
+
+    // T-213/D-004 — on a real approval, apply the reviewer's financing_tier
+    // choice (silver/gold) to the application, and ratchet the student's
+    // membership_status up to match — but only upward, never down (D-004:
+    // membership_status is a pure ratchet with fraud/blacklist as the only
+    // exception). A student already at gold approving a new silver-tier
+    // renewal keeps gold.
+    const isApproved = [DecisionResult.APPROVED_LEVEL1, DecisionResult.APPROVED_LEVEL2, DecisionResult.APPROVED_LEVEL3]
+      .includes(decisionResult);
+    if (isApproved) {
+      const [winningDecision] = await this.dataSource.query<any[]>(
+        `SELECT financing_tier FROM reviewer_decisions
+         WHERE pipeline_run_id = $1 AND decision = 'approved' AND financing_tier IS NOT NULL
+         ORDER BY decided_at DESC LIMIT 1`,
+        [ctx.pipelineRunId],
+      );
+      if (winningDecision?.financing_tier) {
+        const tier = winningDecision.financing_tier as 'silver' | 'gold';
+        await this.dataSource.query(
+          `UPDATE applications SET financing_tier = $3 WHERE id = $1 AND tenant_id = $2`,
+          [ctx.applicationId, ctx.tenantId, tier],
+        );
+
+        const tierRank: Record<string, number> = { bronze: 0, silver: 1, gold: 2, blacklisted: -1 };
+        const [student] = await this.dataSource.query<any[]>(
+          `SELECT membership_status FROM students WHERE id = $1 AND tenant_id = $2`,
+          [ctx.studentId, ctx.tenantId],
+        );
+        const currentRank = tierRank[student?.membership_status] ?? -1;
+        if (tierRank[tier] > currentRank) {
+          await this.dataSource.query(
+            `UPDATE students SET membership_status = $2 WHERE id = $1`,
+            [ctx.studentId, tier],
+          );
+          await this.dataSource.query(
+            `INSERT INTO membership_status_history
+              (student_id, tenant_id, previous_status, new_status, reason)
+             VALUES ($1,$2,$3,$4,$5)`,
+            [ctx.studentId, ctx.tenantId, student?.membership_status || null, tier,
+             `Financing approved at ${tier} tier (pipeline run ${ctx.pipelineRunId})`],
+          );
+        }
+      }
     }
 
     return {
@@ -1010,9 +1200,10 @@ export class PipelineService {
     pipelineRunId: string,
     tenantId: string,
     reviewerId: string,
-    decision: 'approved' | 'rejected' | 'on_hold' | 'needs_more_documents',
+    decision: 'approved' | 'rejected' | 'on_hold' | 'needs_more_documents' | 'waiting_list',
     approvedAmount?: number,
     notes?: string,
+    financingTier?: 'silver' | 'gold',
   ) {
     const [run] = await this.dataSource.query<any[]>(
       `SELECT * FROM pipeline_runs WHERE id = $1 AND tenant_id = $2 AND status = 'active'`,
@@ -1046,16 +1237,20 @@ export class PipelineService {
       [pipelineRunId],
     );
 
+    // T-213 — financingTier (silver/gold) is only meaningful alongside an
+    // 'approved' decision; ignored otherwise rather than silently stored
+    // against a rejection/hold, which would be a meaningless combination.
     await this.dataSource.query(
       `INSERT INTO reviewer_decisions
         (pipeline_run_id, reviewer_id, tenant_id, decision, approved_amount,
-         reviewer_snapshot, notes, decided_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,
+         reviewer_snapshot, notes, financing_tier, decided_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())`,
       [
         pipelineRunId, reviewerId, tenantId, decision,
         approvedAmount || null,
         JSON.stringify({ application, riskProfile, decidedAt: new Date() }),
         notes,
+        decision === 'approved' ? (financingTier || null) : null,
       ],
     );
 
@@ -1114,6 +1309,153 @@ export class PipelineService {
 
     // Continue pipeline from stage 9 now that the required decision(s) are in
     return this.startRun(run.application_id, tenantId, reviewerId, 9);
+  }
+
+  // ================================================================
+  // Flag Fraud (T-217) — permanent blacklist, not a financing decision
+  // ================================================================
+  async findAllFraudRecords(tenantId: string) {
+    return this.dataSource.query(
+      `SELECT fr.*, s.first_name, s.last_name, s.email, s.forsa_id
+       FROM fraud_records fr
+       LEFT JOIN students s ON s.id = fr.student_id
+       WHERE fr.tenant_id = $1
+       ORDER BY fr.flagged_at DESC`,
+      [tenantId],
+    );
+  }
+
+  async flagFraud(pipelineRunId: string, tenantId: string, flaggedBy: string, reason: string, evidenceNotes?: string) {
+    const [run] = await this.dataSource.query<any[]>(
+      `SELECT pr.*, a.student_id FROM pipeline_runs pr
+       JOIN applications a ON a.id = pr.application_id
+       WHERE pr.id = $1 AND pr.tenant_id = $2`,
+      [pipelineRunId, tenantId],
+    );
+    if (!run) throw new NotFoundException('Pipeline run not found');
+
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT id, email, membership_status FROM students WHERE id = $1 AND tenant_id = $2`,
+      [run.student_id, tenantId],
+    );
+    if (!student) throw new NotFoundException('Student not found');
+
+    // V1 matching key — see migrations/010_admin_decision_flow.sql's
+    // comment: national ID isn't a structured field anywhere in the
+    // current flow, so this hashes normalized email instead. A real
+    // national-ID-based key is a follow-up once that's captured
+    // structurally earlier in the intake flow.
+    const identityHash = hashToken((student.email || '').trim().toLowerCase());
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query(
+        `INSERT INTO fraud_records (tenant_id, student_id, identity_hash, reason, evidence_notes, flagged_by)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [tenantId, student.id, identityHash, reason, evidenceNotes || null, flaggedBy],
+      );
+
+      await manager.query(
+        `UPDATE students SET membership_status = 'blacklisted' WHERE id = $1`,
+        [student.id],
+      );
+
+      await manager.query(
+        `INSERT INTO membership_status_history
+          (student_id, tenant_id, previous_status, new_status, reason, changed_by)
+         VALUES ($1,$2,$3,'blacklisted',$4,$5)`,
+        [student.id, tenantId, student.membership_status, `Fraud confirmed: ${reason}`, flaggedBy],
+      );
+
+      await manager.query(
+        `UPDATE applications SET current_status = $2 WHERE id = $1`,
+        [run.application_id, ApplicationStatus.FRAUD_FLAGGED],
+      );
+
+      await manager.query(
+        `INSERT INTO application_status_history (application_id, to_status, changed_by, notes)
+         VALUES ($1, $2, $3, $4)`,
+        [run.application_id, ApplicationStatus.FRAUD_FLAGGED, flaggedBy, `Fraud confirmed: ${reason}`],
+      );
+
+      await manager.query(
+        `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, new_value, created_at)
+         VALUES ($1,$2,'fraud.flagged','pipeline','students',$3,$4,NOW())`,
+        [tenantId, flaggedBy, student.id, JSON.stringify({ reason, pipelineRunId })],
+      ).catch(() => {});
+    });
+
+    return { studentId: student.id, membershipStatus: 'blacklisted', applicationStatus: ApplicationStatus.FRAUD_FLAGGED };
+  }
+
+  // ================================================================
+  // CEO Override (T-214) — bypasses K-12's consensus requirement, but
+  // never silently: always a distinct permission, always flagged
+  // is_override=true, always its own audit_logs entry.
+  // ================================================================
+  async overrideDecision(
+    pipelineRunId: string,
+    tenantId: string,
+    ceoUserId: string,
+    decision: 'approved' | 'rejected',
+    notes: string,
+    approvedAmount?: number,
+    financingTier?: 'silver' | 'gold',
+  ) {
+    const [run] = await this.dataSource.query<any[]>(
+      `SELECT * FROM pipeline_runs WHERE id = $1 AND tenant_id = $2 AND status = 'active'`,
+      [pipelineRunId, tenantId],
+    );
+    if (!run) throw new NotFoundException('Pipeline run not found or not active');
+
+    const [application] = await this.dataSource.query<any[]>(
+      `SELECT a.*, s.first_name, s.last_name, fs.aggregate_score
+       FROM applications a
+       JOIN students s ON s.id = a.student_id
+       LEFT JOIN forsa_scores fs ON fs.student_id = a.student_id
+       WHERE a.id = $1`,
+      [run.application_id],
+    );
+    const [riskProfile] = await this.dataSource.query<any[]>(
+      `SELECT * FROM risk_profiles WHERE pipeline_run_id = $1`,
+      [pipelineRunId],
+    );
+
+    await this.dataSource.query(
+      `INSERT INTO reviewer_decisions
+        (pipeline_run_id, reviewer_id, tenant_id, decision, approved_amount,
+         reviewer_snapshot, notes, financing_tier, is_override, decided_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,NOW())`,
+      [
+        pipelineRunId, ceoUserId, tenantId, decision, approvedAmount || null,
+        JSON.stringify({ application, riskProfile, decidedAt: new Date() }),
+        `[CEO OVERRIDE] ${notes}`,
+        decision === 'approved' ? (financingTier || null) : null,
+      ],
+    );
+
+    const [approvalSet] = await this.dataSource.query<any[]>(
+      `SELECT id FROM multi_approval_sets WHERE pipeline_run_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [pipelineRunId],
+    );
+    if (approvalSet) {
+      await this.dataSource.query(
+        `UPDATE multi_approval_sets SET status = 'overridden' WHERE id = $1`,
+        [approvalSet.id],
+      );
+    }
+
+    await this.dataSource.query(
+      `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, new_value, created_at)
+       VALUES ($1,$2,'pipeline.ceo_override','pipeline','applications',$3,$4,NOW())`,
+      [tenantId, ceoUserId, run.application_id, JSON.stringify({ decision, pipelineRunId, notes })],
+    ).catch(() => {});
+
+    this.logger.warn(`CEO override on pipeline run ${pipelineRunId} by ${ceoUserId}: ${decision}`);
+
+    // Deliberately bypasses the consensus check entirely — that's the
+    // whole point of this being a separate, more restrictively-permissioned
+    // method rather than a code path inside submitHumanDecision.
+    return this.startRun(run.application_id, tenantId, ceoUserId, 9);
   }
 
   // ================================================================

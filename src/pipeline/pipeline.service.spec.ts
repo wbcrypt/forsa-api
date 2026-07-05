@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PipelineService } from './pipeline.service';
 import { PolicyService } from '../policy/policy.service';
@@ -263,7 +263,10 @@ describe('PipelineService — stage gates', () => {
   });
 
   describe('stage6PortfolioCapital', () => {
-    const baseCtx = { tenantId: 'tenant-1', universityId: 'uni-1', applicationId: 'app-1', pipelineRunId: 'run-1' };
+    const baseCtx = {
+      tenantId: 'tenant-1', universityId: 'uni-1', applicationId: 'app-1', pipelineRunId: 'run-1',
+      studentId: 'student-1', application: { requested_support_amount: 5000, tuition_amount: 5000 },
+    };
 
     it('soft-blocks into the capital queue when a university exceeds the concentration cap', async () => {
       policyService.resolve = jest.fn()
@@ -280,14 +283,47 @@ describe('PipelineService — stage gates', () => {
       expect(result.outputs.capitalQueue).toBe(true);
     });
 
-    it('passes when university concentration is under the cap', async () => {
+    it('passes when university concentration, high-risk exposure, and family exposure are all under their caps', async () => {
       policyService.resolve = jest.fn().mockResolvedValue(null);
       query
         .mockResolvedValueOnce([{ deployed_capital: 100000, pending_disbursements: 1 }])
-        .mockResolvedValueOnce([{ university_total: 10000, portfolio_total: 100000 }]); // 10% < 40%
+        .mockResolvedValueOnce([{ university_total: 10000, portfolio_total: 100000 }]) // 10% < 40%
+        .mockResolvedValueOnce([]) // no risk profile -> high-risk check skipped
+        .mockResolvedValueOnce([]); // no primary guarantor -> family exposure check skipped
 
       const result = await (service as any).stage6PortfolioCapital(baseCtx);
       expect(result.status).toBe('passed');
+    });
+
+    it('T-215 — soft-blocks into the capital queue when high-risk exposure would exceed the cap', async () => {
+      policyService.resolve = jest.fn().mockResolvedValue(null); // defaults: 40% concentration, 10% high-risk
+      query
+        .mockResolvedValueOnce([{ deployed_capital: 100000, pending_disbursements: 1 }])
+        .mockResolvedValueOnce([{ university_total: 10000, portfolio_total: 100000 }]) // under concentration cap
+        .mockResolvedValueOnce([{ risk_level: 'high' }]) // this application is high-risk
+        .mockResolvedValueOnce([{ high_risk_exposure: 9000, total_deployed: 100000 }]) // (9000+5000)/(100000+5000) = 13.3% > 10%
+        .mockResolvedValueOnce(undefined); // INSERT capital_queue
+
+      const result = await (service as any).stage6PortfolioCapital(baseCtx);
+      expect(result.status).toBe('blocked');
+      expect(result.outputs.capitalQueue).toBe(true);
+      expect(result.outputs.blockReason).toMatch(/high-risk exposure/i);
+    });
+
+    it('T-215/D-010 — soft-blocks into the capital queue when a primary guarantor household would exceed max family exposure', async () => {
+      policyService.resolve = jest.fn().mockResolvedValue(null); // default max family exposure: 100000 TND
+      query
+        .mockResolvedValueOnce([{ deployed_capital: 100000, pending_disbursements: 1 }])
+        .mockResolvedValueOnce([{ university_total: 10000, portfolio_total: 100000 }]) // under concentration cap
+        .mockResolvedValueOnce([]) // not high-risk -> high-risk check skipped
+        .mockResolvedValueOnce([{ guarantor_id: 'guarantor-1' }]) // has an active primary guarantor
+        .mockResolvedValueOnce([{ family_exposure: 98000 }]) // 98000 + 5000 = 103000 > 100000 default cap
+        .mockResolvedValueOnce(undefined); // INSERT capital_queue
+
+      const result = await (service as any).stage6PortfolioCapital(baseCtx);
+      expect(result.status).toBe('blocked');
+      expect(result.outputs.capitalQueue).toBe(true);
+      expect(result.outputs.blockReason).toMatch(/family exposure/i);
     });
   });
 
@@ -431,5 +467,104 @@ describe('PipelineService.submitHumanDecision — dual-approver enforcement', ()
 
     expect(startRunSpy).toHaveBeenCalledWith('app-1', 'tenant-1', 'reviewer-1', 9);
     expect(result).toEqual({ ok: true });
+  });
+});
+
+// T-217 — flagFraud is deliberately separate from submitHumanDecision:
+// an identity-trust action (permanent blacklist), not a financing-amount
+// decision.
+describe('PipelineService.flagFraud', () => {
+  let service: PipelineService;
+  let query: jest.Mock;
+  let managerQuery: jest.Mock;
+
+  const runWithStudent = { id: 'run-1', application_id: 'app-1', student_id: 'student-1' };
+  const student = { id: 'student-1', email: 'Amina@Example.com', membership_status: 'bronze' };
+
+  beforeEach(() => {
+    query = jest.fn();
+    managerQuery = jest.fn();
+    service = new PipelineService(
+      { query, transaction: jest.fn((cb: any) => cb({ query: managerQuery })) } as unknown as DataSource,
+      { resolve: jest.fn().mockResolvedValue(null), resolveMany: jest.fn().mockResolvedValue(new Map()) } as unknown as PolicyService,
+      {} as unknown as ScoreService,
+      {} as unknown as ApplicationsService,
+    );
+  });
+
+  it('throws NotFoundException when the pipeline run does not exist', async () => {
+    query.mockResolvedValueOnce([]);
+    await expect(service.flagFraud('run-1', 'tenant-1', 'staff-1', 'Forged documents')).rejects.toThrow(NotFoundException);
+  });
+
+  it('blacklists the student, records a fraud_records entry, and flags the application, all in one transaction', async () => {
+    query
+      .mockResolvedValueOnce([runWithStudent]) // pipeline_runs + application join
+      .mockResolvedValueOnce([student]);       // students lookup
+
+    managerQuery
+      .mockResolvedValueOnce(undefined) // INSERT fraud_records
+      .mockResolvedValueOnce(undefined) // UPDATE students -> blacklisted
+      .mockResolvedValueOnce(undefined) // INSERT membership_status_history
+      .mockResolvedValueOnce(undefined) // UPDATE applications -> fraud_flagged
+      .mockResolvedValueOnce(undefined) // INSERT application_status_history
+      .mockResolvedValueOnce(undefined); // INSERT audit_logs
+
+    const result = await service.flagFraud('run-1', 'tenant-1', 'staff-1', 'Forged documents');
+
+    expect(result).toEqual(expect.objectContaining({ studentId: 'student-1', membershipStatus: 'blacklisted' }));
+
+    // The blacklist hash must be normalized (case/whitespace-insensitive) —
+    // otherwise "Amina@Example.com" and "amina@example.com" would evade
+    // the same identity check.
+    const fraudInsertCall = managerQuery.mock.calls[0];
+    expect(fraudInsertCall[0]).toContain('INSERT INTO fraud_records');
+    expect(fraudInsertCall[1][2]).not.toContain('Amina@Example.com'); // stored as a hash, not raw email
+
+    const studentUpdateCall = managerQuery.mock.calls[1];
+    expect(studentUpdateCall[0]).toContain("membership_status = 'blacklisted'");
+  });
+});
+
+// T-214 — overrideDecision bypasses K-12's consensus check entirely, on
+// purpose, but must always be distinctly flagged and audited.
+describe('PipelineService.overrideDecision', () => {
+  let service: PipelineService;
+  let query: jest.Mock;
+
+  const runRow = { id: 'run-1', application_id: 'app-1', status: 'active' };
+  const applicationRow = { id: 'app-1', first_name: 'Amina', last_name: 'T' };
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new PipelineService(
+      { query, transaction: jest.fn() } as unknown as DataSource,
+      { resolve: jest.fn().mockResolvedValue(null), resolveMany: jest.fn().mockResolvedValue(new Map()) } as unknown as PolicyService,
+      {} as unknown as ScoreService,
+      {} as unknown as ApplicationsService,
+    );
+  });
+
+  it('proceeds directly to stage 9 without any consensus check, and marks the decision as an override', async () => {
+    query
+      .mockResolvedValueOnce([runRow])         // pipeline_runs lookup
+      .mockResolvedValueOnce([applicationRow]) // application snapshot
+      .mockResolvedValueOnce([])               // risk profile snapshot
+      .mockResolvedValueOnce(undefined)        // INSERT reviewer_decisions (is_override=true)
+      .mockResolvedValueOnce([{ id: 'set-1' }]) // multi_approval_sets lookup — still pending consensus
+      .mockResolvedValueOnce(undefined)        // UPDATE multi_approval_sets -> overridden
+      .mockResolvedValueOnce(undefined);       // INSERT audit_logs
+
+    const startRunSpy = jest.spyOn(service, 'startRun').mockResolvedValue({ ok: true } as any);
+
+    const result = await service.overrideDecision('run-1', 'tenant-1', 'ceo-1', 'approved', 'Board-approved exception', 200000, 'gold');
+
+    expect(startRunSpy).toHaveBeenCalledWith('app-1', 'tenant-1', 'ceo-1', 9);
+    expect(result).toEqual({ ok: true });
+
+    const insertCall = query.mock.calls[3];
+    expect(insertCall[0]).toContain('is_override');
+    expect(insertCall[0]).toContain('true');
+    expect(insertCall[1]).toContain('[CEO OVERRIDE] Board-approved exception');
   });
 });

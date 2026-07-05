@@ -18,7 +18,14 @@ const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
     ApplicationStatus.APPROVED_LEVEL1, ApplicationStatus.APPROVED_LEVEL2,
     ApplicationStatus.APPROVED_LEVEL3, ApplicationStatus.REJECTED,
     ApplicationStatus.ON_HOLD, ApplicationStatus.WAITING_FOR_DOCUMENTS,
-    ApplicationStatus.CAPITAL_QUEUE,
+    ApplicationStatus.CAPITAL_QUEUE, ApplicationStatus.MORE_INFO_REQUIRED,
+    ApplicationStatus.FRAUD_FLAGGED,
+  ],
+  // T-213 — post-assessment feedback, distinct from WAITING_FOR_DOCUMENTS
+  // (pre-submission). Returns to UNDER_REVIEW once the student/guarantor
+  // responds, same as ON_HOLD's own re-review path.
+  [ApplicationStatus.MORE_INFO_REQUIRED]: [
+    ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED,
   ],
   [ApplicationStatus.APPROVED_LEVEL1]: [ApplicationStatus.CONTRACT_SENT, ApplicationStatus.ON_HOLD],
   [ApplicationStatus.APPROVED_LEVEL2]: [ApplicationStatus.CONTRACT_SENT, ApplicationStatus.ON_HOLD],
@@ -29,6 +36,10 @@ const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
     ApplicationStatus.WAITING_FOR_DOCUMENTS,
   ],
   [ApplicationStatus.CAPITAL_QUEUE]: [ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED],
+  // T-217 — confirmed fraud is terminal: no outgoing transition. Reopening
+  // a fraud-flagged application would undermine the permanent-blacklist
+  // guarantee this status exists to enforce.
+  [ApplicationStatus.FRAUD_FLAGGED]: [],
   [ApplicationStatus.CONTRACT_SENT]: [ApplicationStatus.CONTRACT_SIGNED],
   [ApplicationStatus.CONTRACT_SIGNED]: [ApplicationStatus.UNIVERSITY_PAID],
   [ApplicationStatus.UNIVERSITY_PAID]: [ApplicationStatus.ACTIVE_STUDENT],

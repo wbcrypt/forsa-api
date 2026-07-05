@@ -61,6 +61,13 @@ const PERMISSIONS = [
   ['pipeline.run','pipeline','run','Start pipeline runs',true],
   ['pipeline.view','pipeline','view','View pipeline runs and traces',false],
   ['pipeline.review','pipeline','review','Submit human decisions',true],
+  // Phase 2 T-214/T-217 — deliberately separate, more restrictive
+  // permissions from pipeline.review: fraud flagging is an identity-trust
+  // action (permanent blacklist), and override bypasses the dual/
+  // executive-approver consensus requirement entirely — neither should be
+  // grantable to the same broad set of reviewers who hold pipeline.review.
+  ['fraud.flag','pipeline','fraud_flag','Flag confirmed fraud — permanently blacklists the student',true],
+  ['financing.override','pipeline','override','CEO override — finalize a decision bypassing multi-approver consensus',true],
   // Score
   ['score.view','score','view','View FORSA scores',false],
   ['score.record','score','record','Record score events',true],

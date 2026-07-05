@@ -11,27 +11,35 @@ export enum TenantStatus {
   INACTIVE = 'inactive',
 }
 
+// T-107/D-004/T-213 — the 6 dead V2-dashboard vocabulary values (APPLIED,
+// INTERNAL_REVIEW, PRE_APPROVED, DOCUMENT_VERIFICATION, CONTRACTS_SIGNED,
+// UNIVERSITY_PAYMENT) were removed here: confirmed via repo-wide grep they
+// were never referenced anywhere in backend code, and STATUS_TRANSITIONS'
+// allow-list already rejected any write to them (T-107, Phase 1). Retiring
+// them now rather than earlier because this is the first point Phase 2
+// actually needs the real new values below — not a speculative cleanup.
+// WAITING_LIST is deliberately NOT a new value here — D-004: it reuses the
+// existing CAPITAL_QUEUE status/mechanism, just under the spec's
+// user-facing name; a second parallel enum value would fork one concept
+// into two.
 export enum ApplicationStatus {
   NEW_LEAD = 'new_lead',
-  APPLIED = 'applied',
   AI_INTERVIEW_COMPLETED = 'ai_interview_completed',
-  INTERNAL_REVIEW = 'internal_review',
-  PRE_APPROVED = 'pre_approved',
-  DOCUMENT_VERIFICATION = 'document_verification',
-  CONTRACTS_SIGNED = 'contracts_signed',
-  UNIVERSITY_PAYMENT = 'university_payment',
   CONTACTED = 'contacted',
   WAITING_FOR_DOCUMENTS = 'waiting_for_documents',
   DOCUMENTS_RECEIVED = 'documents_received',
   UNDER_REVIEW = 'under_review',
+  MORE_INFO_REQUIRED = 'more_info_required',
   APPROVED_LEVEL1 = 'approved_level1',
   APPROVED_LEVEL2 = 'approved_level2',
   APPROVED_LEVEL3 = 'approved_level3',
   REJECTED = 'rejected',
   ON_HOLD = 'on_hold',
   CAPITAL_QUEUE = 'capital_queue',
+  FRAUD_FLAGGED = 'fraud_flagged',
   CONTRACT_SENT = 'contract_sent',
   CONTRACT_SIGNED = 'contract_signed',
+  UNIVERSITY_CONFIRMED = 'university_confirmed',
   UNIVERSITY_PAID = 'university_paid',
   ACTIVE_STUDENT = 'active_student',
   COMPLETED = 'completed',
@@ -56,6 +64,7 @@ export enum DecisionResult {
   NEEDS_GUARANTOR_REVIEW = 'needs_guarantor_review',
   NEEDS_UNIVERSITY_CONFIRMATION = 'needs_university_confirmation',
   CAPITAL_QUEUE = 'capital_queue',
+  FRAUD = 'fraud',
 }
 
 export enum PaymentModelType {
