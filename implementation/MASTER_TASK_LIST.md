@@ -34,10 +34,15 @@
 ## Phase 1 — Critical Engineering Fixes (BLOCKING — complete before Phase 2)
 
 **STATUS: COMPLETE as of 2026-07-05.** Every item below (T-101 through T-113)
-is checked off. Phase 2 (membership-first redesign) is now unblocked — see
-`NEXT_SESSION.md` for the concrete Phase 2 starting point and the open
-design decisions in `DECISIONS.md` that should be resolved before writing
-Phase 2 code (D-004 especially, since it gates most of the schema work).
+is checked off. **A supplementary launch-blocker audit (`LAUNCH_BLOCKERS.md`)
+then classified all remaining known issues and found 7 genuine launch
+blockers on top of this list — all 7 are now also fixed** (K-12, K-14,
+K-16+K-47, K-17+K-18, K-09 stages 3-8). D-004 is resolved (`DECISIONS.md`):
+Silver/Gold membership persists permanently once earned. **See
+`PHASE_1_COMPLETION_REPORT.md` for the full permanent record — this is now
+the authoritative gate document, supersedes the summary below.** Phase 2
+(membership-first redesign) is unblocked — see `NEXT_SESSION.md` for the
+concrete Phase 2 starting point.
 
 Per the 2026-07-05 spec's own ordering. Each bullet below is that spec's item,
 expanded with the concrete detail already gathered from the audit.

@@ -149,8 +149,8 @@ downward is the fraud/blacklist flow (T-217).
 unblocked.** See `NEXT_SESSION.md` for the updated starting point.
 
 **Gates**: T-107 (fully closes once this lands), T-201, T-202, and most of
-Phase 2's data-model tasks. **Status**: proposed to the user 2026-07-05,
-awaiting explicit approval before any Phase 2 schema/code work begins.
+Phase 2's data-model tasks. **Status**: approved by the user 2026-07-05 —
+fully decided, Phase 2 schema/code work is unblocked.
 
 ### D-005 — Should guarantor withdrawal trigger an automated consequence? — `OPEN`
 **Question**: today `GUARANTOR_WITHDRAWAL` opens an exceptional-event row with

@@ -1,5 +1,37 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — launch-blocker hardening sprint, all 7 fixed)
+- Created `LAUNCH_BLOCKERS.md`: classified 33 remaining open issues as 7
+  Launch Blockers / 26 Post-Launch. Fixed 4 stale `KNOWN_ISSUES.md` statuses
+  found along the way (K-01/K-02/K-03/K-06 → FIXED). Commit `ea3ec7fa`.
+- D-004 (unified status/membership model) proposed and **decided**: two
+  distinct state machines (membership status vs. financing-request status).
+  Sub-question resolved by user: Silver/Gold persists permanently once
+  earned, no automatic lapse. Commit `bc437493`.
+- **K-14** (ledger unification) — extracted shared `LedgerService`; fixes an
+  actual SQL error the Konnect path would have thrown on every real
+  confirmation (referenced nonexistent `debit_account`/`credit_account`
+  columns, violated the `entry_type` CHECK constraint). `forsa-os` commit
+  `f5891824`.
+- **K-17** (AI model string) — `'claude-sonnet-4-6'` → `'claude-opus-4-8'`.
+  Same commit as above.
+- **K-12** (dual/executive approver enforcement) — `submitHumanDecision` now
+  requires the correct number of distinct approvers before advancing the
+  pipeline; added a same-reviewer-double-vote guard. Also added pipeline
+  test coverage for stages 3-7 (K-09 remainder). 57/57 tests passing.
+  `forsa-os` commit `6b252284`.
+- **K-16 + K-47** (refresh-token strategy) — confirmed bearer-in-body is the
+  only pattern the backend supports (no cookie fallback); fixed
+  `forsa-finance` (`37daf06`), `forsa-guarantor` (`205002f`), `forsa-partner`
+  (`4392768`, was hitting a broken relative URL with no base).
+- **K-18** (fabricated demo-mode AI scores) — `forsa-student`'s demo-mode
+  fallback no longer submits a `Math.random()` score as if real;
+  `aiScoreOverall`/`aiRecommendation` explicitly `null` when demo mode was
+  used. `forsa-student` commit `a7a9eec`.
+- Docs sync across all fixes: `forsa-os` commit `57913abe`.
+- **All 7 launch blockers are now fixed — zero remain.** See
+  `PHASE_1_COMPLETION_REPORT.md` (new) for the full permanent record.
+
 ## 2026-07-05 (continued — T-111 closed, Phase 1 complete)
 - K-45: seeded `payment_receipt` document type (migration
   `006_receipt_upload.sql` + `scripts/seed.ts`).

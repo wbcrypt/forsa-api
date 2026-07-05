@@ -256,3 +256,89 @@ frontends), `npm run test` → 36/36 passing (33 from the earlier T-109 pass +
 Phase 1 section is `[x]`.** See `NEXT_SESSION.md` for the Phase 2 starting
 point and which open `DECISIONS.md` items should be resolved before writing
 Phase 2 code.
+
+**Update (same day, launch-blocker hardening sprint) — user asked for a
+concise status report, which surfaced that no `LAUNCH_BLOCKERS.md` existed
+yet; user then asked for one to be built by cross-referencing
+`KNOWN_ISSUES.md`, `MASTER_TASK_LIST.md`, and `FORSA_PLATFORM_SPEC.md`, then
+to resolve D-004 and fix all resulting blockers in severity order before
+Phase 2 starts.** Done, in order:
+
+1. **`LAUNCH_BLOCKERS.md` created.** Classified all 33 remaining open issues:
+   7 Launch Blockers, 26 Post-Launch. While building it, found and fixed 4
+   stale `KNOWN_ISSUES.md` statuses (K-01/K-02/K-03/K-06 were still marked
+   `OPEN`/`PARTIALLY FIXED` despite their `MASTER_TASK_LIST.md` tasks being
+   fully `[x]`). Committed `ea3ec7fa`.
+2. **D-004 proposed and decided.** Two related but distinct state machines:
+   coarse `membership_status` (bronze/silver/gold/blacklisted, on `students`)
+   and fine-grained financing-request status (extends the existing
+   `ApplicationStatus` enum in place). Proposed 2026-07-05, committed
+   `bc437493`. User approved the same day with the outstanding sub-question
+   resolved: **Silver/Gold membership persists permanently once earned —
+   it's a pure ratchet, the only downward move is via the fraud/blacklist
+   path, never automatic lapse/expiry.** Documented in `DECISIONS.md`.
+   Phase 2 schema work (T-201 onward) is now unblocked.
+3. **Blocker #2 (K-14, ledger unification) + half of #4 (K-17, AI model
+   string).** Extracted a shared `LedgerService`
+   (`src/payments/ledger.service.ts`) — the Konnect path's old raw INSERT
+   referenced `debit_account`/`credit_account` columns that don't exist in
+   the live schema at all, with an `entry_type` value violating the table's
+   `CHECK` constraint, meaning every real Konnect confirmation would throw a
+   SQL error *after* the payment was already marked verified. Both
+   `PaymentsService` and `KonnectService` now write through the shared
+   service. AI model string switched `'claude-sonnet-4-6'` →
+   `'claude-opus-4-8'` (note: the original string turned out to likely
+   still be a valid model id — switched anyway per the `claude-api` skill's
+   current default-model guidance). 37/37 tests passing. Committed
+   `f5891824`.
+4. **Blocker #1 (K-12, dual/executive approver enforcement).**
+   `submitHumanDecision` previously read only the *most recent* reviewer
+   decision and unconditionally continued the pipeline — a single reviewer
+   could finalize any decision regardless of the dual/executive-approver
+   count Stage 7 computed. Fixed: an `'approved'` decision now only
+   proceeds once `COUNT(DISTINCT reviewer_id)` of approved decisions meets
+   `required_approvers`; otherwise returns `awaiting_additional_approver`
+   without advancing. `rejected`/`on_hold`/`needs_more_documents` still
+   proceed on one reviewer's say-so (deliberate — the control is about
+   single-handed *approval*, not slowing a stop/pause). Added a
+   same-reviewer-can't-vote-twice guard. Also added pipeline test coverage
+   for stages 3–7 (university/partnership, risk assessment, policy
+   evaluation, portfolio/capital + concentration cap, approval threshold —
+   all 4 modes) as part of closing K-09's remainder. 57/57 tests passing.
+   Committed `6b252284`.
+5. **Blocker #3 (K-16 + K-47, refresh-token strategy).** Confirmed against
+   `RefreshTokenDto` that bearer-in-body is the only correct pattern against
+   the real backend — no cookie fallback exists. Fixed `forsa-finance` and
+   `forsa-guarantor` (were sending an empty body, 400ing on every
+   access-token expiry, silently forcing re-login) and `forsa-partner`
+   (refresh interceptor called bare `axios.post()` with no configured base
+   URL — fixed to use the correct full URL, deliberately kept as a bare
+   `axios` call rather than routing through the intercepted `api` instance,
+   to avoid interceptor-recursion risk on an invalid token). University
+   portal's separate relative-path refresh bug (K-26) was not touched —
+   different root cause, remains Post-Launch. Committed `forsa-finance`
+   `37daf06`, `forsa-guarantor` `205002f`, `forsa-partner` `4392768`.
+6. **Blocker #4 remainder (K-18, fabricated demo-mode scores).**
+   `forsa-student`'s AI interview demo-mode fallback (triggered on *any*
+   exception talking to the real AI endpoint, not just a missing key) used
+   to generate a `Math.random()` "AI score" and submit it as
+   `aiScoreOverall`/`aiRecommendation` on the real application record —
+   indistinguishable from a genuine assessment, with only an ephemeral
+   chat-UI badge as disclosure that never reached the backend. Fixed at the
+   root: demo mode no longer fabricates any score; those two fields are
+   explicitly `null` whenever the real `/ai/score` endpoint wasn't used,
+   tracked via a `demo_mode` flag threaded through the report JSON.
+   Confirmed safe to null out: grepped for any backend logic reading these
+   two columns (none — only the already-broken `seed-demo.ts` references
+   them), and the dashboard's `RankingPage` already defaults to `{}` on a
+   missing `scores` object without crashing. Committed `forsa-student`
+   `a7a9eec`.
+7. Updated `MASTER_TASK_LIST.md`, `KNOWN_ISSUES.md`, `LAUNCH_BLOCKERS.md`
+   after each fix to keep the tracking docs in sync in real time, not as a
+   batch at the end. Committed `57913abe`.
+
+**All 7 launch blockers are now fixed.** Full detail in
+`PHASE_1_COMPLETION_REPORT.md` (new file, the permanent engineering record
+for this gate). Verification discipline held throughout: every change
+typechecked and built (backend + each touched frontend) before committing.
+See `NEXT_SESSION.md` for the Phase 2 kickoff plan.
