@@ -56,6 +56,29 @@ export class PartnersService {
     return paginate(data, parseInt(count.count), page, limit);
   }
 
+  /**
+   * Resolve the partner record for the authenticated portal user — server-side
+   * only, keyed by JWT user id. Never accept a client-supplied partner id for
+   * this lookup (see T-103 / K-03: a partner portal previously trusted
+   * `partners[0]` from a list endpoint, which could leak another partner's
+   * students/commissions).
+   */
+  async findMe(userId: string, tenantId: string) {
+    const [partner] = await this.dataSource.query<any[]>(
+      `SELECT p.*,
+              COUNT(DISTINCT pc.id) AS total_referrals,
+              COUNT(DISTINCT pc.id) FILTER (WHERE pc.status = 'paid') AS paid_commissions,
+              COALESCE(SUM(pc.partner_share) FILTER (WHERE pc.status = 'paid'), 0) AS total_earned
+       FROM partners p
+       LEFT JOIN partner_commissions pc ON pc.partner_id = p.id
+       WHERE p.user_id = $1 AND p.tenant_id = $2
+       GROUP BY p.id`,
+      [userId, tenantId],
+    );
+    if (!partner) throw new NotFoundException('No partner account linked to this user');
+    return partner;
+  }
+
   async findOne(id: string, tenantId: string) {
     const [partner] = await this.dataSource.query<any[]>(
       `SELECT p.*,

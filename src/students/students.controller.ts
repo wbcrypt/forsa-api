@@ -6,8 +6,9 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { StudentsService } from './students.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { CurrentUser, CurrentTenant, RequirePermissions } from '../common/decorators';
+import { CurrentUser, CurrentTenant, RequirePermissions, Public } from '../common/decorators';
 import { PaginationDto } from '../common/utils/pagination.util';
+import { RegisterStudentDto } from './dto/register-student.dto';
 
 @ApiTags('Students')
 @ApiBearerAuth()
@@ -15,6 +16,33 @@ import { PaginationDto } from '../common/utils/pagination.util';
 @Controller('students')
 export class StudentsController {
   constructor(private readonly service: StudentsService) {}
+
+  // T-101: genuinely public self-registration — @Public() overrides the
+  // class-level JwtAuthGuard for this route only. No @RequirePermissions()
+  // either, since there is no authenticated user yet. Must stay registered
+  // before the generic POST '' create route is reached by routing (Nest
+  // matches literal path segments before this bare POST, so 'register' as
+  // a sibling path segment, not a param, is unambiguous either order — kept
+  // here for readability next to the class-scoped CRUD create route).
+  @Public()
+  @Post('register')
+  @ApiOperation({ summary: 'Public self-registration — creates a students row and a real users/auth row in one transaction (T-101)' })
+  registerSelf(@Body() dto: RegisterStudentDto) {
+    return this.service.registerSelf(dto);
+  }
+
+  // T-101: self-service lookup for the logged-in student portal user.
+  // Resolves via students.user_id keyed off the JWT identity — never trust
+  // a client-supplied student id here. No @RequirePermissions(): a
+  // self-registered student holds none of the staff `student.*` permission
+  // grants, only PermissionsGuard's "no permissions required -> allow"
+  // fallback lets this route through once JwtAuthGuard has validated the
+  // token.
+  @Get('me')
+  @ApiOperation({ summary: 'Get the logged-in student portal user\'s own student profile (T-101)' })
+  findMe(@CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.findMe(u, t);
+  }
 
   @Post()
   @RequirePermissions('student.create')

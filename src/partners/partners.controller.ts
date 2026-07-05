@@ -35,6 +35,16 @@ export class PartnersController {
     return this.service.getCommissions(t, f, p);
   }
 
+  // T-103: JWT-scoped identity route — resolves the partner from the
+  // authenticated user's own account, never from a client-supplied id.
+  // Must stay registered before ':id' below so 'me' doesn't get swallowed
+  // by the ':id' param route. No @RequirePermissions() — a partner portal
+  // login may hold zero staff permissions; only JwtAuthGuard is required.
+  @Get('me')
+  getMe(@CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.findMe(u, t);
+  }
+
   @Get(':id')
   @RequirePermissions('partner.view')
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() t: string) {

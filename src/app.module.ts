@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 
@@ -59,6 +59,15 @@ import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },
+    // T-110: ThrottlerModule was configured (default 100 req/60s, plus
+    // stricter @Throttle overrides on login/mfa-verify) but the guard was
+    // never actually applied anywhere — every route was unlimited. Register
+    // it globally so both the default limit and the per-route overrides
+    // take effect. @Public() routes (see common/decorators) are NOT exempt
+    // from throttling by default — that's intentional, since the Konnect
+    // webhook and login/mfa are exactly the public routes most worth
+    // rate-limiting.
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

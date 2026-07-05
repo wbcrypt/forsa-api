@@ -3,11 +3,12 @@ import {
   ParseUUIDPipe, HttpCode, HttpStatus, Headers, RawBodyRequest, Req,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PaymentsService } from './payments.service';
 import { KonnectService } from './konnect.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { CurrentUser, CurrentTenant, RequirePermissions } from '../common/decorators';
+import { CurrentUser, CurrentTenant, RequirePermissions, Public } from '../common/decorators';
 
 @ApiTags('Payments')
 @ApiBearerAuth()
@@ -164,10 +165,19 @@ export class PaymentsController {
     });
   }
 
+  @Public()
+  @SkipThrottle()
   @Post('konnect-webhook')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Konnect payment webhook — called by Konnect on payment completion' })
-  // No auth guard — Konnect calls this directly. Verified internally via API.
+  // Route-level @Public() bypasses JwtAuthGuard (server-to-server callback, no
+  // user JWT). The real trust boundary is KonnectService.processWebhook()'s
+  // HMAC-SHA256 signature check + anti-replay re-verification against
+  // Konnect's own API — do not remove those. See T-105 / K-05.
+  // @SkipThrottle() — since T-110 registered ThrottlerGuard globally, this
+  // route must opt out: Konnect calls from a small set of shared gateway
+  // IPs on behalf of every tenant's students, so per-IP throttling would
+  // drop legitimate payment confirmations under normal load.
   konnectWebhook(@Body() payload: any, @Headers('x-konnect-signature') sig: string) {
     return this.konnect.processWebhook(payload, sig);
   }
