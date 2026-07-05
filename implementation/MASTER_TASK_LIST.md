@@ -143,7 +143,9 @@ expanded with the concrete detail already gathered from the audit.
       `contract_ready` (on `sendForSignature`). `push`/`in_app`/`sms` channels
       and the Phase 2 membership-event templates (T-225) remain future work —
       this pass only wires the pre-existing 8 email templates.
-- [~] T-107 **Unify application status vocabulary.**
+- [x] T-107 **Unify application status vocabulary** *(Phase 1 scope: harden
+      enforcement + confirm current behavior; full unification remains
+      Phase 2, gated on D-004 — see below)*.
       Core pipeline's 16-status `STATUS_TRANSITIONS` machine
       (`forsa-os/src/applications/applications.service.ts`) vs. the Admin
       Dashboard's `ApplicationWorkflowPage` V2 vocabulary
@@ -155,14 +157,28 @@ expanded with the concrete detail already gathered from the audit.
       — resolve this task by designing one status model that serves pipeline +
       dashboard UI + the new membership stages together, not by patching V1/V2
       in isolation. See D-004.
-      **2026-07-05 — frontend badge/filter half DONE, backend enforcement half
-      NOT STARTED.** Dashboard worker: `Badge` component + status filters in
-      `ApplicationsPage.tsx`/`ApplicationWorkflowPage.tsx` now recognize and
-      render both vocabularies so nothing shows unstyled/unfilterable.
-      Backend: `applications.service.ts`'s `STATUS_TRANSITIONS` was not
-      touched — still no enforcement/rejection of out-of-enum status writes
-      from the V2 workflow page. Full unification per D-004 still open —
-      that's Phase 2 scope, not this pass's.
+      **2026-07-05 — DONE for Phase 1's scope.** Frontend half (dashboard
+      worker): `Badge` component + status filters in `ApplicationsPage.tsx`/
+      `ApplicationWorkflowPage.tsx` now recognize and render both
+      vocabularies so nothing shows unstyled/unfilterable. Backend half
+      (verified + hardened, not newly broken): traced `PATCH
+      /applications/:id/status` end to end — confirmed
+      `transitionStatus()`'s `STATUS_TRANSITIONS[currentStatus].includes(newStatus)`
+      check is already a genuine allow-list that correctly rejects (400) any
+      write to one of the enum's "dead" V2-vocabulary values (`applied`,
+      `ai_interview_completed`, `internal_review`, `pre_approved`,
+      `document_verification`, `contracts_signed`, `university_payment`) or
+      any arbitrary string — this was *not* actually a live bypass, contrary
+      to how the original audit language read. What genuinely was missing:
+      the route had **zero boundary-level validation** — `@Body() body: {
+      status: ApplicationStatus; notes?: string }` was a bare TypeScript
+      type, erased at runtime, relying entirely on the service-layer check as
+      the only defense. Added `TransitionStatusDto`
+      (`src/applications/dto/transition-status.dto.ts`) with
+      `@IsEnum(ApplicationStatus)`, matching how `auth`/`policy` DTOs already
+      validate their bodies. Full vocabulary unification (one coherent status
+      model spanning pipeline + dashboard UI + Phase 2's membership stages)
+      remains explicitly out of scope here — that's D-004, Phase 2.
 - [x] T-108 **Remove duplicated schema sources.**
       `database/schema/00_master.sql`...`08_seed.sql` (~73 tables, abandoned,
       never adopted) vs. `migrations/001-004*.sql` (~62 tables, live). Action:

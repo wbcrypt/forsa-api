@@ -9,6 +9,7 @@ import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { CurrentUser, CurrentTenant, RequirePermissions } from '../common/decorators';
 import { PaginationDto } from '../common/utils/pagination.util';
 import { ApplicationStatus } from '../common/enums';
+import { TransitionStatusDto } from './dto/transition-status.dto';
 
 @ApiTags('Applications')
 @ApiBearerAuth()
@@ -58,7 +59,7 @@ export class ApplicationsController {
   @ApiOperation({ summary: 'Manually transition application status' })
   transitionStatus(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: { status: ApplicationStatus; notes?: string },
+    @Body() body: TransitionStatusDto,
     @CurrentTenant() t: string,
     @CurrentUser('id') u: string,
   ) {
