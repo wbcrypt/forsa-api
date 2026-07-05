@@ -1,6 +1,8 @@
 # FORSA — Phase 2 Implementation Plan
 
-**Status: PLAN ONLY — no Phase 2 code has been written. Awaiting user approval before implementation begins.**
+**Status: APPROVED, IN PROGRESS.** All gating decisions (D-003, D-004, D-008,
+D-010) are resolved. User approved this plan and gave a revised execution
+order on 2026-07-05 — see §5a, which supersedes §5's original sequence.
 
 Built from `FORSA_PLATFORM_SPEC.md`, `PHASE_1_COMPLETION_REPORT.md`, the current
 codebase (`forsa-os` + 6 frontends), `DECISIONS.md`, and `MASTER_TASK_LIST.md`'s
@@ -10,9 +12,10 @@ Membership Request → Bronze → FORSA ID → Digital Pass → Member Dashboard
 Financing Request → AI Interview/Assessment → Human Review → Silver/Gold →
 University Confirmation → Payment Plan → Renewal.
 
-D-004 (the unified status/membership model) is resolved and approved —
-Phase 2 is unblocked. Two decisions remain genuinely open and gate one
-specific milestone (M4) — see §3.
+All decisions that gate this plan are now resolved — see §3 for the
+resolutions (D-003: hardcoded, centralized weights; D-008: Household
+Stability and FORSA Score stay permanently separate; D-010 new: family =
+student + primary guarantor household).
 
 ---
 
@@ -165,15 +168,16 @@ No migration needed for: status vocabulary unification (app-layer enum extension
 
 ---
 
-## 3. Decisions that must be resolved before implementation
+## 3. Decisions — RESOLVED 2026-07-05
 
-These are not implementation details — they're product decisions this plan cannot make on your behalf, and starting code before they're answered risks the exact rework this plan exists to avoid.
+All three decisions below are now resolved. Full text in `DECISIONS.md`.
 
-1. **D-003** — Do Household Stability's 35/25/20/10/10 weights live in the Policy Engine (real scope: a live `policy_versions` row + approval step) or stay hardcoded like every other threshold today? **Gates M4.**
-2. **D-008** — Is Household Stability a genuinely separate system from the existing FORSA Score engine, or does one replace/feed the other more directly than "advisory input at renewal"? **Gates M4 and M6.**
-3. **New — "family" definition for the per-family risk-exposure cap (T-215)** — shared guarantor? shared national-ID? shared household address/contact? Not defined anywhere in the spec. **Gates M5.**
+1. **D-003 — RESOLVED: hardcoded weights for V1, centralized.** 35% Household Stability / 25% Financial Capacity / 20% Academic Commitment / 10% Documentation Quality / 10% AI Interview Assessment. Kept in one named module/config object (not inlined at each call site) so a future Policy Engine migration is a swap of one lookup, not a refactor.
+2. **D-008 — RESOLVED: permanently separate, not just for V1.** Household Stability = pre-financing dossier assessment (AI-advisory, per financing request). FORSA Score = post-financing behavioral trust (per student, from payment history). May be displayed together in the Admin Dashboard review UI; never merged into one stored value or one computation.
+3. **D-010 (new) — RESOLVED: family/household = student + primary guarantor.** Extended family excluded unless legally/financially responsible (i.e., unless they're themselves a registered guarantor). Per-family exposure cap = sum of exposure grouped by `student_guarantors.guarantor_id` (the `role='primary'` link, which already exists in the schema — no new table needed), not per-student alone.
 
-Everything else in this plan (D-001, D-002, D-004, D-007, D-009) is already decided and does not block starting M0/M1/M2/M3/M8.
+Combined with the already-decided D-001, D-002, D-004, D-007, D-009 — **every
+decision gating Phase 2 is now closed.**
 
 ---
 
@@ -205,6 +209,30 @@ end-of-phase task. Both would increase rework risk. Recommended order:
 9. **M9** (frontend rebuilds) — start each portal's slice as soon as its corresponding backend milestone lands, rather than waiting for all of Phase 2's backend work to finish; genuinely parallelize across the 5 portal repos once unblocked.
 10. **M10 (notifications) — woven incrementally into M1/M2/M3/M5/M8 as each trigger event is built, not scheduled as a discrete step at the end.** This is the one explicit reordering with a documented reason: Phase 1 already needed a dedicated catch-up task (T-106) because notifications were deferred to "later" and nearly shipped unwired. Wiring each notification the same session its trigger event lands costs almost nothing extra and removes an entire class of end-of-phase scramble.
 11. **M11** (legal copy) — start immediately, runs the whole time in parallel on a separate, non-engineering track.
+
+---
+
+## 5a. User-approved execution order — SUPERSEDES §5 (2026-07-05)
+
+The user reviewed §5 and approved proceeding with a slightly different
+sequencing, splitting M1's original scope (Membership Request → Bronze →
+FORSA ID) into three distinct, separately-landed steps rather than one
+combined milestone, and folding M6 (renewal)/M7 (fraud) into the later
+portal/decision-flow steps rather than calling them out as standalone
+parallel tracks. This is the order actually being executed:
+
+1. **Payment cleanup warm-up** (M8: K-13 Konnect score event, T-219 payment history) — if still needed; check current state first rather than assuming.
+2. **Membership Request → Bronze** (M0 schema + the request/approval/provisioning half of M1) — public intake endpoint, Admin Dashboard Membership Queue, Bronze status + real `users` row provisioning on approval.
+3. **FORSA ID** (the remaining half of M1) — real ID generation/assignment logic, wired into the Bronze approval flow landed in step 2.
+4. **Digital Student Pass** (M2) — generation + QR verification.
+5. **Financing Request** (M3) — membership gate on `applications` creation, student/guarantor document requirements + freshness.
+6. **Household Stability / AI Review** (M4) — using the D-003/D-008-resolved weights and separation.
+7. **Admin decision flow** (M5 + M7 folded together) — full outcome set, CEO override, risk rules (including the D-010-resolved per-family cap), fraud/blacklist enforcement.
+8. **Remaining portal updates** (M9 + M6 folded together) — Finance/University/Partner remaining work, Renewal.
+
+**Notifications (M10) remain incremental** — wire each one as its trigger event lands in the step above that builds it, per §5's original rationale (not repeated here, still holds).
+
+**Docs are updated after every milestone, not batched at the end** — per the user's explicit instruction. Continue through the list without stopping for approval unless a genuine new business decision (not an implementation detail) is discovered.
 
 ---
 

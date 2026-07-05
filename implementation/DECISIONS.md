@@ -41,19 +41,30 @@ blocking item, and Phase 2 §Notifications lists 11 concrete trigger events).
 **Rationale**: no longer a judgment call, it's a direct instruction.
 **Gates**: T-106, T-225.
 
-### D-003 — Should the new Household Stability weights live in the Policy Engine? — `OPEN`
+### D-003 — Should the new Household Stability weights live in the Policy Engine? — `DECIDED` (2026-07-05)
 **Question**: the Policy Engine was designed for exactly this kind of
 configurable, versioned business weight, but is currently 100% inert (no
 `policy_versions` seeded). When implementing Household Stability scoring
 (35/25/20/10/10 split), should those weights be hardcoded (matching how
 nearly every other threshold in the system works today) or should this be the
 first real use of the Policy Engine?
-**Leaning**: use the Policy Engine — it's the intended mechanism and this is
-a natural place to finally exercise it, but this adds scope (need at least
-one real `policy_versions` row + an approval step) — confirm with the user
-before committing the extra work.
-**Gates**: T-211, and indirectly T-108 (policy engine's overall "do we ever
-populate this" question).
+**Decision**: **Hardcoded for V1**, but centralized in one place (a single
+named constant/config object, not scattered inline literals) so migrating to
+the Policy Engine later is a swap of that one lookup, not a refactor of every
+call site. **V1 weights** (approved by user 2026-07-05):
+- Household Stability: 35%
+- Financial Capacity: 25%
+- Academic Commitment: 20%
+- Documentation Quality: 10%
+- AI Interview Assessment: 10%
+**Rationale**: avoids committing the extra scope of standing up a real
+`policy_versions` row + approval step before there's any actual need to vary
+these weights per-tenant/over-time. Centralizing keeps the door open.
+**Implementation note for T-211**: put these weights in one module (e.g.
+`src/score/household-stability.weights.ts` or similar, exporting a single
+typed object) and have the scoring function read from it — never inline the
+percentages at each usage site.
+**Gates**: T-211. No longer blocks starting M4.
 
 ### D-004 — What is the single unified application/membership status model? — `DECIDED` (2026-07-05)
 **Question**: three status vocabularies now potentially coexist: (1) the core
@@ -183,7 +194,7 @@ wrong one" (T-108) as long as it's out of the live `database/`/`migrations/`
 path and clearly labeled.
 **Gates**: T-108.
 
-### D-008 — How does "Household Stability" scoring relate to the existing FORSA Score engine? — `OPEN`
+### D-008 — How does "Household Stability" scoring relate to the existing FORSA Score engine? — `DECIDED` (2026-07-05)
 **Question**: the existing FORSA Score Engine has 5 dimensions
 (`payment_reliability` 0.40, `documentation_reliability` 0.20,
 `communication_reliability` 0.15, `academic_continuity` 0.15,
@@ -194,14 +205,25 @@ Documentation Quality / 10% Interview) describes an **AI-advisory assessment
 at financing-request time**, pre-decision. These look like two different
 systems answering two different questions (ongoing trust vs. initial
 financing-worthiness), not one replacing the other.
-**Leaning**: keep them as two separate, related systems — Household Stability
-feeds the human decision at Silver/Gold time; FORSA Score continues to govern
-ongoing repayment trust, collections prioritization, and renewal priority
-(T-216 explicitly says "FORSA Score considered" at renewal, implying it
-persists independently). Confirm this reading before implementing T-211,
-since building it as a literal replacement of the existing score engine would
-be a much bigger, riskier change.
-**Gates**: T-211, T-216.
+**Decision**: **They remain conceptually separate, permanently — not just for
+V1.** Explicit definitions (user, 2026-07-05):
+- **Household Stability** = pre-financing assessment of the family/guarantor
+  dossier (AI-advisory, computed once per financing request, at
+  interview/assessment time).
+- **FORSA Score** = post-financing behavioral trust score, based on payment
+  history and member behavior over time.
+**It is acceptable to display them together** in the Admin Dashboard's
+review UI (e.g., side-by-side on the same decision screen) if that's useful
+for a reviewer — **but they must never be merged into one number, one
+column, or one stored field.** Keep separate storage (Household Stability in
+`applications.ai_report` JSONB per financing request; FORSA Score in the
+existing `forsa_scores` table per student) and separate computation logic —
+do not let a future refactor quietly collapse them because they "look
+similar." Household Stability feeds the human decision at Silver/Gold time;
+FORSA Score continues to govern ongoing repayment trust, collections
+prioritization, and renewal priority (T-216's "FORSA Score considered" at
+renewal refers to this score, not Household Stability).
+**Gates**: T-211, T-216. No longer blocks starting M4/M6.
 
 ### D-009 — Parallel-session work split (2026-07-05) — `DECIDED`
 **Decision**: Phase 1 work is being split across parallel Claude Code
@@ -220,6 +242,31 @@ their findings/status into their own repo's `IMPLEMENTATION_STATUS.md` (or
 equivalent) and the orchestrator reconciles it back into
 `IMPLEMENTATION_PROGRESS.md`/`CHANGELOG.md` here.
 **Gates**: none — this is a process decision, not a product one.
+
+### D-010 — What defines a "family"/"household" for the per-family risk-exposure cap? — `DECIDED` (2026-07-05)
+**Question**: T-215 requires "max exposure per family" as a risk rule, but
+neither the original spec nor any existing schema concept defines what
+"family" means for this purpose.
+**Decision**: for V1, **family/household = student + primary guarantor**.
+Extended family (grandparents, aunts/uncles, siblings' households, etc.) is
+**explicitly excluded** unless that person is legally or financially
+responsible for the student (i.e., is itself registered as a guarantor on
+the application — in which case they're already "primary guarantor" by
+definition, not an exception case).
+**Exposure limit meaning**: "max exposure per family" means **max total
+outstanding financing exposure per primary-guarantor household** — i.e.,
+grouped by the guarantor identity, not by student identity alone. A single
+guarantor backing multiple students (e.g., financing two children, or a
+guarantor linked to more than one unrelated student) has their exposure
+summed across all of them for this cap; a student's own individual exposure
+alone is not what's being capped here — that's a different, already-existing
+concept (per-application/per-student financing limits).
+**Implementation note for T-215**: group by `student_guarantors.guarantor_id`
+(the primary/active guarantor link) when computing this cap, not by
+`applications.student_id` alone. Matches this decision's household
+definition exactly — no new "family" table/concept needed, this reuses the
+existing guarantor linkage.
+**Gates**: T-215. No longer blocks starting M5/M7.
 
 ---
 
