@@ -1,7 +1,10 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import { KonnectService } from '../payments/konnect.service'
+import { hashPassword, validatePasswordComplexity } from '../common/utils/password.util'
+import { UserStatus } from '../common/enums'
+import { RegisterGuarantorDto } from './dto/register-guarantor.dto'
 
 @Injectable()
 export class GuarantorsService {
@@ -9,6 +12,62 @@ export class GuarantorsService {
     @InjectDataSource() private readonly db: DataSource,
     private readonly konnect: KonnectService,
   ) {}
+
+  /**
+   * T-102 — public self-registration ("activate my portal account").
+   * See RegisterGuarantorDto for why this can only ever activate an
+   * existing guarantor row (created by staff), never create one.
+   */
+  async registerSelf(dto: RegisterGuarantorDto) {
+    validatePasswordComplexity(dto.password)
+
+    const [guarantor] = await this.db.query<any[]>(
+      `SELECT id, user_id FROM guarantors WHERE tenant_id = $1 AND email = $2`,
+      [dto.tenantId, dto.email],
+    )
+    if (!guarantor) {
+      throw new NotFoundException(
+        'No guarantor record found for this email. Ask the student\'s FORSA contact to add you as a guarantor first.',
+      )
+    }
+    if (guarantor.user_id) {
+      throw new ConflictException('This guarantor has already activated a portal account')
+    }
+
+    const existingUser = await this.db.query<any[]>(
+      `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
+      [dto.tenantId, dto.email],
+    )
+    if (existingUser.length) {
+      throw new ConflictException('An account with this email already exists')
+    }
+
+    const passwordHash = await hashPassword(dto.password)
+
+    return this.db.transaction(async (manager) => {
+      const [user] = await manager.query<any[]>(
+        `INSERT INTO users
+          (tenant_id, email, email_verified, password_hash, full_name, status,
+           must_change_password, portal_type, guarantor_id)
+         VALUES ($1,$2,false,$3,$4,$5,false,'guarantor',$6)
+         RETURNING id, email`,
+        [dto.tenantId, dto.email, passwordHash, dto.fullName, UserStatus.PENDING_VERIFICATION, guarantor.id],
+      )
+
+      await manager.query(
+        `UPDATE guarantors SET user_id = $2, portal_activated = true WHERE id = $1`,
+        [guarantor.id, user.id],
+      )
+
+      await manager.query(
+        `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, new_value, created_at)
+         VALUES ($1,$2,'guarantor.self_registered','guarantors','guarantors',$3,$4,NOW())`,
+        [dto.tenantId, user.id, guarantor.id, JSON.stringify({ email: dto.email })],
+      ).catch(() => {})
+
+      return { guarantorId: guarantor.id, userId: user.id, email: user.email }
+    })
+  }
 
   /**
    * Find the student linked to this guarantor user.

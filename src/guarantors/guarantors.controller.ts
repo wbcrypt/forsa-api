@@ -1,14 +1,25 @@
 import { Controller, Get, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
-import { ApiTags } from '@nestjs/swagger'
+import { ApiTags, ApiOperation } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
-import { CurrentUser, CurrentTenant } from '../common/decorators'
+import { CurrentUser, CurrentTenant, Public } from '../common/decorators'
 import { GuarantorsService } from './guarantors.service'
+import { RegisterGuarantorDto } from './dto/register-guarantor.dto'
 
 @ApiTags('Guarantors')
 @UseGuards(JwtAuthGuard)
 @Controller('guarantors')
 export class GuarantorsController {
   constructor(private readonly service: GuarantorsService) {}
+
+  // T-102: genuinely public — @Public() overrides the class-level
+  // JwtAuthGuard for this route only. See RegisterGuarantorDto for why this
+  // can only activate an existing guarantor row, never create one.
+  @Public()
+  @Post('register')
+  @ApiOperation({ summary: 'Public guarantor self-registration — activates portal access for an existing guarantor record (T-102)' })
+  registerSelf(@Body() dto: RegisterGuarantorDto) {
+    return this.service.registerSelf(dto)
+  }
 
   @Get('my-student')
   getMyStudent(
