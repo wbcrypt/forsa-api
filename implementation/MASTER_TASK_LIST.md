@@ -87,10 +87,18 @@ expanded with the concrete detail already gathered from the audit.
       `005_phase1_identity.sql` (adds `partners.user_id UUID UNIQUE REFERENCES
       users(id)`). Verified: route registered before `:id` so it isn't
       swallowed by the param route; no `@RequirePermissions()` (partner portal
-      users hold no staff permissions). **`forsa-partner` frontend half not
-      started** — no worker dispatched to that repo yet; `loadPartner()`'s
-      `partners[0]` bug is still live in that repo until it switches to
-      calling this new endpoint.
+      users hold no staff permissions).
+      **2026-07-05 — frontend half also DONE.** `forsa-partner`'s
+      `AuthContext.tsx#loadPartner` rewritten to call the new
+      `partnerApi.me()` (`GET /partners/me`) unconditionally, removing the
+      `partners[0]`-on-first-login fallback and the `localStorage
+      'partner_id'` caching it depended on entirely — every page that reads
+      `partner.id` from context (Dashboard/Students/Commissions/Referrals/
+      Reports/Profile) now gets it from a server-verified identity, never a
+      list index. New gap surfaced while doing this (not fixed, out of this
+      task's scope): the 401-refresh interceptor in this repo's `lib/api.ts`
+      calls bare `axios.post()` instead of the configured instance —
+      logged as K-47.
 - [x] T-104 **Admin Dashboard payment verification endpoint.**
       `PaymentVerificationPage.tsx` (`forsa-dashboard`) sends an explicit
       `/api/v1/...` prefix on top of the already-prefixed shared axios client
