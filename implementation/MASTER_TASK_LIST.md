@@ -36,7 +36,7 @@
 Per the 2026-07-05 spec's own ordering. Each bullet below is that spec's item,
 expanded with the concrete detail already gathered from the audit.
 
-- [~] T-101 **Student self-registration → real auth account.**
+- [x] T-101 **Student self-registration → real auth account.**
       `RegisterPage.tsx` (`forsa-student`) calls `POST /students`
       (`forsa-os/src/students/`), a staff-only CRM lead-creation endpoint
       (`student.create` permission) that never writes to `users`/auth and never
@@ -44,16 +44,17 @@ expanded with the concrete detail already gathered from the audit.
       Needs design decision D-001 before coding (new public registration
       endpoint that creates both a `students` row and a `users` row
       transactionally, vs. other approach).
-      **2026-07-05 — frontend half done, backend not started.** Student-portal
-      worker: `RegisterPage.tsx` now sends `password` in the payload and shows
-      an honest "account created, sign-in failed" message on post-signup login
-      failure instead of a misleading "may already be registered" one; added
-      `ForgotPasswordPage.tsx`/`/forgot-password` route (support-contact
-      placeholder, no reset endpoint exists). **Still blocking**: `POST
-      /students` is still `JwtAuthGuard`+`student.create`-gated with no
-      `password` field in its DTO — anonymous registration still 401s. Backend
-      half (real public endpoint + `users` row provisioning per D-001) not yet
-      landed as of this checkpoint.
+      **2026-07-05 — DONE (both halves).** Backend: `POST /students/register`
+      (`@Public()`, `forsa-os` commit `ca6cf80d`) creates a real `students` +
+      `users` row transactionally (argon2id-hashed password), and
+      `GET /students/me` resolves the caller's own student profile via
+      `students.user_id`. Frontend (`forsa-student` commit `17a2c4b`):
+      `RegisterPage.tsx` now calls the new endpoint (with `tenantId` from the
+      portal's existing `TENANT_ID` constant, matching how login already
+      works) instead of the old staff-only `POST /students`, sends `password`,
+      and distinguishes "account created, sign-in failed" from "may already be
+      registered" on failure. Added `ForgotPasswordPage.tsx`/`/forgot-password`
+      (support-contact placeholder — no reset endpoint exists yet).
 - [x] T-102 **Guarantor self-registration → real auth account.**
       `forsa-guarantor/src/pages/auth/RegisterPage.tsx` is not routed in
       `App.tsx` at all, and is internally broken (missing `tenantId` arg to
