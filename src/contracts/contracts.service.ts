@@ -2,10 +2,11 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { ContractType, ContractStatus } from '../common/enums';
+import { ContractType, ContractStatus, NotificationChannel } from '../common/enums';
 import { PolicyService } from '../policy/policy.service';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ContractsService {
@@ -16,6 +17,7 @@ export class ContractsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly policyService: PolicyService,
+    private readonly notifications: NotificationsService,
   ) {
     this.s3 = new S3Client({
       endpoint: configService.get<string>('s3.endpoint'),
@@ -139,6 +141,26 @@ export class ContractsService {
     );
 
     await this.audit(tenantId, sentBy, 'contract.sent_for_signature', contractId, null, {});
+
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT s.id, s.first_name, s.last_name, s.email
+       FROM applications a JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2`,
+      [contract.application_id, tenantId],
+    );
+    if (student?.email) {
+      await this.notifications.send({
+        tenantId,
+        recipientId: student.id,
+        recipientEmail: student.email,
+        channel: NotificationChannel.EMAIL,
+        templateCode: 'contract_ready',
+        variables: { studentName: `${student.first_name} ${student.last_name}`.trim() },
+        referenceId: contractId,
+        referenceType: 'contract',
+      }).catch(err => this.logger.error('Notification contract_ready failed', err));
+    }
+
     return { contractId, status: ContractStatus.SENT_FOR_SIGNATURE };
   }
 

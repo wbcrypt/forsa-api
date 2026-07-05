@@ -3,8 +3,9 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { ApplicationStatus, FinancingLevel } from '../common/enums';
+import { ApplicationStatus, FinancingLevel, NotificationChannel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
+import { NotificationsService } from '../notifications/notifications.service';
 
 // Valid status transitions (state machine)
 const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
@@ -38,7 +39,36 @@ const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
 export class ApplicationsService {
   private readonly logger = new Logger(ApplicationsService.name);
 
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly notifications: NotificationsService,
+  ) {}
+
+  // T-106 — fire-and-forget email notification. Failures are logged, never
+  // thrown: a notification going down must not break the underlying
+  // business transaction that triggered it.
+  private async notifyStudent(
+    tenantId: string,
+    studentId: string,
+    templateCode: string,
+    variables: Record<string, unknown>,
+  ): Promise<void> {
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT first_name, last_name, email FROM students WHERE id = $1 AND tenant_id = $2`,
+      [studentId, tenantId],
+    );
+    if (!student?.email) return;
+
+    await this.notifications.send({
+      tenantId,
+      recipientId: studentId,
+      recipientEmail: student.email,
+      channel: NotificationChannel.EMAIL,
+      templateCode,
+      variables: { studentName: `${student.first_name} ${student.last_name}`.trim(), ...variables },
+      referenceType: 'application',
+    }).catch(err => this.logger.error(`Notification ${templateCode} failed`, err));
+  }
 
   async create(dto: any, tenantId: string, createdBy: string) {
     const [application] = await this.dataSource.query<any[]>(
@@ -67,6 +97,11 @@ export class ApplicationsService {
     );
 
     await this.audit(tenantId, createdBy, 'application.created', application.id, null, dto);
+
+    await this.notifyStudent(tenantId, application.student_id, 'application_created', {
+      applicationId: application.id,
+    });
+
     return application;
   }
 
@@ -190,6 +225,23 @@ export class ApplicationsService {
 
     await this.audit(tenantId, changedBy, 'application.status.changed', id,
       { status: currentStatus }, { status: newStatus, notes });
+
+    const approvedLevelByStatus: Partial<Record<ApplicationStatus, number>> = {
+      [ApplicationStatus.APPROVED_LEVEL1]: 1,
+      [ApplicationStatus.APPROVED_LEVEL2]: 2,
+      [ApplicationStatus.APPROVED_LEVEL3]: 3,
+    };
+    if (newStatus in approvedLevelByStatus) {
+      await this.notifyStudent(tenantId, application.student_id, 'application_approved', {
+        programName: application.program_name || 'your program',
+        universityName: application.university_name,
+        approvedLevel: approvedLevelByStatus[newStatus],
+      });
+    } else if (newStatus === ApplicationStatus.REJECTED) {
+      await this.notifyStudent(tenantId, application.student_id, 'application_rejected', {
+        rejectionReason: notes || 'Not specified',
+      });
+    }
 
     return { id, previousStatus: currentStatus, newStatus };
   }

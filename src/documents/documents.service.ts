@@ -8,8 +8,9 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
 import { sha256, generateSecureToken } from '../common/utils/encryption.util';
-import { DocumentStatus } from '../common/enums';
+import { DocumentStatus, NotificationChannel } from '../common/enums';
 import { PolicyService } from '../policy/policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class DocumentsService {
@@ -22,6 +23,7 @@ export class DocumentsService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
     private readonly policyService: PolicyService,
+    private readonly notifications: NotificationsService,
   ) {
     this.s3 = new S3Client({
       endpoint: configService.get<string>('s3.endpoint'),
@@ -217,6 +219,37 @@ export class DocumentsService {
       [tenantId, reviewedBy, `document.${action}d`, documentId,
        JSON.stringify({ status: newStatus, notes, rejectionReason })],
     );
+
+    // T-106 — a rejected document means the student needs to act (resubmit).
+    // Only applies when the document is attached to an application (the
+    // common case); other entity_type values (e.g. guarantor documents)
+    // aren't wired to a student notification here yet.
+    if (action === 'reject' && doc.entity_type === 'application') {
+      const [app] = await this.dataSource.query<any[]>(
+        `SELECT a.student_id, s.first_name, s.last_name, s.email, p.name AS program_name
+         FROM applications a
+         JOIN students s ON s.id = a.student_id
+         LEFT JOIN programs p ON p.id = a.program_id
+         WHERE a.id = $1 AND a.tenant_id = $2`,
+        [doc.entity_id, tenantId],
+      );
+      if (app?.email) {
+        await this.notifications.send({
+          tenantId,
+          recipientId: app.student_id,
+          recipientEmail: app.email,
+          channel: NotificationChannel.EMAIL,
+          templateCode: 'document_requested',
+          variables: {
+            studentName: `${app.first_name} ${app.last_name}`.trim(),
+            programName: app.program_name || 'your program',
+            missingDocuments: rejectionReason || `${doc.document_type_code} (rejected, please resubmit)`,
+          },
+          referenceId: documentId,
+          referenceType: 'document',
+        }).catch(err => this.logger.error('Notification document_requested failed', err));
+      }
+    }
 
     return { documentId, status: newStatus };
   }

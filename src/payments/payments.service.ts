@@ -8,8 +8,9 @@ import { v4 as uuidv4 } from 'uuid';
 import Decimal from 'decimal.js';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
-import { InstallmentStatus, PaymentStatus, ScoreDimension, SourceTrustLevel } from '../common/enums';
+import { InstallmentStatus, PaymentStatus, ScoreDimension, SourceTrustLevel, NotificationChannel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class PaymentsService {
@@ -20,7 +21,36 @@ export class PaymentsService {
     private readonly policyService: PolicyService,
     private readonly scoreService: ScoreService,
     private readonly configService: ConfigService,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  // T-106 — fire-and-forget email notification, same pattern as
+  // ApplicationsService.notifyStudent. Never throws: a notification going
+  // down must not break the payment transaction that triggered it.
+  private async notifyStudent(
+    tenantId: string,
+    studentId: string,
+    templateCode: string,
+    variables: Record<string, unknown>,
+    referenceId?: string,
+  ): Promise<void> {
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT first_name, last_name, email FROM students WHERE id = $1 AND tenant_id = $2`,
+      [studentId, tenantId],
+    );
+    if (!student?.email) return;
+
+    await this.notifications.send({
+      tenantId,
+      recipientId: studentId,
+      recipientEmail: student.email,
+      channel: NotificationChannel.EMAIL,
+      templateCode,
+      variables: { studentName: `${student.first_name} ${student.last_name}`.trim(), ...variables },
+      referenceId,
+      referenceType: 'payment',
+    }).catch(err => this.logger.error(`Notification ${templateCode} failed`, err));
+  }
 
   /**
    * Generate payment schedule from a contract + university agreement.
@@ -242,6 +272,12 @@ export class PaymentsService {
     await this.audit(params.tenantId, params.receivedBy, 'payment.recorded',
       payment.id, null, { amount: params.amount, installmentId: params.installmentId });
 
+    if (newStatus === 'paid') {
+      await this.notifyStudent(params.tenantId, installment.student_id, 'payment_confirmed', {
+        amount: paymentAmount.toNumber(), currency: params.currency, paymentReference: params.referenceNumber,
+      }, payment.id);
+    }
+
     return { paymentId: payment.id, newInstallmentStatus: newStatus, amountPaid: newPaid.toNumber() };
   }
 
@@ -345,13 +381,31 @@ export class PaymentsService {
     this.logger.log('Running daily installment status update');
 
     // Mark installments as due_soon (within 7 days)
-    await this.dataSource.query(
+    const dueSoonInstallments = await this.dataSource.query<any[]>(
       `UPDATE installments
        SET status = 'due_soon'
        WHERE status = 'pending'
          AND due_date <= CURRENT_DATE + INTERVAL '7 days'
-         AND due_date > CURRENT_DATE`,
+         AND due_date > CURRENT_DATE
+       RETURNING id, payment_schedule_id, amount, due_date`,
     );
+
+    for (const inst of dueSoonInstallments) {
+      const [ps] = await this.dataSource.query<any[]>(
+        `SELECT ps.tenant_id, a.student_id FROM payment_schedules ps
+         JOIN applications a ON a.id = ps.application_id
+         WHERE ps.id = $1`,
+        [inst.payment_schedule_id],
+      );
+      if (ps) {
+        const daysUntilDue = Math.max(0, Math.ceil(
+          (new Date(inst.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24),
+        ));
+        await this.notifyStudent(ps.tenant_id, ps.student_id, 'payment_due_soon', {
+          amount: inst.amount, currency: 'TND', dueDate: format(new Date(inst.due_date), 'yyyy-MM-dd'), daysUntilDue,
+        }, inst.id);
+      }
+    }
 
     // Mark as due_today
     await this.dataSource.query(
@@ -368,7 +422,7 @@ export class PaymentsService {
        WHERE status IN ('pending','due_soon','due_today','partial')
          AND grace_due_date < CURRENT_DATE
          AND amount_paid < amount
-       RETURNING id, payment_schedule_id`,
+       RETURNING id, payment_schedule_id, amount, due_date`,
     );
 
     // Trigger score events for newly late payments
@@ -393,6 +447,10 @@ export class PaymentsService {
           referenceType: 'installment',
           recordedBy: 'system',
         }).catch(err => this.logger.error('Score event failed for overdue installment', err));
+
+        await this.notifyStudent(ps.tenant_id, ps.student_id, 'payment_overdue', {
+          amount: inst.amount, currency: 'TND', dueDate: format(new Date(inst.due_date), 'yyyy-MM-dd'),
+        }, inst.id);
       }
     }
 
@@ -722,6 +780,12 @@ export class PaymentsService {
       { status: payment.status },
       { status: 'verified', notes, newInstallmentStatus },
     );
+
+    if (newInstallmentStatus === 'paid') {
+      await this.notifyStudent(tenantId, payment.student_id, 'payment_confirmed', {
+        amount: verifiedAmount.toNumber(), currency: payment.currency || 'TND', paymentReference: payment.reference_number || paymentId,
+      }, paymentId);
+    }
 
     this.logger.log(
       `Payment ${paymentId} verified by ${verifiedBy} — installment now ${newInstallmentStatus}`,
