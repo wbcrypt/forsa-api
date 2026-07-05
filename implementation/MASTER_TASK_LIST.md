@@ -199,15 +199,50 @@ expanded with the concrete detail already gathered from the audit.
       clear `README.md` explaining it's superseded/never-adopted, pointing at
       `migrations/` as the live schema, and explicitly instructing that Phase
       2's new tables go into new `migrations/*.sql` files.
-- [ ] T-109 **Add automated testing foundation.**
+- [x] T-109 **Add automated testing foundation** *(Phase 1 minimum bar met;
+      full 10-stage pipeline coverage + broader sweep remains Phase 3, T-301)*.
       Zero test files exist anywhere across all 7 repos despite full Jest
       scaffolding in `forsa-os`. Minimum bar before Phase 2 starts: auth/login
       + JWT guard tests, application `STATUS_TRANSITIONS` allow-list tests,
       payment recording + ledger-write tests, pipeline stage 1-10 tests. This
       becomes the harness Phase 3 (full test sweep) builds on.
-      **2026-07-05 — NOT STARTED.** Backend worker was interrupted before
-      reaching this item; confirmed zero `.spec.ts` files exist anywhere in
-      `forsa-os/src` or `forsa-os/test`.
+      **2026-07-05 — DONE for the Phase 1 minimum bar.** 7 spec files, 33
+      tests, all passing on first run (`npm run test`), `tsc --noEmit` and
+      `npm run build` both clean:
+      - `src/auth/guards/jwt-auth.guard.spec.ts` — `@Public()` bypass,
+        rejection when no user/error present.
+      - `src/auth/guards/permissions.guard.spec.ts` — no-permissions-required
+        passthrough, missing-user rejection, granted/denied permission checks,
+        security-event logging on denial (including when the log write itself
+        fails — must still deny).
+      - `src/auth/auth.service.spec.ts` — `validateCredentials`: unknown
+        email (timing-safe dummy hash still runs), locked/deactivated account
+        rejection, wrong-password failed-attempt increment, lockout at the
+        configured max attempts, correct-password success + counter reset.
+      - `src/applications/applications.service.spec.ts` — `STATUS_TRANSITIONS`
+        allow-list: legal transition succeeds and writes history, illegal
+        transition (including a write to one of the enum's "dead" V2-vocabulary
+        values) is rejected with zero side-effect queries, `application_approved`/
+        `application_rejected` notifications fire with correct variables.
+      - `src/payments/payments.service.spec.ts` — `recordPayment` writes a
+        matched debit/credit ledger pair sharing one `batch_id`, fires the
+        correct on-time score event, rejects double-recording an already-paid
+        installment.
+      - `src/payments/konnect.service.spec.ts` — directly closes the K-05
+        gap flagged in T-105: invalid signature rejected, missing signature
+        rejected (when a secret is configured), valid signature passes the
+        auth boundary, a signature computed over a different (tampered)
+        payload is rejected.
+      - `src/pipeline/pipeline.service.spec.ts` — Stage 1 (completeness:
+        missing-documents block, missing-guarantor block, full pass) and
+        Stage 2 (eligibility: under-age block, below-minimum-score block,
+        pass) via direct private-method invocation — a pragmatic pattern
+        given these are `private` methods on a service with no public
+        single-stage entry point.
+      **Explicitly not done in this pass** (left for Phase 3's T-301, which
+      builds on this foundation): stages 3-10 of the pipeline, e2e/HTTP-level
+      tests (no `test/jest-e2e.json` exists yet — these are unit/service-level
+      tests only), and any frontend test (all 6 portals still have zero).
 
 **Also required before Phase 2, carried over from the audit (not explicitly
 named in the 2026-07-05 spec bullets, but blocking in practice):**
