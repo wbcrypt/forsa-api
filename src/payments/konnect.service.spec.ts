@@ -1,8 +1,12 @@
 import * as crypto from 'crypto';
+import axios from 'axios';
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { KonnectService } from './konnect.service';
+import { LedgerService } from './ledger.service';
+
+jest.mock('axios');
 
 // T-105/T-109 — payments.controller.ts's konnect-webhook route is now
 // @Public() (route-level override, added for T-105), so this signature
@@ -21,7 +25,12 @@ describe('KonnectService.processWebhook — signature verification', () => {
       get: (key: string) => (key === 'konnect.webhookSecret' ? webhookSecret : undefined),
     };
     const dataSource = { query: jest.fn().mockResolvedValue([]) };
-    return new KonnectService(config as unknown as ConfigService, dataSource as unknown as DataSource);
+    const ledger = { recordEntries: jest.fn().mockResolvedValue(undefined) };
+    return new KonnectService(
+      config as unknown as ConfigService,
+      dataSource as unknown as DataSource,
+      ledger as unknown as LedgerService,
+    );
   };
 
   it('rejects a request with an invalid signature', async () => {
@@ -60,5 +69,53 @@ describe('KonnectService.processWebhook — signature verification', () => {
 
     await expect(service.processWebhook(alteredPayload, validSignatureForOriginal))
       .rejects.toThrow(UnauthorizedException);
+  });
+});
+
+// T-109/K-14 — locks in the fix: the Konnect webhook's ledger write now goes
+// through the same shared LedgerService the manual-verification path uses,
+// instead of a raw INSERT referencing debit_account/credit_account columns
+// that don't exist in the live schema (see ledger.service.ts for the full
+// history — that old INSERT would have thrown a SQL error on every real
+// confirmation, after the payment was already marked verified).
+describe('KonnectService.processWebhook — ledger write on confirmed payment', () => {
+  it('records a debit/credit ledger entry via LedgerService, not a raw query', async () => {
+    const config = { get: () => undefined }; // no webhookSecret configured -> signature check skipped
+    const paymentRow = {
+      id: 'payment-1',
+      installment_id: 'inst-1',
+      amount: 500,
+      sequence_number: 2,
+      application_id: 'app-1',
+      sched_tenant: 'tenant-1',
+      student_id: 'student-1',
+    };
+    const query = jest.fn()
+      .mockResolvedValueOnce([paymentRow]) // find pending payment
+      .mockResolvedValueOnce(undefined)     // UPDATE payments verified
+      .mockResolvedValueOnce(undefined);    // UPDATE installments paid
+    const dataSource = { query };
+    const ledger = { recordEntries: jest.fn().mockResolvedValue(undefined) };
+    (axios.get as jest.Mock).mockResolvedValue({ data: { payment: { status: 'paid' } } });
+
+    const service = new KonnectService(
+      config as unknown as ConfigService,
+      dataSource as unknown as DataSource,
+      ledger as unknown as LedgerService,
+    );
+
+    const result = await service.processWebhook(
+      { order_id: 'FORSA-1', payment_ref: 'ref-1', status: 'paid' },
+      undefined,
+    );
+
+    expect(result).toEqual({ received: true, verified: true, installmentId: 'inst-1' });
+    expect(ledger.recordEntries).toHaveBeenCalledWith(
+      'tenant-1', 'app-1', 'payment-1',
+      expect.objectContaining({ debitAccount: 'bank', creditAccount: 'student_receivable', amount: 500 }),
+    );
+    // The old broken code path inserted directly via dataSource.query — confirm
+    // no query call references the nonexistent debit_account/credit_account columns.
+    expect(query.mock.calls.some(c => String(c[0]).includes('debit_account'))).toBe(false);
   });
 });

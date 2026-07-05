@@ -412,11 +412,25 @@ resolve them before writing code that depends on the answer).
       D-008. A lower-income-but-stable household must be able to outrank a
       wealthier-but-less-responsible one when both can sustain the payment
       plan — write this as an actual test case once the scoring logic exists.
-- [ ] T-212 Fix the hardcoded invalid Anthropic model string
+- [x] T-212 Fix the hardcoded invalid Anthropic model string
       (`'claude-sonnet-4-6'` in `forsa-os/src/ai/`) as part of this rebuild —
       use a real current model id (check the `claude-api` skill for the
       current list) and consider the official Anthropic SDK over the
       hand-rolled `axios` call.
+      **2026-07-05 — model string fixed (K-17), SDK migration NOT done.**
+      Per the `claude-api` skill, `'claude-sonnet-4-6'` is actually a real,
+      currently-active model id today (the original audit's "invalid"
+      characterization may have predated Sonnet 4.6's release, or was simply
+      wrong) — but per the skill's own non-negotiable default ("always use
+      `claude-opus-4-8` unless the user explicitly names a different
+      model"), switched to `claude-opus-4-8` anyway for a feature that feeds
+      real financing decisions. Still using the hand-rolled `axios` call
+      against the raw Messages API, not the official `@anthropic-ai/sdk` —
+      that migration remains a follow-up (bigger scope, not done as part of
+      this quick launch-blocker fix). **K-18 (fabricated demo-mode score
+      reaching real decisions) is separately still open** — this task only
+      closed the model-string half of the combined "AI interview" launch
+      blocker.
 
 ### 2.6 Human decision & outcomes
 - [ ] T-213 Implement the full outcome set: Bronze, Silver, Gold, Waiting
@@ -456,13 +470,34 @@ resolve them before writing code that depends on the answer).
       matching key (national ID hash, not raw PII) up front.
 
 ### 2.10 Payment system
-- [ ] T-218 Keep the three payment methods (bank transfer, cash deposit,
+- [~] T-218 Keep the three payment methods (bank transfer, cash deposit,
       Konnect) flowing through one common workflow: Payment → Verification →
       Ledger → Receipt → FORSA Score Update. This is where T-105/T-111/the
       original audit's ledger-shape inconsistency (Konnect vs. manual path
       writing structurally different `financial_ledger` rows) and the
       missing Konnect→score-event call all get fixed together, since the spec
       now requires one unified pipeline rather than two parallel ones.
+      **2026-07-05 — ledger-shape half DONE (K-14, launch blocker), Konnect
+      score-event half NOT done (K-13, tracked separately, Post-Launch).**
+      New `src/payments/ledger.service.ts` is now the single place that
+      writes to `financial_ledger` — both `payments.service.ts` (manual/
+      receipt-verification path) and `konnect.service.ts` call
+      `LedgerService.recordEntries()`. This was a more serious bug than
+      "structurally different": `konnect.service.ts` was inserting into
+      `debit_account`/`credit_account` columns that **don't exist** in the
+      live schema (only `entry_type`/`account` do — see
+      `migrations/001_initial_schema.sql`), with `entry_type = 'payment'`
+      violating the table's `CHECK (entry_type IN ('debit','credit'))`
+      constraint. This meant every real Konnect payment confirmation would
+      throw a SQL error on the ledger write — *after* the payment had
+      already been marked `verified` and the installment `paid`, leaving a
+      verified payment with no ledger entry at all. Fixed + locked down with
+      a new test (`konnect.service.spec.ts`) asserting the happy path calls
+      `LedgerService.recordEntries` with the correct shape and that no query
+      references the nonexistent columns. Konnect still doesn't fire a
+      FORSA Score event on confirmation (K-13) — left open, classified
+      Post-Launch in `LAUNCH_BLOCKERS.md` since it's a scoring-consistency
+      gap, not a financial-integrity one.
 - [ ] T-219 Student dashboard must show complete payment history end-to-end
       (not just recent installments).
 

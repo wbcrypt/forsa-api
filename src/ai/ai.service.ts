@@ -12,7 +12,11 @@ interface Message {
 export class AiService {
   private readonly logger = new Logger(AiService.name)
   private readonly apiKey: string | undefined
-  private readonly model = 'claude-sonnet-4-6'
+  // T-212/K-17 — was 'claude-sonnet-4-6'. Using the recommended current
+  // default (claude-opus-4-8) rather than a pinned Sonnet alias, since this
+  // powers the AI interview readiness assessment that feeds real financing
+  // decisions (see D-008) and no lower-cost model was explicitly requested.
+  private readonly model = 'claude-opus-4-8'
 
   constructor(private readonly config: ConfigService) {
     this.apiKey = this.config.get<string>('ai.anthropicApiKey')

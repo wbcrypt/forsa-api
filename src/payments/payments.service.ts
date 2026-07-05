@@ -4,13 +4,13 @@ import { DataSource } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { addDays, addMonths, format, isPast } from 'date-fns';
-import { v4 as uuidv4 } from 'uuid';
 import Decimal from 'decimal.js';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
 import { InstallmentStatus, PaymentStatus, ScoreDimension, SourceTrustLevel, NotificationChannel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LedgerService } from './ledger.service';
 
 @Injectable()
 export class PaymentsService {
@@ -22,6 +22,7 @@ export class PaymentsService {
     private readonly scoreService: ScoreService,
     private readonly configService: ConfigService,
     private readonly notifications: NotificationsService,
+    private readonly ledger: LedgerService,
   ) {}
 
   // T-106 — fire-and-forget email notification, same pattern as
@@ -243,7 +244,7 @@ export class PaymentsService {
     );
 
     // Double-entry financial ledger (append-only)
-    await this.recordLedgerEntries(params.tenantId, installment.application_id, payment.id, {
+    await this.ledger.recordEntries(params.tenantId, installment.application_id, payment.id, {
       debitAccount: 'bank', creditAccount: 'student_receivable',
       amount: paymentAmount.toNumber(), currency: params.currency,
       description: `Payment for installment ${installment.sequence_number}`,
@@ -316,7 +317,7 @@ export class PaymentsService {
     );
 
     // Reverse ledger entries
-    await this.recordLedgerEntries(tenantId, null, payment.id, {
+    await this.ledger.recordEntries(tenantId, null, payment.id, {
       debitAccount: 'student_receivable', creditAccount: 'bank',
       amount: parseFloat(payment.amount), currency: payment.currency,
       description: `Reversal of payment ${paymentId}: ${reason}`,
@@ -466,41 +467,6 @@ export class PaymentsService {
   // ================================================================
   // Double-entry ledger
   // ================================================================
-  private async recordLedgerEntries(
-    tenantId: string,
-    applicationId: string | null,
-    referenceId: string,
-    entry: {
-      debitAccount: string;
-      creditAccount: string;
-      amount: number;
-      currency: string;
-      description: string;
-    },
-  ): Promise<void> {
-    const batchId = uuidv4();
-
-    // Debit entry
-    await this.dataSource.query(
-      `INSERT INTO financial_ledger
-        (tenant_id, application_id, entry_type, account, amount, currency,
-         reference_id, reference_type, description, batch_id)
-       VALUES ($1,$2,'debit',$3,$4,$5,$6,'payment',$7,$8)`,
-      [tenantId, applicationId, entry.debitAccount, entry.amount, entry.currency,
-       referenceId, entry.description, batchId],
-    );
-
-    // Credit entry
-    await this.dataSource.query(
-      `INSERT INTO financial_ledger
-        (tenant_id, application_id, entry_type, account, amount, currency,
-         reference_id, reference_type, description, batch_id)
-       VALUES ($1,$2,'credit',$3,$4,$5,$6,'payment',$7,$8)`,
-      [tenantId, applicationId, entry.creditAccount, entry.amount, entry.currency,
-       referenceId, entry.description, batchId],
-    );
-  }
-
   private async audit(tenantId: string, userId: string, action: string, targetId: string, prev: any, next: any) {
     await this.dataSource.query(
       `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, previous_value, new_value, created_at)
@@ -785,7 +751,7 @@ export class PaymentsService {
     );
 
     // Record ledger entry
-    await this.recordLedgerEntries(tenantId, payment.application_id, paymentId, {
+    await this.ledger.recordEntries(tenantId, payment.application_id, paymentId, {
       debitAccount: 'bank',
       creditAccount: 'student_receivable',
       amount: verifiedAmount.toNumber(),

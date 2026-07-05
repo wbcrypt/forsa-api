@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import axios from 'axios'
+import { LedgerService } from './ledger.service'
 
 @Injectable()
 export class KonnectService {
@@ -23,6 +24,7 @@ export class KonnectService {
   constructor(
     private readonly config: ConfigService,
     @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly ledger: LedgerService,
   ) {
     this.apiKey      = this.config.get('konnect.apiKey') || ''
     this.walletId    = this.config.get('konnect.walletId') || ''
@@ -212,17 +214,22 @@ export class KonnectService {
       [payment.installment_id],
     )
 
-    // Ledger entry
-    await this.dataSource.query(
-      `INSERT INTO financial_ledger (
-         tenant_id, entry_type, debit_account, credit_account,
-         amount, currency, reference_type, reference_id, description, created_at
-       ) VALUES ($1, 'payment', 'bank', 'student_receivable', $2, 'TND', 'payment', $3, $4, NOW())`,
-      [
-        payment.sched_tenant, payment.amount, payment.id,
-        `Konnect auto-payment for installment #${payment.sequence_number}`,
-      ],
-    )
+    // T-109/K-14 — was a broken raw INSERT referencing debit_account/
+    // credit_account columns that don't exist in the live schema (only
+    // `account` does) with entry_type='payment' violating the table's
+    // CHECK (entry_type IN ('debit','credit')) constraint — this failed
+    // with a SQL error on every real Konnect confirmation, after the
+    // payment had already been marked verified, leaving a verified payment
+    // with no ledger entry. Now uses the same shared LedgerService the
+    // manual/receipt-verification path uses, so both paths write the
+    // identical two-row debit/credit shape.
+    await this.ledger.recordEntries(payment.sched_tenant, payment.application_id, payment.id, {
+      debitAccount: 'bank',
+      creditAccount: 'student_receivable',
+      amount: payment.amount,
+      currency: 'TND',
+      description: `Konnect auto-payment for installment #${payment.sequence_number}`,
+    })
 
     this.logger.log(`✅ Konnect payment auto-verified: ${order_id} — installment #${payment.sequence_number}`)
 

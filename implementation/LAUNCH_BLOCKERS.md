@@ -19,6 +19,10 @@ beyond nav scaffolding.
 Post-Launch**. (14 issues already `FIXED` in `KNOWN_ISSUES.md` are excluded
 entirely — see that file for what's already closed.)
 
+**Progress (updated 2026-07-05, same day)**: of the 7 blockers, **#2 (K-14,
+ledger unification) is fully fixed**; **#4 (K-17+K-18) is half-fixed** (model
+string done, fabricated-demo-score issue still open); #1, #3, #5 remain open.
+
 Some `KNOWN_ISSUES.md` statuses were corrected while building this file:
 K-01, K-02, K-03, and K-06 were still marked `OPEN`/`PARTIALLY FIXED` from
 stale wording even though their underlying `MASTER_TASK_LIST.md` tasks
@@ -41,14 +45,21 @@ itself decided was needed.** This is a real control gap on a lending
 platform's largest, highest-risk decisions — exactly the kind of thing that
 should not ship live. Task: T-214.
 
-### 2. K-14 — Structurally inconsistent double-entry ledger between payment paths
-The Konnect (online) path writes one `financial_ledger` row with
+### 2. K-14 — Structurally inconsistent double-entry ledger between payment paths — ✅ FIXED 2026-07-05
+The Konnect (online) path wrote one `financial_ledger` row with
 `debit_account`/`credit_account` columns; the manual/receipt-verified path
-writes two rows, one `account` column each. Both are meant to represent the
-same double-entry transaction. A platform moving real money needs one
-consistent ledger shape for reconciliation/audit — as-is, any downstream
-reporting or accounting reconciliation that assumes one shape will silently
-miscount transactions from the other path. Task: T-218.
+writes two rows, one `account` column each. Turned out to be worse than
+"inconsistent": those `debit_account`/`credit_account` columns **don't exist**
+in the live schema (only `entry_type`/`account` do), and the Konnect path's
+`entry_type = 'payment'` violated the table's `CHECK (entry_type IN
+('debit','credit'))` constraint — every real Konnect confirmation would throw
+a SQL error on this write, *after* the payment was already marked `verified`
+and the installment `paid`, silently leaving a verified payment with no
+ledger entry. Fixed: extracted a shared `LedgerService`
+(`src/payments/ledger.service.ts`), both payment paths now call it, one
+locked-down test added confirming the Konnect path writes the correct
+debit/credit pair. Task: T-218 (ledger half only — the Konnect→FORSA-Score
+event gap, K-13, remains separately open and is classified Post-Launch).
 
 ### 3. K-16 + K-47 — Inconsistent/broken refresh-token strategy across portals
 Dashboard/University/Partner send a bearer refresh token in the request
@@ -65,22 +76,26 @@ deployed backend before launch** — if wrong, staff and guarantors get
 logged out mid-session repeatedly, which is a real, first-day support-ticket
 generator, not a cosmetic bug. Tasks: T-304 (verification), unassigned fix.
 
-### 4. K-17 + K-18 — AI interview: invalid model + fabricated scores reaching real decisions
-The hand-rolled Anthropic integration hardcodes an invalid model string
-(`'claude-sonnet-4-6'`), so the real AI interview endpoint will always fail
-once an API key is configured. Worse: the student portal's demo-mode
-fallback triggers on **any** exception (not just a missing key — a network
-blip or backend hiccup also qualifies), and in demo mode submits a
-client-side `Math.random()`-generated "AI score" **as if it were real**
-(`aiScoreOverall`/`aiReport`/`aiRecommendation`), which the pipeline and
-scoring system then consume identically to a genuine assessment. A student
-can end up with a randomly fabricated readiness score silently feeding a
-real financing decision, with only a small "🎭 Demo mode" badge as
-disclosure. This is a data-integrity and (arguably) fairness issue on a
-platform explicitly designed around "AI advises, humans decide" — right
-now a transient network error can make the AI effectively hand a random
+### 4. K-17 + K-18 — AI interview: invalid model + fabricated scores reaching real decisions — ⚠️ HALF FIXED 2026-07-05
+The hand-rolled Anthropic integration hardcoded an invalid model string
+(`'claude-sonnet-4-6'`) — **fixed**: switched to `claude-opus-4-8` (see
+`KNOWN_ISSUES.md` K-17 for a caveat: `'claude-sonnet-4-6'` turned out to
+actually be a valid current model id, so this wasn't quite the live 400
+the original audit described, but the fix stands regardless per the
+`claude-api` skill's own default-model guidance). **Still open**: the
+student portal's demo-mode fallback triggers on **any** exception (not just
+a missing key — a network blip or backend hiccup also qualifies), and in
+demo mode submits a client-side `Math.random()`-generated "AI score" **as if
+it were real** (`aiScoreOverall`/`aiReport`/`aiRecommendation`), which the
+pipeline and scoring system then consume identically to a genuine
+assessment. A student can end up with a randomly fabricated readiness score
+silently feeding a real financing decision, with only a small "🎭 Demo mode"
+badge as disclosure. This remains a data-integrity and (arguably) fairness
+issue on a platform explicitly designed around "AI advises, humans decide"
+— a transient network error can still make the AI effectively hand a random
 number to the human reviewer without them necessarily noticing it wasn't
-real. Tasks: T-212 (model fix), T-210 (fallback/disclosure hardening).
+real. **This half is not yet closed — still a launch blocker.** Tasks:
+T-212 (model fix — done), T-210 (fallback/disclosure hardening — open).
 
 ### 5. K-09 (remaining) — Pipeline stages 3–10 have zero test coverage
 Phase 1 added tests for stages 1–2 (completeness, eligibility) plus auth,
