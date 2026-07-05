@@ -515,6 +515,32 @@ export class PaymentsService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * T-111 — verify a client-supplied receiptDocumentId actually belongs to
+   * this student (uploaded via the presigned S3 flow, entity_type='student')
+   * before trusting it, rather than accepting any documentId a caller hands
+   * us. Returns null (silently) if no documentId was supplied — the caller
+   * treats that the same as the old filename-only flow.
+   */
+  private async verifyReceiptDocument(
+    receiptDocumentId: string | undefined,
+    tenantId: string,
+    studentId: string,
+  ): Promise<string | null> {
+    if (!receiptDocumentId) return null;
+
+    const [doc] = await this.dataSource.query<any[]>(
+      `SELECT id FROM documents
+       WHERE id = $1 AND tenant_id = $2 AND entity_type = 'student' AND entity_id = $3
+         AND status = 'uploaded'`,
+      [receiptDocumentId, tenantId, studentId],
+    );
+    if (!doc) {
+      throw new BadRequestException('receiptDocumentId does not reference a completed upload for this student');
+    }
+    return doc.id;
+  }
+
+  /**
    * Submit a payment receipt (called when student uploads proof of payment).
    * Creates a payment record in 'receipt_uploaded' status.
    * Admin then checks bank manually and calls verifyPayment().
@@ -528,6 +554,7 @@ export class PaymentsService {
     bankName?: string;
     referenceNumber?: string;
     receiptFilename?: string;
+    receiptDocumentId?: string;
     notes?: string;
   }) {
     const [installment] = await this.dataSource.query<any[]>(
@@ -543,6 +570,14 @@ export class PaymentsService {
       throw new BadRequestException(`Installment is already ${installment.status}`);
     }
 
+    // T-111 — if a receiptDocumentId was supplied (real file uploaded via
+    // the presigned S3 flow), verify it actually belongs to this student
+    // before trusting it, rather than accepting any documentId a caller
+    // hands us.
+    const receiptDocumentId = await this.verifyReceiptDocument(
+      params.receiptDocumentId, params.tenantId, installment.student_id,
+    );
+
     // Check for existing pending receipt for this installment
     const [existing] = await this.dataSource.query<any[]>(
       `SELECT id FROM payments
@@ -555,11 +590,11 @@ export class PaymentsService {
       // Update the existing receipt submission
       await this.dataSource.query(
         `UPDATE payments
-         SET receipt_filename = $2, bank_name = $3, student_bank_ref = $4,
-             student_amount = $5, payment_date = $6, notes = $7,
+         SET receipt_filename = $2, receipt_document_id = $3, bank_name = $4,
+             student_bank_ref = $5, student_amount = $6, payment_date = $7, notes = $8,
              receipt_uploaded_at = NOW(), status = 'receipt_uploaded'
          WHERE id = $1`,
-        [existing.id, params.receiptFilename, params.bankName,
+        [existing.id, params.receiptFilename, receiptDocumentId, params.bankName,
          params.referenceNumber, params.amount,
          params.paymentDate, params.notes],
       );
@@ -572,15 +607,15 @@ export class PaymentsService {
         (tenant_id, installment_id, student_id, amount, currency,
          payment_method, reference_number, payment_date, status,
          bank_name, student_bank_ref, student_amount,
-         receipt_filename, receipt_uploaded_at, notes)
+         receipt_filename, receipt_document_id, receipt_uploaded_at, notes)
        VALUES ($1,$2,$3,$4,'TND','bank_transfer',$5,$6,'receipt_uploaded',
-               $7,$5,$4,$8,NOW(),$9)
+               $7,$5,$4,$8,$9,NOW(),$10)
        RETURNING id`,
       [
         params.tenantId, params.installmentId, installment.student_id,
         params.amount, params.referenceNumber,
         format(new Date(params.paymentDate), 'yyyy-MM-dd'),
-        params.bankName, params.receiptFilename, params.notes,
+        params.bankName, params.receiptFilename, receiptDocumentId, params.notes,
       ],
     );
 

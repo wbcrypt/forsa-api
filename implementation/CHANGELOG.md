@@ -1,5 +1,27 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — T-111 closed, Phase 1 complete)
+- K-45: seeded `payment_receipt` document type (migration
+  `006_receipt_upload.sql` + `scripts/seed.ts`).
+- K-46: added `payments.receipt_document_id` column; `submitReceipt` now
+  verifies a client-supplied `receiptDocumentId` actually belongs to the
+  student before persisting it (new `verifyReceiptDocument()` helper, 3 new
+  tests).
+- Guarantor portal receipt upload: added `POST
+  /guarantors/my-student/payment-receipt/upload-url` +
+  `.../confirm-upload` (guarantor-scoped, since `GuarantorsController` has
+  no `PermissionsGuard` and guarantor users hold none of the staff
+  `document.*` permissions); wired `forsa-guarantor`'s `PaymentsPage.tsx` to
+  the real upload flow, matching the student portal's already-working
+  pattern.
+- Incidental fix: `submitReceiptOnBehalf`'s audit-log INSERT was using
+  wrong column names, silently swallowed by a `.catch()` — guarantor
+  payment submissions were never actually being audit-logged. Fixed.
+- **Phase 1 is now complete — every item in `MASTER_TASK_LIST.md`'s Phase 1
+  section is checked off.** Phase 2 (membership-first redesign) is
+  unblocked. See `NEXT_SESSION.md` for the starting point.
+
+
 ## 2026-07-05 (continued — in-session completion of remaining Phase 1 items)
 - T-102: guarantor self-registration — `POST /guarantors/register` (backend,
   `forsa-os` `7ed9caaa`) + rebuilt `RegisterPage.tsx` (frontend,

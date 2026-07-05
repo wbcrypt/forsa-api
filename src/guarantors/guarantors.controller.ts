@@ -33,6 +33,27 @@ export class GuarantorsController {
     @CurrentTenant() tenantId: string,
   ) { return this.service.getLinkedStudentPayments(userId, tenantId) }
 
+  // T-111 — presigned upload-url step, ahead of confirm-upload and the
+  // receipt submission itself. See GuarantorsService#getReceiptUploadUrl
+  // for why this doesn't just call POST /documents/upload-url directly.
+  @Post('my-student/payment-receipt/upload-url')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get a presigned S3 upload URL for a payment receipt file (T-111)' })
+  getReceiptUploadUrl(
+    @CurrentUser('id') userId: string,
+    @CurrentTenant() tenantId: string,
+    @Body() body: { fileName: string; contentType: string },
+  ) { return this.service.getReceiptUploadUrl(userId, tenantId, body.fileName, body.contentType) }
+
+  @Post('my-student/payment-receipt/confirm-upload')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Confirm a payment receipt file finished uploading to S3 (T-111)' })
+  confirmReceiptUpload(
+    @CurrentUser('id') userId: string,
+    @CurrentTenant() tenantId: string,
+    @Body() body: { documentId: string; fileSize: number; checksum?: string },
+  ) { return this.service.confirmReceiptUpload(userId, tenantId, body.documentId, body.fileSize, body.checksum) }
+
   @Post('my-student/payment-receipt')
   @HttpCode(HttpStatus.OK)
   submitReceipt(

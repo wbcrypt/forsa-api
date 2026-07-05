@@ -214,3 +214,45 @@ earlier session (student portal half), blocked on two small backend gaps
 the 5 items in this session's punch list. **Phase 1 is therefore not yet
 100% complete** — T-111 is the one remaining item before Phase 2 can start
 per the controlling spec's ordering rule.
+
+**Update (same day, final) — user asked to close T-111 and formally
+complete Phase 1.** Done:
+
+1. **K-45** — new migration `006_receipt_upload.sql` seeds an active
+   `payment_receipt` `document_types` row (idempotent), also added to
+   `scripts/seed.ts` for fresh installs.
+2. **K-46** — same migration adds `payments.receipt_document_id UUID
+   REFERENCES documents(id)` + index. `payments.service.ts#submitReceipt`
+   gained a `verifyReceiptDocument()` helper that confirms a client-supplied
+   `receiptDocumentId` actually resolves to a completed upload
+   (`entity_type='student'`, matching `entity_id`, `status='uploaded'`, same
+   tenant) before persisting it — never trusts the id blindly. 3 new tests
+   added to `payments.service.spec.ts` (unknown/foreign document rejected,
+   own document accepted and persisted, no-document legacy path still
+   works).
+3. **Guarantor half** — `GuarantorsController`/`GuarantorsService` gained
+   `POST /guarantors/my-student/payment-receipt/upload-url` and
+   `.../confirm-upload`, a guarantor-scoped route into `DocumentsService`'s
+   upload flow (needed because `GuarantorsController` has no
+   `PermissionsGuard` and a guarantor user holds none of the staff
+   `document.*` permissions the generic route requires — `entityType:
+   'guarantor'` was already a supported value in `generateUploadUrl`, just
+   never exposed through a route a guarantor could reach). Same ownership
+   check pattern as the student path. `forsa-guarantor`'s
+   `PaymentsPage.tsx` now runs the real upload → confirm → submit sequence
+   via new `guarantorApi` helpers in `lib/api.ts`, mirroring the student
+   portal's pattern exactly — the student portal itself needed no further
+   changes, since it was already built against this contract.
+4. Incidental fix while touching `submitReceiptOnBehalf`: its audit-log
+   INSERT used wrong column names (silently swallowed by a `.catch()`) —
+   guarantor payment submissions were never actually being audit-logged.
+   Fixed alongside the `receiptDocumentId` wiring.
+
+Verified: `tsc --noEmit` clean, `npm run build` clean (backend + both
+frontends), `npm run test` → 36/36 passing (33 from the earlier T-109 pass +
+3 new ones for this change).
+
+**Phase 1 is now formally complete — every item in `MASTER_TASK_LIST.md`'s
+Phase 1 section is `[x]`.** See `NEXT_SESSION.md` for the Phase 2 starting
+point and which open `DECISIONS.md` items should be resolved before writing
+Phase 2 code.

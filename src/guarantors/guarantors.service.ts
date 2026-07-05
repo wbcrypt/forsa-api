@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException, ConflictException } from '@nestjs/common'
+import { Injectable, NotFoundException, ForbiddenException, ConflictException, BadRequestException } from '@nestjs/common'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import { KonnectService } from '../payments/konnect.service'
+import { DocumentsService } from '../documents/documents.service'
 import { hashPassword, validatePasswordComplexity } from '../common/utils/password.util'
 import { UserStatus } from '../common/enums'
 import { RegisterGuarantorDto } from './dto/register-guarantor.dto'
@@ -11,6 +12,7 @@ export class GuarantorsService {
   constructor(
     @InjectDataSource() private readonly db: DataSource,
     private readonly konnect: KonnectService,
+    private readonly documents: DocumentsService,
   ) {}
 
   /**
@@ -177,6 +179,72 @@ export class GuarantorsService {
     return { schedule, installments, application: link }
   }
 
+  /**
+   * T-111 — presigned upload-url step of the guarantor receipt-upload flow.
+   * GuarantorsController has no PermissionsGuard (self-scoped by design —
+   * see the controller), so this is the guarantor-appropriate route into
+   * documents.service.ts's upload flow: a guarantor portal user typically
+   * holds none of the staff `document.*` permissions the generic
+   * POST /documents/upload-url route requires.
+   */
+  async getReceiptUploadUrl(
+    userId: string,
+    tenantId: string,
+    fileName: string,
+    contentType: string,
+  ) {
+    const link = await this.findLinkedStudent(userId, tenantId)
+    if (!link) throw new NotFoundException('No linked student found')
+
+    return this.documents.generateUploadUrl({
+      tenantId,
+      entityType: 'guarantor',
+      entityId: link.guarantor_id,
+      documentTypeCode: 'payment_receipt',
+      fileName,
+      contentType,
+      uploadedBy: userId,
+    })
+  }
+
+  async confirmReceiptUpload(
+    userId: string,
+    tenantId: string,
+    documentId: string,
+    fileSize: number,
+    checksum?: string,
+  ) {
+    const link = await this.findLinkedStudent(userId, tenantId)
+    if (!link) throw new NotFoundException('No linked student found')
+
+    const [doc] = await this.db.query<any[]>(
+      `SELECT id FROM documents WHERE id = $1 AND tenant_id = $2 AND entity_type = 'guarantor' AND entity_id = $3`,
+      [documentId, tenantId, link.guarantor_id],
+    )
+    if (!doc) throw new ForbiddenException('Document does not belong to your guarantor account')
+
+    return this.documents.confirmUpload(documentId, tenantId, fileSize, checksum)
+  }
+
+  private async verifyReceiptDocument(
+    receiptDocumentId: string | undefined,
+    tenantId: string,
+    guarantorId: string,
+  ): Promise<string | null> {
+    if (!receiptDocumentId) return null
+
+    const [doc] = await this.db.query<any[]>(
+      `SELECT id FROM documents
+       WHERE id = $1 AND tenant_id = $2 AND entity_type = 'guarantor' AND entity_id = $3
+         AND status = 'uploaded'`,
+      [receiptDocumentId, tenantId, guarantorId],
+    )
+    if (!doc) {
+      throw new BadRequestException('receiptDocumentId does not reference a completed upload for this guarantor')
+    }
+    return doc.id
+  }
+
   async submitReceiptOnBehalf(
     userId: string,
     tenantId: string,
@@ -187,6 +255,7 @@ export class GuarantorsService {
       bankName?: string
       referenceNumber?: string
       receiptFilename?: string
+      receiptDocumentId?: string
       notes?: string
     },
   ) {
@@ -203,33 +272,39 @@ export class GuarantorsService {
     )
     if (!installment) throw new ForbiddenException('Installment does not belong to your linked student')
 
+    // T-111 — verify a client-supplied receiptDocumentId actually belongs
+    // to this guarantor before trusting it.
+    const receiptDocumentId = await this.verifyReceiptDocument(
+      body.receiptDocumentId, tenantId, link.guarantor_id,
+    )
+
     // Insert or update payment record (guarantor paying on behalf)
     await this.db.query(
       `INSERT INTO payments (
          tenant_id, installment_id, student_id,
          payment_date, amount, bank_name, student_bank_ref,
-         student_amount, receipt_filename, receipt_uploaded_at,
+         student_amount, receipt_filename, receipt_document_id, receipt_uploaded_at,
          status, payment_method, notes
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 'receipt_uploaded', 'bank_transfer', $10)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), 'receipt_uploaded', 'bank_transfer', $11)
        ON CONFLICT (installment_id) WHERE status = 'receipt_uploaded'
        DO UPDATE SET
          payment_date = $4, amount = $5, bank_name = $6,
          student_bank_ref = $7, student_amount = $8,
-         receipt_filename = $9, receipt_uploaded_at = NOW(),
-         notes = $10`,
+         receipt_filename = $9, receipt_document_id = $10, receipt_uploaded_at = NOW(),
+         notes = $11`,
       [
         tenantId, body.installmentId, link.student_id,
         body.paymentDate, body.amount,
         body.bankName || null, body.referenceNumber || null,
-        body.amount, body.receiptFilename || null,
+        body.amount, body.receiptFilename || null, receiptDocumentId,
         `Paiement effectué par le garant. ${body.notes || ''}`.trim(),
       ],
     )
 
     // Log to audit
     await this.db.query(
-      `INSERT INTO audit_logs (tenant_id, user_id, action, target_type, target_id, new_value)
-       VALUES ($1, $2, 'guarantor.payment_receipt_submitted', 'installment', $3, $4)`,
+      `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, new_value, created_at)
+       VALUES ($1, $2, 'guarantor.payment_receipt_submitted', 'payments', 'installment', $3, $4, NOW())`,
       [tenantId, userId, body.installmentId, JSON.stringify({ amount: body.amount, by: 'guarantor' })],
     ).catch(() => {})
 

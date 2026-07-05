@@ -108,6 +108,7 @@ const DOCUMENT_TYPES = [
   ['employment_contract','Employment Contract','financial','Guarantor employment contract',false],
   ['guarantor_id','Guarantor National ID','identity','Guarantor identification',true],
   ['residency_proof','Residency Proof','identity','Proof of address',false],
+  ['payment_receipt','Payment Receipt','financial','Bank transfer or cash deposit receipt uploaded by a student or guarantor (T-111)',false],
   ['birth_certificate','Birth Certificate','identity','Student birth certificate',false],
   ['medical_certificate','Medical Certificate','health','For medical withdrawals only',false],
 ];

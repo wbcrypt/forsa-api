@@ -33,6 +33,12 @@
 
 ## Phase 1 — Critical Engineering Fixes (BLOCKING — complete before Phase 2)
 
+**STATUS: COMPLETE as of 2026-07-05.** Every item below (T-101 through T-113)
+is checked off. Phase 2 (membership-first redesign) is now unblocked — see
+`NEXT_SESSION.md` for the concrete Phase 2 starting point and the open
+design decisions in `DECISIONS.md` that should be resolved before writing
+Phase 2 code (D-004 especially, since it gates most of the schema work).
+
 Per the 2026-07-05 spec's own ordering. Each bullet below is that spec's item,
 expanded with the concrete detail already gathered from the audit.
 
@@ -258,20 +264,49 @@ named in the 2026-07-05 spec bullets, but blocking in practice):**
       routes most worth rate-limiting) — with `@SkipThrottle()` added
       specifically to the Konnect webhook route as a deliberate, documented
       exception (see T-105).
-- [~] T-111 Receipt-upload flows (Student + Guarantor portals) transmit only
+- [x] T-111 Receipt-upload flows (Student + Guarantor portals) transmit only
       the filename, never the file bytes — Finance staff have nothing to
       inspect. Wire a real upload using the existing S3 presigned-URL flow
       already used by `documents.service.ts`.
-      **2026-07-05 — Student portal half done, blocked on 2 backend gaps.**
-      `PaymentsPage.tsx`'s `ReceiptUpload` now runs the real presigned-upload
-      flow (`documentApi.getUploadUrl` → S3 PUT → `confirmUpload` →
-      `receiptDocumentId` sent alongside `receiptFilename` to `POST
-      /payments/receipts`). **Blocked on backend**: (1) no active
-      `document_types` row with code `payment_receipt` exists yet — the
-      upload-url call will 400 without it; (2) `payments.submitReceipt`/the
-      `payments` table don't persist `receiptDocumentId` anywhere yet — it's
-      currently sent but silently dropped (harmless no-op, not yet wired).
-      Guarantor portal half not started.
+      **2026-07-05 — DONE, all 3 gaps closed.**
+      - **K-45 (missing `document_types` row)**: new migration
+        `006_receipt_upload.sql` seeds an active `payment_receipt` document
+        type row (idempotent `ON CONFLICT (code) DO NOTHING`); also added to
+        `scripts/seed.ts`'s `DOCUMENT_TYPES` array for fresh installs.
+      - **K-46 (missing column)**: same migration adds
+        `payments.receipt_document_id UUID REFERENCES documents(id)` +
+        index. `payments.service.ts#submitReceipt` now accepts
+        `receiptDocumentId`, verifies it via a new `verifyReceiptDocument()`
+        helper (confirms the `documents` row is `entity_type='student'`,
+        `entity_id=<this student>`, `status='uploaded'`, in this tenant —
+        never trusts a client-supplied documentId blindly) before persisting
+        it on both the INSERT and UPDATE-existing-receipt paths. Locked down
+        with 3 new tests in `payments.service.spec.ts`.
+      - **Guarantor portal half**: added `POST
+        /guarantors/my-student/payment-receipt/upload-url` and
+        `.../confirm-upload` (`GuarantorsController`/`GuarantorsService`,
+        `forsa-os`) — a guarantor-scoped route into `DocumentsService`'s
+        upload flow, needed because `GuarantorsController` has no
+        `PermissionsGuard` (self-scoped by design) and a guarantor user holds
+        none of the staff `document.*` permissions the generic
+        `POST /documents/upload-url` route requires. `entityType: 'guarantor'`
+        was already a supported value in `generateUploadUrl`. Same ownership
+        verification pattern as the student path (`entity_type='guarantor'`,
+        `entity_id=<this guarantor>`). Frontend (`forsa-guarantor`):
+        `PaymentsPage.tsx`'s receipt-submission mutation now runs the full
+        upload → confirm → submit sequence via new `guarantorApi.
+        getReceiptUploadUrl`/`confirmReceiptUpload`/`uploadFileToS3` helpers
+        in `lib/api.ts`, mirroring the student portal's already-working
+        pattern exactly.
+      - Incidental fix while in this code: `submitReceiptOnBehalf`'s audit-log
+        INSERT was using wrong column names (`action, target_type` instead of
+        the real schema's `action_type, module, target_entity`) — silently
+        swallowed by a `.catch(() => {})` before, so guarantor payment
+        submissions were never actually being audit-logged. Fixed as part of
+        touching this method for the `receiptDocumentId` wiring.
+      - Student portal side needed **no further changes** — it was already
+        built against exactly this contract by an earlier session; the 2
+        backend gaps blocking it are what's fixed here.
 - [x] T-112 **Admin Dashboard role-assignment UI** (was deferred to "V2" in
       `UsersPage.tsx`, requiring a raw undocumented API call). Backend
       `GET/POST/DELETE /users/:id/roles` already existed and works.

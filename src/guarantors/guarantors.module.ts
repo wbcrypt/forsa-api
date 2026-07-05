@@ -3,9 +3,10 @@ import { GuarantorsController } from './guarantors.controller'
 import { GuarantorsService } from './guarantors.service'
 import { PaymentsModule } from '../payments/payments.module'
 import { KonnectService } from '../payments/konnect.service'
+import { DocumentsModule } from '../documents/documents.module'
 
 @Module({
-  imports: [PaymentsModule],
+  imports: [PaymentsModule, DocumentsModule],
   controllers: [GuarantorsController],
   providers: [GuarantorsService, KonnectService],
   exports: [GuarantorsService],

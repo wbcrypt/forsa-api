@@ -88,6 +88,7 @@ export class PaymentsController {
       bankName?: string;
       referenceNumber?: string;
       receiptFilename?: string;
+      receiptDocumentId?: string;
       notes?: string;
     },
     @CurrentTenant() t: string,
