@@ -55,24 +55,95 @@ before committing the extra work.
 **Gates**: T-211, and indirectly T-108 (policy engine's overall "do we ever
 populate this" question).
 
-### D-004 — What is the single unified application/membership status model? — `OPEN`
+### D-004 — What is the single unified application/membership status model? — `PROPOSED` (2026-07-05), awaiting user approval
 **Question**: three status vocabularies now potentially coexist: (1) the core
 pipeline's 16-status `STATUS_TRANSITIONS` machine, (2) the Admin Dashboard's
 V2 `ApplicationWorkflowPage` vocabulary (Applied → ... → Active Student), and
 (3) the new Phase 2 membership lifecycle (Visitor → Membership Request →
 Bronze → FORSA ID → ... → Renewal). These need to become **one** coherent
 model, not three.
-**Not yet decided**: whether membership status (bronze/silver/gold/waiting/
-fraud) is a field on `students`/a new `memberships` table, separate from
-`applications.current_status` (which would then only track the
-financing-request-specific sub-journey: Documents → AI Interview → AI
-Assessment → Human Review → University Confirmation → Payment Plan), or
-whether it's one merged state machine. **Recommend**: two related but distinct
-state machines — membership status (coarse, long-lived, per-student) and
-financing-request status (fine-grained, per-application, existing pipeline
-mostly reused) — linked by `applications.student_id`. Confirm before starting
-T-107/T-201/T-202, since a lot of downstream schema work depends on this.
-**Gates**: T-107, T-201, T-202, and most of Phase 2's data-model tasks.
+
+**Proposal — two related but distinct state machines, not one merged one:**
+
+**1. Membership Status** — coarse, long-lived, lives on `students` (new
+`membership_status` column) plus a new `membership_status_history` table
+(append-only, mirroring the existing `application_status_history` pattern).
+Only **four** real values: `bronze` (the floor — every approved member
+starts here) → `silver` (active semester financing) → `gold` (active
+academic-year financing) → `blacklisted` (permanent, fraud-confirmed, blocks
+all future membership/financing requests for that identity). Key insight
+that resolves the model cleanly: per the spec's own Human Decision outcome
+list — Bronze, Silver, Gold, Waiting List, More Info Required, Not Approved,
+Fraud — **Waiting List / More Info Required / Not Approved are properties of
+a *financing request*, not the membership itself**. A member whose financing
+request is waitlisted or declined this cycle doesn't lose membership — they
+stay Bronze. This matches "Do not reject because capital is exhausted" and
+"Bronze receives ecosystem access and priority" directly. (Small supporting
+signal already in the repo: `forsa-dashboard/src/lib/i18n.ts` already has
+unused `bronzePathway`/`assignBronze`/`ecosystemNote` strings — "Every
+applicant joins FORSA. Gold & Silver receive financing. Bronze receives
+ecosystem access and priority." — this direction was already anticipated,
+just never wired to anything.) Silver/Gold is a **ratchet that only moves up**
+via an approved financing decision — see the one open sub-question below on
+what happens at renewal.
+
+Before any membership exists, there is no `students` row at all — a
+**Visitor** is anonymous. Submitting a Membership Request creates a new,
+separate `membership_requests` row (public endpoint, no auth, no password —
+name/phone/email/city/university/programme/academic-year/current-or-future
+only, per the spec). Only on staff approval does the system provision the
+real `students` row, `users` row (superseding T-101/T-102's Phase-1-era
+`POST /students/register`/`POST /guarantors/register`, which were
+deliberately built minimal and reversible per this same decision), FORSA ID,
+and Digital Student Pass — this is what T-203/T-204 build.
+
+**2. Financing Request Status** — fine-grained, per-`applications`-row,
+**extends the existing `ApplicationStatus` enum in place** rather than
+replacing the table or inventing a parallel one. Keep every value that's
+real and currently used (`new_lead` through `appealing`). Retire the V2
+dashboard vocabulary's dead duplicate/decorative values (`applied`,
+`ai_interview_completed`-as-currently-unused, `internal_review`,
+`pre_approved`, `document_verification`, `contracts_signed` — a near-typo
+duplicate of `contract_signed`, `university_payment` — a near-typo duplicate
+of `university_paid`) and replace them with the real Phase 2 steps that
+didn't exist before: a genuine `ai_interview_completed` (now actually wired
+to AI Assessment output), `ai_assessment_complete`, `waiting_list` (reuses
+the existing `capital_queue` *mechanism* — same soft-block concept — just
+renamed in user-facing copy to match the spec's own outcome name, not a
+second parallel enum value), `more_info_required` (distinct from
+`waiting_for_documents` — this is *post*-assessment feedback, not
+*pre*-submission), `fraud_flagged` (triggers the permanent blacklist and is
+structurally distinct from a plain `rejected`), and `university_confirmed`
+(the new University Confirmation step — university staff confirming
+tuition/enrollment before a payment plan activates, a real *new*, narrowly-
+scoped write capability for that portal per the spec's "University Portal"
+section, otherwise still read-only).
+
+**Important clarification this proposal makes explicit**: `approved_level1/
+2/3` (today's approval-*authority* tiers — auto/single-approver/dual-approver
+by dollar amount) and `silver`/`gold` (financing-*duration* tiers — semester
+vs. academic year) are **two different axes, not the same thing**. A Silver
+(semester) financing request could still need Level 2 (dual-approver)
+sign-off depending on amount. Proposal: keep `current_financing_level`
+(level1/2/3) exactly as it works today, and add a new, separate
+`financing_tier` field (`silver`/`gold`) set by the human decision — do not
+conflate the two or collapse one into the other.
+
+**One genuinely open sub-question, needs your call**: does a member's
+Silver/Gold status *persist* after that financing period ends and they don't
+immediately renew (an earned badge, matching "Gold represents FORSA's
+highest level of trust"), or does it *lapse back to Bronze* until a new
+financing request is approved again (a live subscription-like tier)? The
+spec doesn't say. **Recommendation, pending your confirmation**: persists —
+treat it as an earned trust level, not a live entitlement, since "highest
+level of trust" reads as cumulative, and a fresh Renewal financing request
+is evaluated on its own merits regardless (T-216 already says "FORSA Score
+considered" at renewal — the score, not the badge, is what actually gates
+the new decision).
+
+**Gates**: T-107 (fully closes once this lands), T-201, T-202, and most of
+Phase 2's data-model tasks. **Status**: proposed to the user 2026-07-05,
+awaiting explicit approval before any Phase 2 schema/code work begins.
 
 ### D-005 — Should guarantor withdrawal trigger an automated consequence? — `OPEN`
 **Question**: today `GUARANTOR_WITHDRAWAL` opens an exceptional-event row with
