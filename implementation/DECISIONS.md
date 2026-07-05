@@ -55,7 +55,7 @@ before committing the extra work.
 **Gates**: T-211, and indirectly T-108 (policy engine's overall "do we ever
 populate this" question).
 
-### D-004 — What is the single unified application/membership status model? — `PROPOSED` (2026-07-05), awaiting user approval
+### D-004 — What is the single unified application/membership status model? — `DECIDED` (2026-07-05)
 **Question**: three status vocabularies now potentially coexist: (1) the core
 pipeline's 16-status `STATUS_TRANSITIONS` machine, (2) the Admin Dashboard's
 V2 `ApplicationWorkflowPage` vocabulary (Applied → ... → Active Student), and
@@ -129,17 +129,24 @@ sign-off depending on amount. Proposal: keep `current_financing_level`
 `financing_tier` field (`silver`/`gold`) set by the human decision — do not
 conflate the two or collapse one into the other.
 
-**One genuinely open sub-question, needs your call**: does a member's
-Silver/Gold status *persist* after that financing period ends and they don't
-immediately renew (an earned badge, matching "Gold represents FORSA's
-highest level of trust"), or does it *lapse back to Bronze* until a new
-financing request is approved again (a live subscription-like tier)? The
-spec doesn't say. **Recommendation, pending your confirmation**: persists —
-treat it as an earned trust level, not a live entitlement, since "highest
-level of trust" reads as cumulative, and a fresh Renewal financing request
-is evaluated on its own merits regardless (T-216 already says "FORSA Score
-considered" at renewal — the score, not the badge, is what actually gates
-the new decision).
+**Sub-question — RESOLVED by user 2026-07-05**: does a member's Silver/Gold
+status persist after that financing period ends without renewal, or lapse
+back to Bronze? **Answer: persists.** A student who earned Silver/Gold keeps
+that membership status permanently — it does not reset or expire — unless
+the account is blacklisted for confirmed fraud. `membership_status` is
+therefore a pure ratchet with exactly one exception: `bronze → silver →
+gold` moves only upward via an approved financing decision, and any level
+can move to `blacklisted` (terminal), but nothing ever moves back down from
+`silver`/`gold` to `bronze` on its own. Renewal financing requests are still
+evaluated on their own merits each cycle (FORSA Score considered per T-216)
+— that governs whether a *new* financing request is approved, not whether
+the student keeps their earned membership tier. Implementation note for
+T-201/T-202: no expiry/decay logic, no scheduled job to downgrade dormant
+Silver/Gold members — the only write path that changes `membership_status`
+downward is the fraud/blacklist flow (T-217).
+
+**D-004 is now fully decided — Phase 2 schema/code work (T-201 onward) is
+unblocked.** See `NEXT_SESSION.md` for the updated starting point.
 
 **Gates**: T-107 (fully closes once this lands), T-201, T-202, and most of
 Phase 2's data-model tasks. **Status**: proposed to the user 2026-07-05,

@@ -440,10 +440,31 @@ resolve them before writing code that depends on the answer).
       this replaces/extends the existing `capital_queue` soft-block concept
       (Pipeline Stage 6) — reconcile the two rather than building a parallel
       mechanism.
-- [ ] T-214 Enforce that only a human can approve financing, and that CEO is
+- [~] T-214 Enforce that only a human can approve financing, and that CEO is
       the sole override role — this is also where the existing but unenforced
       dual/executive multi-approver requirement (Stage 7/8 gap from the
       original audit) should finally be gated for real.
+      **2026-07-05 — dual/executive multi-approver enforcement DONE (K-12,
+      launch blocker #1); CEO-sole-override role gating NOT done (that's a
+      Phase 2 permissions-model question, out of scope for this pass).**
+      `submitHumanDecision` (`src/pipeline/pipeline.service.ts`) previously
+      inserted a `reviewer_decisions` row and unconditionally continued the
+      pipeline to Stage 9 — a single reviewer could finalize any decision
+      regardless of the dual/executive-approver count Stage 7 itself
+      computed and Stage 8 recorded on `multi_approval_sets`. Now: an
+      `approved` decision is only allowed to proceed once `COUNT(DISTINCT
+      reviewer_id)` of `'approved'` decisions on that pipeline run meets
+      `required_approvers` — otherwise it returns `{ status:
+      'awaiting_additional_approver', ... }` without advancing the
+      pipeline. `rejected`/`on_hold`/`needs_more_documents` still proceed
+      immediately on a single reviewer's say-so (deliberate — the control
+      this closes is specifically about preventing one person from
+      single-handedly approving a large amount, not about slowing down a
+      stop/pause action). Also added a same-reviewer-can't-vote-twice guard
+      (`ConflictException`), since without it the same person could satisfy
+      a "2 distinct approvers" requirement by submitting twice. 10 new tests
+      in `pipeline.service.spec.ts` lock this down, including the exact
+      partial-approval-doesn't-proceed case.
 
 ### 2.7 Risk rules
 - [ ] T-215 Implement: max 10% of available capital in high-risk exposure;

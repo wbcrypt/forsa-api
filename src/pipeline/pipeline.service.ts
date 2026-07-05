@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Logger,
+  Injectable, NotFoundException, BadRequestException, ConflictException, Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -1014,6 +1014,17 @@ export class PipelineService {
     );
     if (!run) throw new NotFoundException('Pipeline run not found or not active');
 
+    // T-214/K-12 — a reviewer cannot vote twice on the same pipeline run.
+    // Without this, the exact same person could satisfy a "2 distinct
+    // approvers" requirement by submitting twice.
+    const [existingVote] = await this.dataSource.query<any[]>(
+      `SELECT id FROM reviewer_decisions WHERE pipeline_run_id = $1 AND reviewer_id = $2`,
+      [pipelineRunId, reviewerId],
+    );
+    if (existingVote) {
+      throw new ConflictException('You have already submitted a decision for this pipeline run');
+    }
+
     // Create immutable reviewer snapshot (what they saw at decision time)
     const [application] = await this.dataSource.query<any[]>(
       `SELECT a.*, s.first_name, s.last_name, fs.aggregate_score
@@ -1042,7 +1053,60 @@ export class PipelineService {
       ],
     );
 
-    // Continue pipeline from stage 9 now that human decision is made
+    // T-214/K-12 — Stage 7 computes how many independent approvers a
+    // financing amount requires (2 for dual/executive-level); Stage 8
+    // records that requirement on multi_approval_sets — but until this fix,
+    // nothing ever checked it: any single reviewer's decision immediately
+    // continued the pipeline to stage 9, regardless of how many approvers
+    // were actually required. Only an 'approved' decision needs consensus —
+    // a single reviewer rejecting, holding, or requesting more documents is
+    // still enough to pause/stop the process on its own (that matches the
+    // original single-reviewer-decides behavior for those outcomes, and the
+    // control this closes is specifically about preventing one person from
+    // single-handedly approving a large amount, not about slowing down a
+    // rejection).
+    const [approvalSet] = await this.dataSource.query<any[]>(
+      `SELECT id, required_approvers FROM multi_approval_sets
+       WHERE pipeline_run_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [pipelineRunId],
+    );
+
+    if (decision === 'approved' && approvalSet && approvalSet.required_approvers > 1) {
+      const [{ count }] = await this.dataSource.query<any[]>(
+        `SELECT COUNT(DISTINCT reviewer_id) AS count FROM reviewer_decisions
+         WHERE pipeline_run_id = $1 AND decision = 'approved'`,
+        [pipelineRunId],
+      );
+      const approvedSoFar = parseInt(count, 10);
+
+      if (approvedSoFar < approvalSet.required_approvers) {
+        await this.dataSource.query(
+          `UPDATE multi_approval_sets SET status = 'partially_approved' WHERE id = $1`,
+          [approvalSet.id],
+        );
+        this.logger.log(
+          `Pipeline run ${pipelineRunId}: ${approvedSoFar}/${approvalSet.required_approvers} required approvals — awaiting additional reviewer(s)`,
+        );
+        return {
+          status: 'awaiting_additional_approver',
+          requiredApprovers: approvalSet.required_approvers,
+          approvedSoFar,
+          message: `This decision requires ${approvalSet.required_approvers} independent approvers. ${approvedSoFar} of ${approvalSet.required_approvers} have approved so far — the pipeline will not proceed until the remaining approver(s) submit their decision.`,
+        };
+      }
+
+      await this.dataSource.query(
+        `UPDATE multi_approval_sets SET status = 'approved' WHERE id = $1`,
+        [approvalSet.id],
+      );
+    } else if (approvalSet) {
+      await this.dataSource.query(
+        `UPDATE multi_approval_sets SET status = $2 WHERE id = $1`,
+        [approvalSet.id, decision === 'approved' ? 'approved' : decision],
+      );
+    }
+
+    // Continue pipeline from stage 9 now that the required decision(s) are in
     return this.startRun(run.application_id, tenantId, reviewerId, 9);
   }
 
