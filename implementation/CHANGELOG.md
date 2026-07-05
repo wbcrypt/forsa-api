@@ -1,5 +1,24 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — Phase 2 Milestone 6: Household Stability / AI Review)
+- New `src/ai/household-stability.util.ts`: the approved D-003 weights
+  (35/25/20/10/10) + a pure `computeHouseholdStabilityScore()`. Stored in
+  the existing `applications.ai_report`/`ai_score_overall` (no new
+  columns needed beyond migration 009).
+- Fixed a real trust gap found while building this: `ai_score_overall`/
+  `ai_recommendation` used to be stored directly from the client's
+  request body, unvalidated. `ApplicationsService.create()` now
+  recomputes both deterministically server-side.
+- Wrote the exact "lower-income-but-stable household outranks a
+  wealthier-but-less-responsible one" test case T-211 calls for.
+- Updated `InterviewPage.tsx`'s scoring prompt to the 5 canonical
+  dimension names; stopped asking the AI to self-report an overall score.
+- Traced the consequence: fixed `forsa-dashboard`'s `RankingPage.tsx`,
+  which was still reading the old dimension names and would have shown
+  blank scores for every new interview.
+- Verified D-008's boundary holds: `src/score/score.service.ts` untouched.
+- 8 new tests, 92/92 backend tests passing.
+
 ## 2026-07-05 (continued — Phase 2 Milestone 5: Financing Request)
 - **Found the entire student-facing Financing Request submission flow was
   already broken**, independent of the new membership gate: (1)

@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { ApplicationStatus, FinancingLevel, NotificationChannel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
 import { NotificationsService } from '../notifications/notifications.service';
+import { computeHouseholdStabilityScore, deriveRecommendation } from '../ai/household-stability.util';
 
 // Valid status transitions (state machine)
 const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
@@ -71,6 +72,27 @@ export class ApplicationsService {
   }
 
   async create(dto: any, tenantId: string, createdBy: string) {
+    // T-211/D-003 — never trust a client-supplied aiScoreOverall directly:
+    // recompute the weighted Household Stability score server-side from
+    // the AI's raw per-dimension scores using the approved, centralized
+    // weights (household-stability.util.ts), rather than storing whatever
+    // number the frontend (or the LLM's own unreliable arithmetic) sent.
+    // Falls back to null — same as the K-18 demo-mode case — if the
+    // report is missing, malformed, or itself demo_mode (never fabricate
+    // a score either way).
+    let parsedAiReport: any = null;
+    if (dto.aiReport) {
+      try {
+        parsedAiReport = typeof dto.aiReport === 'string' ? JSON.parse(dto.aiReport) : dto.aiReport;
+      } catch {
+        parsedAiReport = null;
+      }
+    }
+    const aiScoreOverall = parsedAiReport && parsedAiReport.demo_mode !== true
+      ? computeHouseholdStabilityScore(parsedAiReport.scores)
+      : null;
+    const aiRecommendation = deriveRecommendation(aiScoreOverall);
+
     const [application] = await this.dataSource.query<any[]>(
       `INSERT INTO applications
         (tenant_id, student_id, university_id, program_id,
@@ -89,11 +111,7 @@ export class ApplicationsService {
         dto.tuitionAmount, dto.requestedSupportAmount, dto.currency || 'TND',
         dto.academicYear, dto.isRenewal || false,
         dto.previousApplicationId, dto.assignedToUserId, createdBy,
-        // K-18/D-008 — dto.aiScoreOverall/aiRecommendation are already null
-        // whenever a demo-mode fallback was used (InterviewPage.tsx never
-        // sends a fabricated score as real) — these columns simply store
-        // whatever the frontend already decided was safe to submit.
-        dto.aiScoreOverall ?? null, dto.aiRecommendation ?? null,
+        aiScoreOverall, aiRecommendation,
         dto.aiReport ? (typeof dto.aiReport === 'string' ? dto.aiReport : JSON.stringify(dto.aiReport)) : null,
         dto.interviewLanguage ?? null, dto.interviewTranscript ?? null,
       ],

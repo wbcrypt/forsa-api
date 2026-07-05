@@ -66,17 +66,13 @@ None of this had ever been exercised end-to-end before. Fixed by adding a new se
 **Repos**: `forsa-os`, `forsa-student`. (`forsa-guarantor` document-freshness UI not touched this pass — the enforcement lives entirely in the shared pipeline completeness check, which already covers guarantor-linked documents the same way.)
 **Complexity actual**: ended up **Medium-High**, not the originally-estimated Medium — the unplanned discovery of a fully broken pre-existing flow was the majority of the real work here, not the gate itself.
 
-### M4 — AI philosophy & Household Stability scoring (T-211; T-210 model-string half and K-18 already closed)
-**Delivers**: the new primary AI-advisory evaluation dimension (35% Household Stability / 25% Financial Capacity / 20% Academic Commitment / 10% Documentation Quality / 10% Interview), strictly advisory — never auto-sets an approval outcome.
-
-**Repos**: `forsa-os` (`src/ai/`, `src/score/`), `forsa-student` (interview flow already built in K-18's fix — extend, don't rebuild).
-**Depends on**: nothing structurally (independent of M0–M3), but **is blocked on two open decisions that must be resolved before writing code**:
-- **D-003 (OPEN)**: do the 35/25/20/10/10 weights live in the (currently 100% inert) Policy Engine, or are they hardcoded like every other threshold today? Policy Engine adds real scope — at least one live `policy_versions` row plus an approval step.
-- **D-008 (OPEN)**: is Household Stability a genuinely separate system from the existing 5-dimension FORSA Score engine (`payment_reliability` 0.40 / `documentation_reliability` 0.20 / `communication_reliability` 0.15 / `academic_continuity` 0.15 / `guarantor_reliability` 0.10), or does one replace the other? Current leaning in `DECISIONS.md` is "two separate systems, not a replacement" — but this has not been explicitly confirmed by the user, and building T-211 on the wrong reading is exactly the kind of rework this plan exists to prevent.
-
-**Complexity**: **Medium-High** — the scoring logic itself is simple arithmetic; the complexity is in getting the *design* right before coding, per the two open decisions above.
-**Recommended storage**: extend the existing `applications.ai_report` JSONB blob with the new fields rather than adding 9 new columns — this matches the pattern already used for the K-18 `demo_mode` flag, keeps the migration surface small, and the dashboard's `RankingPage` already parses this JSON client-side today.
-**Hard gate**: do not start this milestone's code until D-003 and D-008 are explicitly answered — flagging this as the plan's single most important open item (see §3).
+### M4 — AI philosophy & Household Stability scoring (T-211; T-210 model-string half and K-18 already closed) — ✅ DONE 2026-07-05
+**Delivered**: new `src/ai/household-stability.util.ts` — `HOUSEHOLD_STABILITY_WEIGHTS` (the approved D-003 split: 35/25/20/10/10) plus a pure `computeHouseholdStabilityScore()`, every call site reading from this one module. Storage matches the original recommendation exactly: the existing `applications.ai_report` JSONB blob (no new columns for the per-dimension scores themselves — only the already-added `ai_score_overall`/`ai_recommendation` from M3's migration 009 store the computed results).
+**Went beyond the original scope in one necessary way**: `ai_score_overall`/`ai_recommendation` used to be stored directly from whatever the client sent, with zero server-side validation — a real trust gap, independent of D-003 but impossible to ignore once building the actual weighted-scoring function. `ApplicationsService.create()` now recomputes the score deterministically from `aiReport.scores` and derives the recommendation from fixed thresholds on that same score — never trusting a client-supplied combined figure, or the LLM's own self-reported "overall," either way (LLMs are unreliable at precise weighted arithmetic).
+`forsa-student/InterviewPage.tsx`'s scoring prompt now requests the 5 canonical dimension names instead of the old, informally-named set (educational_readiness/financial_readiness/planning_readiness/commitment_readiness/interview_quality) — a consequence of this rename also required fixing `forsa-dashboard`'s `RankingPage.tsx`, which would otherwise have silently shown blank scores for every new interview submitted after this change.
+**D-008 boundary respected and verified**: only `applications.ai_report`/`ai_score_overall` are touched — `src/score/score.service.ts` (the separate, ongoing FORSA Score engine) was not modified at all.
+**Repos**: `forsa-os`, `forsa-student`, `forsa-dashboard` (the last one wasn't in the original plan — added once the dimension rename's downstream impact was traced).
+**Complexity actual**: **Medium-High**, matching the estimate.
 
 ### M5 — Human decision outcomes, CEO override, risk rules (T-213, T-214 remainder, T-215)
 **Delivers**: the full outcome set and the remaining control-tightening work around it.

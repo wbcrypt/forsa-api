@@ -178,3 +178,86 @@ describe('ApplicationsService.createForSelf', () => {
     expect(insertCall[1]).not.toContain('someone-elses-student-id');
   });
 });
+
+// T-211/D-003 — ai_score_overall/ai_recommendation must be computed
+// server-side from the AI's raw per-dimension scores, never trusted
+// directly from whatever the client sends. Locks down that a
+// manipulated/fabricated client-supplied aiScoreOverall is silently
+// ignored and replaced by the real weighted computation.
+describe('ApplicationsService.create — deterministic AI scoring (T-211)', () => {
+  let service: ApplicationsService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new ApplicationsService(
+      { query } as unknown as DataSource,
+      { send: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationsService,
+    );
+  });
+
+  it('recomputes ai_score_overall from aiReport.scores, ignoring a client-supplied aiScoreOverall', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }]) // INSERT applications
+      .mockResolvedValueOnce(undefined) // status history
+      .mockResolvedValueOnce(undefined) // audit
+      .mockResolvedValueOnce([]); // notifyStudent lookup
+
+    await service.create({
+      studentId: 'student-1',
+      aiScoreOverall: 999, // a manipulated/fabricated client value — must be ignored
+      aiReport: {
+        scores: {
+          householdStability: 80, financialCapacity: 60, academicCommitment: 70,
+          documentationQuality: 90, aiInterviewAssessment: 50,
+        },
+      },
+    }, 'tenant-1', 'creator-1');
+
+    const insertCall = query.mock.calls[0];
+    // 80*.35 + 60*.25 + 70*.20 + 90*.10 + 50*.10 = 71 (see household-stability.util.spec.ts)
+    expect(insertCall[1]).toContain(71);
+    expect(insertCall[1]).not.toContain(999);
+    // Recommendation must be derived from the real computed score (71 ->
+    // Silver Candidate), not any client-supplied label.
+    expect(insertCall[1]).toContain('Silver Candidate');
+  });
+
+  it('stores null ai_score_overall when the report is marked demo_mode, even with a full scores object', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([]);
+
+    await service.create({
+      studentId: 'student-1',
+      aiReport: {
+        demo_mode: true,
+        scores: {
+          householdStability: 80, financialCapacity: 60, academicCommitment: 70,
+          documentationQuality: 90, aiInterviewAssessment: 50,
+        },
+      },
+    }, 'tenant-1', 'creator-1');
+
+    const insertCall = query.mock.calls[0];
+    expect(insertCall[1][15]).toBeNull(); // ai_score_overall param position
+  });
+
+  it('stores null ai_score_overall when aiReport.scores is missing or incomplete', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([]);
+
+    await service.create({
+      studentId: 'student-1',
+      aiReport: { scores: { householdStability: 80 } }, // incomplete
+    }, 'tenant-1', 'creator-1');
+
+    const insertCall = query.mock.calls[0];
+    expect(insertCall[1][15]).toBeNull();
+  });
+});

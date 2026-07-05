@@ -577,7 +577,7 @@ resolve them before writing code that depends on the answer).
       defaults to `{}` on a missing `scores` object, so nothing downstream
       breaks on the new `null`. The broader Household Stability
       advisory-output redesign (this task's original scope) remains open.
-- [ ] T-211 Implement Household Stability as the primary evaluation
+- [x] T-211 Implement Household Stability as the primary evaluation
       dimension with recommended weights: 35% Household Stability, 25%
       Financial Capacity, 20% Academic Commitment, 10% Documentation Quality,
       10% Interview. Decide how this relates to the existing FORSA Score
@@ -588,6 +588,43 @@ resolve them before writing code that depends on the answer).
       D-008. A lower-income-but-stable household must be able to outrank a
       wealthier-but-less-responsible one when both can sustain the payment
       plan — write this as an actual test case once the scoring logic exists.
+      **2026-07-05 — DONE (D-003 weights, hardcoded + centralized per the
+      approved decision).** New `src/ai/household-stability.util.ts`
+      exports `HOUSEHOLD_STABILITY_WEIGHTS` (35/25/20/10/10) and a pure
+      `computeHouseholdStabilityScore()` — every call site reads from this
+      one module, nothing inlines the percentages. **Correctness fix that
+      wasn't originally in scope but was clearly necessary once building
+      this**: `ai_score_overall`/`ai_recommendation` used to be whatever
+      the client sent, completely untrusted server-side — a bug
+      independent of D-003 but directly adjacent to it. Now
+      `ApplicationsService.create()` recomputes `ai_score_overall`
+      deterministically from `aiReport.scores` (the AI's raw per-dimension
+      numbers) using these weights, and `ai_recommendation` is derived
+      from that same computed score via fixed thresholds
+      (`deriveRecommendation()`) — never trusted directly from the client
+      or the LLM's own (unreliable) arithmetic either way. Updated
+      `forsa-student/InterviewPage.tsx`'s scoring prompt to request the 5
+      canonical dimension names (was the old, now-retired
+      educational_readiness/financial_readiness/planning_readiness/
+      commitment_readiness/interview_quality set) and stopped sending
+      `aiScoreOverall`/`aiRecommendation` in the submission payload at all
+      (the backend computes and ignores them regardless now). The exact
+      "lower-income-but-stable household can outrank a wealthier-but-
+      less-responsible one" test case this task calls for is written and
+      passing in `household-stability.util.spec.ts`. **D-008 boundary
+      respected**: this only ever touches `applications.ai_report`/
+      `ai_score_overall` — `src/score/score.service.ts`
+      (`forsa_scores`/`score_events`, the separate ongoing FORSA Score
+      engine) was not touched at all. Also fixed a consequence of the
+      dimension rename: `forsa-dashboard`'s `RankingPage.tsx` was still
+      reading the old dimension names and would have silently shown blank
+      scores for every new interview — updated its 4 displayed
+      sub-dimension columns to the 4 highest-weighted of the 5 new ones
+      (Household/Financial/Academic/Documents), and switched its "overall"
+      source to the reliable `ai_score_overall` DB column instead of the
+      now-removed `scores.overall_forsa_score` JSON field. 8 new tests
+      across `household-stability.util.spec.ts` +
+      `applications.service.spec.ts`, 92/92 backend tests passing.
 - [x] T-212 Fix the hardcoded invalid Anthropic model string
       (`'claude-sonnet-4-6'` in `forsa-os/src/ai/`) as part of this rebuild —
       use a real current model id (check the `claude-api` skill for the

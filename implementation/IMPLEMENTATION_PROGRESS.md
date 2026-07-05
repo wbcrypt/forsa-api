@@ -608,3 +608,60 @@ this way, not just reviewed by eye.
 `pipeline.service.spec.ts` confirming the expiry-safety clause stays in
 the query. 84/84 backend tests passing. `tsc --noEmit`/`npm run build`
 clean on `forsa-os` and `forsa-student`.
+
+**Milestone 6 — Household Stability / AI Review (M4) — DONE.**
+- New `src/ai/household-stability.util.ts`: `HOUSEHOLD_STABILITY_WEIGHTS`
+  (the approved D-003 split — 35% Household Stability, 25% Financial
+  Capacity, 20% Academic Commitment, 10% Documentation Quality, 10% AI
+  Interview Assessment) and a pure `computeHouseholdStabilityScore()`.
+  Storage matches the original plan exactly — reused
+  `applications.ai_report` JSONB (from migration 009) rather than adding
+  9 new columns.
+- **Fixed a real trust gap that wasn't originally in this milestone's
+  scope but was unavoidable once actually building the scoring
+  function**: `ai_score_overall`/`ai_recommendation` used to be stored
+  directly from whatever the client sent in the request body — zero
+  server-side validation at all. `ApplicationsService.create()` now
+  recomputes the score deterministically from `aiReport.scores` (the raw
+  0-100 per-dimension numbers) using the centralized weights, and derives
+  `ai_recommendation` from that same computed score via fixed thresholds
+  (`deriveRecommendation()` — 80+ Gold, 60+ Silver, 40+ Referral, else
+  Manual Review) — never trusting a client-supplied combined figure or an
+  LLM's own self-reported "overall" either way (large language models are
+  unreliable at precise weighted arithmetic, and a client could otherwise
+  submit whatever score it wanted).
+- Wrote the exact test case T-211's own task description calls for
+  explicitly: a lower-income-but-stable household (high household
+  stability + academic commitment, lower financial capacity) correctly
+  outranks a wealthier-but-less-responsible one (high financial capacity,
+  low stability) once the 35%/20% weights on the first two dimensions
+  dominate the 25% financial-capacity weight by a wide enough margin.
+- Updated `forsa-student/InterviewPage.tsx`'s scoring prompt to request
+  the 5 canonical dimension names (`householdStability`,
+  `financialCapacity`, `academicCommitment`, `documentationQuality`,
+  `aiInterviewAssessment`) instead of the old, informally-named set from
+  an earlier session (`educational_readiness`/`financial_readiness`/
+  `planning_readiness`/`commitment_readiness`/`interview_quality`) — and
+  stopped asking the AI to self-report an `overall_forsa_score`/
+  `recommendation` at all, since the backend now computes both
+  deterministically and would ignore whatever the client sent anyway.
+- **Traced the consequence of that rename before considering this done**:
+  `forsa-dashboard`'s `RankingPage.tsx` was still reading the old
+  dimension names (`app.scores.educational_readiness` etc.) and would
+  have silently rendered blank scores for every interview submitted after
+  this change, with no error to signal it. Updated its `SortField` type,
+  sort switch, CSV export, table columns, and detail panel to the 4
+  highest-weighted of the 5 new dimensions (Household/Financial/Academic/
+  Documents — Household 35% is the single most important column now),
+  and switched the "overall" score source from the now-removed
+  `scores.overall_forsa_score` JSON field to the reliable, server-computed
+  `ai_score_overall` database column.
+- **D-008 boundary explicitly verified, not just assumed**: grepped to
+  confirm this milestone's changes never touch `src/score/score.service.ts`,
+  `forsa_scores`, or `score_events` — the separate, ongoing post-financing
+  FORSA Score engine stays completely untouched. Household Stability and
+  FORSA Score remain two systems, per the user's D-008 decision.
+- 8 new tests (`household-stability.util.spec.ts` — 5, plus 3 more in
+  `applications.service.spec.ts` for the deterministic-scoring behavior).
+  92/92 backend tests passing. `tsc --noEmit`/`npm run build` clean on
+  `forsa-os`, `forsa-student`, `forsa-dashboard`.
