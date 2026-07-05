@@ -85,5 +85,5 @@ CREATE INDEX idx_password_setup_tokens_hash ON password_setup_tokens(token_hash)
 
 COMMENT ON TABLE membership_requests IS 'Phase 2 M1 — public, unauthenticated intake (Visitor -> Membership Request). Minimal fields only: no guarantor, no financial documents at this stage.';
 COMMENT ON COLUMN students.membership_status IS 'Coarse, long-lived membership tier: bronze/silver/gold/blacklisted. Pure ratchet upward (D-004) except the fraud/blacklist path (T-217) — no expiry/decay job ever moves this down from silver/gold to bronze.';
-COMMENT ON COLUMN students.forsa_id IS 'Assigned once on Bronze issuance (Phase 2 M3/T-205), never regenerated.';
+COMMENT ON COLUMN students.forsa_id IS 'Assigned once on Bronze issuance (T-204, MembershipService.approve), never regenerated.';
 COMMENT ON TABLE password_setup_tokens IS 'One-time, hashed set-password tokens emailed on membership approval (D-001) — raw token is never stored, only its hash.';

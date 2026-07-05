@@ -446,7 +446,38 @@ unless a genuine new business decision is discovered.
   rejection, and existing-account conflict. 68/68 backend tests passing.
   `tsc --noEmit`/`npm run build` clean on `forsa-os`, `forsa-dashboard`,
   `forsa-student`.
-- **Deliberately deferred to later milestones** (not forgotten): FORSA ID
-  generation logic (`forsa_id` column exists, stays `null` for now — next
-  milestone), Digital Student Pass, the `ApplicationStatus` enum's dead-
-  V2-vocabulary retirement (not a blocking dependency for this flow).
+- **Deliberately deferred to later milestones** (not forgotten): Digital
+  Student Pass, the `ApplicationStatus` enum's dead-V2-vocabulary
+  retirement (not a blocking dependency for this flow).
+
+**Milestone 3 — FORSA ID generation — DONE.** Followed on immediately from
+Milestone 2 since `forsa_id` had been left `null` there.
+- `generateForsaId()` in `membership.service.ts`: `FORSA-<year>-<6
+  uppercase hex chars>` (e.g. `FORSA-2026-3F9A2B`) via
+  `crypto.randomBytes(3)`. No sequence/counter table.
+- **Correctness detail that mattered**: initially wrote the collision-retry
+  loop *inside* the transaction, catching a `UNIQUE` violation and
+  `continue`-ing. Caught before committing that this doesn't work in
+  Postgres — a failed statement inside a transaction aborts the whole
+  transaction block (every subsequent statement fails with "current
+  transaction is aborted" until rollback), so retrying past a caught
+  unique-violation without a `SAVEPOINT` silently produces confusing
+  failures instead of a clean retry. Fixed by resolving a unique
+  candidate via a pre-transaction `SELECT`-check loop (up to 5 attempts)
+  before ever opening the transaction, then doing a single INSERT with
+  that confirmed id inside it. `forsa_id`'s real `UNIQUE` constraint
+  remains the backstop for the (astronomically unlikely, 16M
+  combinations/year) race between the check and the insert.
+- Notification template updated to surface the new FORSA ID in the
+  set-password email.
+- `forsa-student`'s `HomePage.tsx`: `MembershipStatusTile`/`ForsaIdTile`
+  replace the old `MembershipPreviewTile`/`ForsaIdPreviewTile` — real data
+  from `GET /students/:id` (which already returns the new columns via its
+  existing `SELECT s.*`), with an honest "Not a member yet"/"Not assigned
+  yet" fallback for any pre-Phase-2 account that has no
+  `membership_status` at all. The shared `PreviewTile` shell gained a
+  `live` prop so real tiles no longer show the "Preview" badge — only the
+  still-placeholder Digital Pass tile keeps it.
+- 2 new tests (retry-on-collision, `generateForsaId` format assertion).
+  70/70 backend tests passing. `tsc --noEmit`/`npm run build` clean on
+  `forsa-os` and `forsa-student`.

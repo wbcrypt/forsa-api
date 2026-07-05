@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { addHours } from 'date-fns';
+import * as crypto from 'crypto';
 import { hashPassword } from '../common/utils/password.util';
 import { generateSecureToken, hashToken } from '../common/utils/encryption.util';
 import { MembershipStatus, MembershipRequestStatus, UserStatus, NotificationChannel } from '../common/enums';
@@ -9,6 +10,19 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { CreateMembershipRequestDto } from './dto/create-membership-request.dto';
 
 const PASSWORD_SETUP_TOKEN_TTL_HOURS = 48;
+const FORSA_ID_MAX_ATTEMPTS = 5;
+const POSTGRES_UNIQUE_VIOLATION = '23505';
+
+// Phase 2 — FORSA ID: a human-readable member identifier, assigned once on
+// Bronze issuance, never regenerated. FORSA-<year>-<6 uppercase hex chars>,
+// e.g. FORSA-2026-3F9A2B. No sequence/counter table — a random suffix with
+// a retry-on-collision loop is simpler and avoids a second point of
+// contention on what's otherwise a single-row INSERT.
+export function generateForsaId(): string {
+  const year = new Date().getFullYear();
+  const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
+  return `FORSA-${year}-${suffix}`;
+}
 
 @Injectable()
 export class MembershipService {
@@ -77,11 +91,9 @@ export class MembershipService {
     return request;
   }
 
-  // T-204 — on approval: provision a real students + users row
-  // transactionally, issue Bronze membership, and email a set-password
-  // link (D-001 — never invent a password). FORSA ID generation itself is
-  // a separate follow-up (T-205/Phase-2-M-FORSA-ID) — forsa_id stays null
-  // here and is assigned by that dedicated step.
+  // T-204/FORSA-ID — on approval: provision a real students + users row
+  // transactionally, issue Bronze membership + a permanent FORSA ID, and
+  // email a set-password link (D-001 — never invent a password).
   async approve(id: string, tenantId: string, approvedBy: string) {
     const request = await this.findOne(id, tenantId);
     if (request.status !== MembershipRequestStatus.PENDING) {
@@ -96,16 +108,34 @@ export class MembershipService {
       throw new BadRequestException('An account with this email already exists');
     }
 
+    // Resolve a unique FORSA ID *before* opening the transaction — a failed
+    // INSERT inside a Postgres transaction aborts the whole transaction
+    // (everything after it errors with "current transaction is aborted"
+    // until rollback), so retrying past a UNIQUE-constraint collision
+    // cannot happen mid-transaction without a SAVEPOINT. A pre-check here
+    // is simpler and the collision window it leaves (another approval
+    // landing the exact same id between this check and the INSERT below)
+    // is vanishingly small — forsa_id's UNIQUE constraint is still the
+    // real backstop if that ever happens.
+    let forsaId = generateForsaId();
+    for (let attempt = 1; attempt < FORSA_ID_MAX_ATTEMPTS; attempt++) {
+      const [clash] = await this.dataSource.query<any[]>(
+        `SELECT id FROM students WHERE forsa_id = $1`, [forsaId],
+      );
+      if (!clash) break;
+      forsaId = generateForsaId();
+    }
+
     const result = await this.dataSource.transaction(async (manager) => {
       const [student] = await manager.query<any[]>(
         `INSERT INTO students
           (tenant_id, first_name, last_name, email, phone_primary, city,
-           status, membership_status, member_since)
-         VALUES ($1,$2,$3,$4,$5,$6,'lead',$7,CURRENT_DATE)
-         RETURNING id, first_name, last_name, email`,
+           status, membership_status, member_since, forsa_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'lead',$7,CURRENT_DATE,$8)
+         RETURNING id, first_name, last_name, email, forsa_id`,
         [
           tenantId, request.first_name, request.last_name, request.email,
-          request.phone, request.city, MembershipStatus.BRONZE,
+          request.phone, request.city, MembershipStatus.BRONZE, forsaId,
         ],
       );
 
@@ -158,7 +188,7 @@ export class MembershipService {
         [tenantId, approvedBy, student.id, JSON.stringify({ email: request.email, membershipStatus: MembershipStatus.BRONZE })],
       ).catch(() => {});
 
-      return { studentId: student.id, userId: user.id, email: user.email, rawToken };
+      return { studentId: student.id, userId: user.id, email: user.email, forsaId: student.forsa_id, rawToken };
     });
 
     const setPasswordUrl = `${process.env.STUDENT_PORTAL_URL || 'https://student.forsa.tn'}/set-password?token=${result.rawToken}`;
@@ -168,13 +198,13 @@ export class MembershipService {
       recipientEmail: result.email,
       channel: NotificationChannel.EMAIL,
       templateCode: 'membership_approved',
-      variables: { studentName: request.first_name, setPasswordUrl },
+      variables: { studentName: request.first_name, forsaId: result.forsaId, setPasswordUrl },
       triggeredBy: approvedBy,
       referenceId: result.studentId,
       referenceType: 'student',
     }).catch(err => this.logger.error('membership_approved notification failed', err));
 
-    return { studentId: result.studentId, membershipStatus: MembershipStatus.BRONZE };
+    return { studentId: result.studentId, membershipStatus: MembershipStatus.BRONZE, forsaId: result.forsaId };
   }
 
   async reject(id: string, tenantId: string, rejectedBy: string, reason: string) {

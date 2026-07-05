@@ -1,5 +1,15 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — Phase 2 Milestone 3: FORSA ID generation)
+- `generateForsaId()`: `FORSA-<year>-<6 hex chars>`, assigned in
+  `MembershipService.approve()`. Uniqueness resolved via a pre-transaction
+  SELECT-check loop, not a mid-transaction retry (a failed INSERT aborts
+  the whole Postgres transaction without a SAVEPOINT — caught this before
+  committing).
+- `forsa-student`'s `HomePage.tsx` Membership Status / FORSA ID tiles now
+  show real data instead of "Coming soon" placeholders.
+- 2 new tests, 70/70 backend tests passing.
+
 ## 2026-07-05 (continued — Phase 2 Milestone 2: Membership Request → Bronze)
 - New migration `007_membership_lifecycle.sql`: `membership_requests`,
   `students.membership_status`/`member_since`/`forsa_id`,

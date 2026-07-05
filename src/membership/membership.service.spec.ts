@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { MembershipService } from './membership.service';
+import { MembershipService, generateForsaId } from './membership.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MembershipStatus } from '../common/enums';
 
@@ -75,13 +75,14 @@ describe('MembershipService', () => {
       await expect(service.approve('req-1', 'tenant-1', 'staff-1')).rejects.toThrow(BadRequestException);
     });
 
-    it('provisions students + users transactionally, issues Bronze, and emails a set-password link', async () => {
+    it('provisions students + users transactionally, issues Bronze + a FORSA ID, and emails a set-password link', async () => {
       query
         .mockResolvedValueOnce([pendingRequest]) // findOne
-        .mockResolvedValueOnce([]); // no existing user with this email
+        .mockResolvedValueOnce([]) // no existing user with this email
+        .mockResolvedValueOnce([]); // FORSA ID uniqueness pre-check: no clash
 
       managerQuery
-        .mockResolvedValueOnce([{ id: 'student-1', first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]) // INSERT students
+        .mockResolvedValueOnce([{ id: 'student-1', first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com', forsa_id: 'FORSA-2026-ABCDEF' }]) // INSERT students
         .mockResolvedValueOnce([{ id: 'user-1', email: 'amina@example.com' }]) // INSERT users
         .mockResolvedValueOnce(undefined) // UPDATE students SET user_id
         .mockResolvedValueOnce(undefined) // INSERT membership_status_history
@@ -91,13 +92,15 @@ describe('MembershipService', () => {
 
       const result = await service.approve('req-1', 'tenant-1', 'staff-1');
 
-      expect(result).toEqual({ studentId: 'student-1', membershipStatus: MembershipStatus.BRONZE });
+      expect(result).toEqual({ studentId: 'student-1', membershipStatus: MembershipStatus.BRONZE, forsaId: 'FORSA-2026-ABCDEF' });
 
-      // The students INSERT must set membership_status to bronze directly —
-      // never leave a provisioned member unassigned.
+      // The students INSERT must set membership_status to bronze and a
+      // non-null forsa_id directly — never leave a provisioned member
+      // unassigned or without a permanent ID.
       const studentsInsertCall = managerQuery.mock.calls[0];
       expect(studentsInsertCall[0]).toContain('INSERT INTO students');
       expect(studentsInsertCall[1]).toContain(MembershipStatus.BRONZE);
+      expect(studentsInsertCall[1][studentsInsertCall[1].length - 1]).toMatch(/^FORSA-\d{4}-[0-9A-F]{6}$/);
 
       // D-001 — never invent a real password: the users INSERT's password
       // hash must not be a fixed/predictable value, and must_change_password
@@ -105,17 +108,49 @@ describe('MembershipService', () => {
       const usersInsertCall = managerQuery.mock.calls[1];
       expect(usersInsertCall[0]).toContain('INSERT INTO users');
 
-      // A set-password email must actually be sent, with a link — not
-      // silently skipped.
+      // A set-password email must actually be sent, with a link and the
+      // assigned FORSA ID — not silently skipped.
       expect(notifications.send).toHaveBeenCalledWith(
         expect.objectContaining({
           templateCode: 'membership_approved',
           recipientEmail: 'amina@example.com',
           variables: expect.objectContaining({
+            forsaId: 'FORSA-2026-ABCDEF',
             setPasswordUrl: expect.stringContaining('/set-password?token='),
           }),
         }),
       );
+    });
+
+    it('retries FORSA ID generation on a collision before inserting', async () => {
+      query
+        .mockResolvedValueOnce([pendingRequest]) // findOne
+        .mockResolvedValueOnce([]) // no existing user
+        .mockResolvedValueOnce([{ id: 'other-student' }]) // 1st candidate clashes
+        .mockResolvedValueOnce([]); // 2nd candidate is free
+
+      managerQuery
+        .mockResolvedValueOnce([{ id: 'student-1', first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com', forsa_id: 'FORSA-2026-111111' }])
+        .mockResolvedValueOnce([{ id: 'user-1', email: 'amina@example.com' }])
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+
+      const result = await service.approve('req-1', 'tenant-1', 'staff-1');
+
+      expect(result.forsaId).toBe('FORSA-2026-111111');
+      // Exactly 2 uniqueness-check SELECTs happened before the transaction
+      // (findOne + existing-user check already consumed 2 query calls).
+      expect(query).toHaveBeenCalledTimes(4);
+    });
+  });
+
+  describe('generateForsaId', () => {
+    it('produces the expected FORSA-<year>-<6 hex chars> format', () => {
+      const id = generateForsaId();
+      expect(id).toMatch(new RegExp(`^FORSA-${new Date().getFullYear()}-[0-9A-F]{6}$`));
     });
   });
 

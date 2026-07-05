@@ -44,7 +44,7 @@ parallelization risk in §6) · `forsa-dashboard` · `forsa-student` ·
 
 ### M1 — Membership Request → Bronze issuance (T-203, T-204) — ✅ DONE 2026-07-05
 **Delivered**: `POST /membership-requests` (`@Public()`) via new `src/membership/` module; Admin Dashboard Membership Queue (was an empty placeholder, now real list/approve/reject); on approval, provisions `students` + `users` transactionally, sets Bronze + `member_since`, emails a set-password link per D-001 (new `POST /auth/set-password` + `password_setup_tokens`, mirroring the existing session-token-hash convention — never stores the raw token). `forsa-student` gained `/join` (now the primary "no account?" link from `/login`, superseding `/register` per D-004 without removing it) and `/set-password`. Also added a genuinely public `GET /universities/public` — a gap the original task description didn't anticipate (the anonymous form needs a university picker; the existing university list route is staff-only). 8 new tests, 68/68 total passing.
-**FORSA ID generation and Digital Student Pass are separate follow-up milestones** — `forsa_id` stays `null` after this milestone, filled in by the next one.
+**FORSA ID generation — ✅ done same-session as a follow-up** (`FORSA-<year>-<6 hex chars>`, generated in `MembershipService.approve()`, pre-transaction uniqueness check rather than a mid-transaction retry — a failed INSERT would otherwise abort the whole Postgres transaction). **Digital Student Pass remains the one deferred item** — its own milestone (M2) below.
 **Repos**: `forsa-os`, `forsa-dashboard`, `forsa-student`.
 **Complexity actual**: **Medium**, matching the estimate.
 

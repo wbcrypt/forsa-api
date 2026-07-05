@@ -152,7 +152,7 @@ const NOTIFICATION_TEMPLATES = [
    '<p>Dear {{studentName}},</p><p>Your financing contract is ready for your signature.</p>',true],
   // Phase 2 — Membership Request -> Bronze (T-204)
   ['membership_approved','email','Membership Approved — Set Your Password','🎉 Welcome to FORSA — Set Your Password',
-   '<p>Dear {{studentName}},</p><p>Your FORSA membership request has been approved! You are now a Bronze member.</p><p>Set your password to access your account: <a href="{{setPasswordUrl}}">{{setPasswordUrl}}</a></p><p>This link expires in 48 hours.</p>',true],
+   '<p>Dear {{studentName}},</p><p>Your FORSA membership request has been approved! You are now a Bronze member.</p><p>Your FORSA ID: <strong>{{forsaId}}</strong></p><p>Set your password to access your account: <a href="{{setPasswordUrl}}">{{setPasswordUrl}}</a></p><p>This link expires in 48 hours.</p>',true],
 ];
 
 async function main() {
