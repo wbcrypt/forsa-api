@@ -35,6 +35,14 @@ export class PipelineController {
     return this.service.getPipelineRun(id, t);
   }
 
+  // T-215/T-216 — Admin Dashboard's Waiting List section.
+  @Get('capital-queue')
+  @RequirePermissions('pipeline.view')
+  @ApiOperation({ summary: 'List the active capital queue / Waiting List, ordered by priority' })
+  findCapitalQueue(@CurrentTenant() t: string) {
+    return this.service.findCapitalQueue(t);
+  }
+
   // T-217 — Admin Dashboard's Fraud Records section. Registered before
   // any :id-shaped routes for clarity, though 'fraud-records' as a
   // literal path segment has no collision risk with 'runs/:id' anyway.

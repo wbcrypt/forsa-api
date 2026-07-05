@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { ApplicationsService } from './applications.service';
 import { ApplicationStatus } from '../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { UniversitiesService } from '../universities/universities.service';
 
 // T-109 — STATUS_TRANSITIONS is the platform's only real enforcement of the
 // application lifecycle (no DB-level state machine, no CHECK constraint on
@@ -32,6 +33,7 @@ describe('ApplicationsService.transitionStatus', () => {
     service = new ApplicationsService(
       { query } as unknown as DataSource,
       notifications as unknown as NotificationsService,
+      {} as unknown as UniversitiesService,
     );
   });
 
@@ -138,6 +140,7 @@ describe('ApplicationsService.createForSelf', () => {
     service = new ApplicationsService(
       { query } as unknown as DataSource,
       {} as unknown as NotificationsService,
+      {} as unknown as UniversitiesService,
     );
   });
 
@@ -193,6 +196,7 @@ describe('ApplicationsService.create — deterministic AI scoring (T-211)', () =
     service = new ApplicationsService(
       { query } as unknown as DataSource,
       { send: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationsService,
+      {} as unknown as UniversitiesService,
     );
   });
 
@@ -259,5 +263,51 @@ describe('ApplicationsService.create — deterministic AI scoring (T-211)', () =
 
     const insertCall = query.mock.calls[0];
     expect(insertCall[1][15]).toBeNull();
+  });
+});
+
+// T-223 — the university portal's one write capability. Locks down the
+// self-scoping check: a university can only confirm its own students'
+// applications, resolved server-side via universitiesService.findMe
+// (the JWT identity), never a client-supplied university id (T-223's own
+// identity-isolation fix, migration 011).
+describe('ApplicationsService.confirmEnrollment', () => {
+  let service: ApplicationsService;
+  let query: jest.Mock;
+  let universitiesService: jest.Mocked<Pick<UniversitiesService, 'findMe'>>;
+
+  beforeEach(() => {
+    query = jest.fn();
+    universitiesService = { findMe: jest.fn() };
+    service = new ApplicationsService(
+      { query } as unknown as DataSource,
+      { send: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationsService,
+      universitiesService as unknown as UniversitiesService,
+    );
+  });
+
+  it('rejects confirming an application belonging to a different university', async () => {
+    universitiesService.findMe.mockResolvedValueOnce({ id: 'uni-1' });
+    query.mockResolvedValueOnce([{ id: 'app-1', university_id: 'uni-2', current_status: 'contract_signed' }]); // findOne
+
+    await expect(
+      service.confirmEnrollment('app-1', 'tenant-1', 'uni-user-1'),
+    ).rejects.toThrow('This application does not belong to your university');
+  });
+
+  it('confirms enrollment for the calling university\'s own application', async () => {
+    universitiesService.findMe.mockResolvedValueOnce({ id: 'uni-1' });
+    query
+      .mockResolvedValueOnce([{ id: 'app-1', university_id: 'uni-1', current_status: 'contract_signed' }]) // findOne (confirmEnrollment)
+      .mockResolvedValueOnce([{ id: 'app-1', university_id: 'uni-1', current_status: 'contract_signed' }]) // findOne (inside transitionStatus)
+      .mockResolvedValueOnce(undefined) // UPDATE applications
+      .mockResolvedValueOnce(undefined) // INSERT application_status_history
+      .mockResolvedValueOnce(undefined); // INSERT audit_logs
+
+    await service.confirmEnrollment('app-1', 'tenant-1', 'uni-user-1', 'Enrollment verified');
+
+    const updateCall = query.mock.calls[2];
+    expect(updateCall[0]).toContain('UPDATE applications SET current_status');
+    expect(updateCall[1]).toContain('university_confirmed');
   });
 });

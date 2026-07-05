@@ -753,11 +753,23 @@ resolve them before writing code that depends on the answer).
       dropping.
 
 ### 2.8 Renewal
-- [ ] T-216 Every financing period requires a brand-new financing request
+- [x] T-216 Every financing period requires a brand-new financing request
       (reuse the existing `is_renewal`/`previous_application_id` chaining
       already in the schema). Returning members: higher priority, updated
       documents required, FORSA Score considered as a real input to the
       renewal decision (not just displayed).
+      **2026-07-05 — DONE, mostly by confirming existing mechanisms already
+      satisfied this.** Every financing request already requires a fresh
+      `POST /applications/me` call — no auto-renewal path exists to
+      disable. FORSA Score was already a real Stage 4 risk-assessment
+      input, not merely displayed. The one real gap: "returning members
+      get priority" had no mechanism — `capital_queue.priority_score` was
+      write-only (inserted at 4 call sites across Stage 6/9, never read or
+      ordered by anything anywhere in the codebase, confirmed via grep).
+      Added a flat +100 boost for `is_renewal` applications at all 4
+      insertion sites, and built the read side that actually consumes it
+      (see T-221's Waiting List page below) — `priority_score` had no
+      observable effect on anything until this pass.
 
 ### 2.9 Fraud
 - [x] T-217 Build a permanent blacklist + internal fraud record on confirmed
@@ -861,13 +873,16 @@ resolve them before writing code that depends on the answer).
       are extensions of existing pages (Payments, Universities, Audit already
       exist); Membership Queue, Financing Queue, AI Queue, Waiting List,
       Digital Pass admin, and Fraud Records are net-new.
-      **2026-07-05 — nav scaffolding DONE, real functionality NOT started
-      (as intended for this pass).** Routes + clearly-labeled "pending" empty
-      state pages added at `src/pages/pending/*.tsx` for all 6 net-new
-      sections; nav items + icons + i18n labels (en/fr/ar) wired into
-      `Layout.tsx`/`i18n.ts`. No fake data — genuinely empty/pending states
-      only, per the brief. Real backend-integration work for these sections
-      is Phase 2 scope (T-201-T-206, T-217) and not started.
+      **2026-07-05 — Membership Queue, Digital Pass, Fraud Records, and
+      Waiting List now DONE (real data, wired this phase); Financing Queue
+      and AI Queue remain pending placeholders.** Waiting List
+      (`WaitingListPage.tsx`) added this milestone: new `GET
+      /pipeline/capital-queue`, ordered by `priority_score DESC` — the
+      first thing in the codebase to actually read that column (see T-216).
+      Also built, while here: a real `HumanDecisionPanel` on
+      `ApplicationDetailPage.tsx` (Milestone 7) — `pipelineApi
+      .submitDecision` had existed since Phase 1 with no page ever calling
+      it, so a pipeline run paused for human review had no UI path at all.
 
 ### 2.13 Finance portal
 - [ ] T-222 Confirm/extend (`forsa-finance`) to fully support: payment
@@ -876,14 +891,54 @@ resolve them before writing code that depends on the answer).
       done properly this time rather than left as stubs (`DisbursementsPage`
       placeholder, non-functional "view receipt" button, raw-JSON export all
       need to actually work).
+      **Not started as of 2026-07-05** — flagged explicitly as remaining
+      Phase 2 frontend work, not silently dropped.
 
 ### 2.14 University portal
-- [ ] T-223 Confirm/extend (`forsa-university`) to support: student
+- [x] T-223 Confirm/extend (`forsa-university`) to support: student
       confirmation, tuition confirmation, enrollment confirmation. Explicit
       constraint: **university can never change a financing decision** — keep
       this portal read-only for decisions, write-capable only for the three
       confirmation actions above (net-new write capability — today it's 100%
       read-only, so this is a deliberate, narrow exception to add).
+      **2026-07-05 — DONE, but found a severe pre-existing bug first and
+      fixed that before adding the new write capability.** While starting
+      this task, found that `forsa-university`'s login form collected
+      "University ID" as a raw, user-typed text field and stored it
+      directly to localStorage — zero server-side verification. Every
+      subsequent "my university" API call trusted that client-supplied
+      value entirely. This is the exact same class of bug as K-03/T-103
+      (`forsa-partner`'s `partners[0]` issue, fixed in Phase 1) — a
+      client-supplied identity trusted for tenant-scoped data access —
+      except worse here, since it was a manually-typed field, not even an
+      array index: any logged-in university-portal user could type a
+      different university's id and immediately read that university's
+      complete student/financial data. **Fixed exactly mirroring T-103's
+      approach**: new migration `011_university_identity.sql`
+      (`universities.user_id`, `users.university_id_linked`), new
+      self-scoped `GET /universities/me` resolved via the JWT identity
+      (never anything client-supplied), and — since no university
+      self-registration flow exists to establish this link on its own — a
+      new staff-facing `PATCH /universities/:id/link-user`. The login
+      form's University ID field is now removed entirely;
+      `AuthContext.tsx` resolves it server-side after login. Verified the
+      full 001→011 migration chain against a real local Postgres instance.
+      **Then delivered the actual T-223 ask**: `POST /applications/:id/
+      university-confirm` (`ApplicationsService.confirmEnrollment`) —
+      self-scoped the same way, explicitly checks `application
+      .university_id === university.id` before allowing it (Forbidden
+      otherwise) — inserting a new `ApplicationStatus.UNIVERSITY_CONFIRMED`
+      between `CONTRACT_SIGNED` and `UNIVERSITY_PAID`. The university
+      still cannot touch a financing decision itself — this is the only
+      new write path, and it's one status transition, not a decision.
+      5 new tests (`universities.service.spec.ts`) lock down the identity
+      fix; 2 more in `applications.service.spec.ts` lock down the
+      cross-university rejection. Found and fixed, in the same pass: all
+      3 frontend portals' `Badge` color/label maps were missing every
+      `ApplicationStatus` value added since Milestone 2 (`more_info_required`,
+      `fraud_flagged`, `capital_queue`'s "Waiting List" relabel, and this
+      milestone's `university_confirmed`) — fixed across `forsa-dashboard`/
+      `forsa-university`/`forsa-student` together.
 
 ### 2.15 Partner portal
 - [ ] T-224 Partner must only ever access their own students/referrals/

@@ -7,6 +7,7 @@ import { ApplicationStatus, FinancingLevel, NotificationChannel } from '../commo
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { computeHouseholdStabilityScore, deriveRecommendation } from '../ai/household-stability.util';
+import { UniversitiesService } from '../universities/universities.service';
 
 // Valid status transitions (state machine)
 const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
@@ -41,7 +42,11 @@ const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
   // guarantee this status exists to enforce.
   [ApplicationStatus.FRAUD_FLAGGED]: [],
   [ApplicationStatus.CONTRACT_SENT]: [ApplicationStatus.CONTRACT_SIGNED],
-  [ApplicationStatus.CONTRACT_SIGNED]: [ApplicationStatus.UNIVERSITY_PAID],
+  // T-223 — the university confirms enrollment/tuition before the payment
+  // plan activates. Inserted between CONTRACT_SIGNED and UNIVERSITY_PAID
+  // rather than skipping straight to UNIVERSITY_PAID as before.
+  [ApplicationStatus.CONTRACT_SIGNED]: [ApplicationStatus.UNIVERSITY_CONFIRMED],
+  [ApplicationStatus.UNIVERSITY_CONFIRMED]: [ApplicationStatus.UNIVERSITY_PAID],
   [ApplicationStatus.UNIVERSITY_PAID]: [ApplicationStatus.ACTIVE_STUDENT],
   [ApplicationStatus.ACTIVE_STUDENT]: [ApplicationStatus.COMPLETED, ApplicationStatus.WITHDRAWN],
   [ApplicationStatus.APPEALING]: [ApplicationStatus.UNDER_REVIEW, ApplicationStatus.REJECTED],
@@ -54,6 +59,7 @@ export class ApplicationsService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly notifications: NotificationsService,
+    private readonly universitiesService: UniversitiesService,
   ) {}
 
   // T-106 — fire-and-forget email notification. Failures are logged, never
@@ -255,6 +261,26 @@ export class ApplicationsService {
 
     if (!application) throw new NotFoundException('Application not found');
     return application;
+  }
+
+  // T-223 — university staff confirming tuition/enrollment before the
+  // payment plan activates (CONTRACT_SIGNED -> UNIVERSITY_CONFIRMED ->
+  // UNIVERSITY_PAID). Self-scoped exactly like createForSelf/findMe
+  // elsewhere in this phase: resolves the acting university server-side
+  // via universitiesService.findMe (JWT identity), never a client-
+  // supplied university id — this is the write-side counterpart of the
+  // T-223 identity-isolation fix (migration 011).
+  async confirmEnrollment(applicationId: string, tenantId: string, universityUserId: string, notes?: string) {
+    const university = await this.universitiesService.findMe(universityUserId, tenantId);
+    const application = await this.findOne(applicationId, tenantId);
+
+    if (application.university_id !== university.id) {
+      throw new ForbiddenException('This application does not belong to your university');
+    }
+
+    return this.transitionStatus(
+      applicationId, tenantId, ApplicationStatus.UNIVERSITY_CONFIRMED, universityUserId, notes,
+    );
   }
 
   async transitionStatus(

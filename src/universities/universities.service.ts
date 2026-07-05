@@ -49,6 +49,45 @@ export class UniversitiesService {
     );
   }
 
+  // T-223 discovery — staff-facing linkage. No university-portal
+  // self-registration flow exists (unlike students/guarantors), and the
+  // generic staff POST /users never wired portal-identity linkage for
+  // universities at all — so there was previously no way to establish
+  // this link server-side, which is exactly why the frontend fell back to
+  // a manually-typed field in the first place. Staff must link an
+  // already-created university-portal users row explicitly.
+  async linkUser(id: string, userId: string, tenantId: string, updatedBy: string) {
+    const [university] = await this.dataSource.query<any[]>(
+      `SELECT id FROM universities WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
+    if (!university) throw new NotFoundException('University not found');
+
+    const [user] = await this.dataSource.query<any[]>(
+      `SELECT id FROM users WHERE id = $1 AND tenant_id = $2`,
+      [userId, tenantId],
+    );
+    if (!user) throw new NotFoundException('User not found');
+
+    await this.dataSource.query(`UPDATE universities SET user_id = $2 WHERE id = $1`, [id, userId]);
+    await this.dataSource.query(`UPDATE users SET university_id_linked = $2 WHERE id = $1`, [userId, id]);
+    await this.auditLog(tenantId, updatedBy, 'university.user_linked', id, null, { userId });
+
+    return { id, userId };
+  }
+
+  // T-223 discovery — self-scoped resolution via the JWT identity, never
+  // a client-supplied university id (see migrations/011's comment for the
+  // full history of the bug this closes).
+  async findMe(userId: string, tenantId: string) {
+    const [university] = await this.dataSource.query<any[]>(
+      `SELECT * FROM universities WHERE user_id = $1 AND tenant_id = $2`,
+      [userId, tenantId],
+    );
+    if (!university) throw new NotFoundException('No university linked to this user');
+    return university;
+  }
+
   async findAll(tenantId: string, pagination: PaginationDto, filters?: any) {
     const { page = 1, limit = 20 } = pagination;
     const offset = getSkip(page, limit);

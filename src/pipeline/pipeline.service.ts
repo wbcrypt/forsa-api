@@ -716,7 +716,7 @@ export class PipelineService {
           [
             ctx.pipelineRunId, ctx.applicationId,
             `University concentration at ${concentrationPct.toFixed(1)}% exceeds ${maxConcentration}% limit`,
-            500,
+            500 + this.renewalPriorityBoost(ctx),
           ],
         );
         return {
@@ -782,7 +782,7 @@ export class PipelineService {
             [
               ctx.pipelineRunId, ctx.applicationId,
               `High-risk exposure would reach ${projectedHighRiskPct.toFixed(1)}% of deployed capital, exceeding the ${maxHighRiskPct}% limit`,
-              400,
+              400 + this.renewalPriorityBoost(ctx),
             ],
           );
           return {
@@ -841,7 +841,7 @@ export class PipelineService {
             [
               ctx.pipelineRunId, ctx.applicationId,
               `Family exposure would reach ${projectedFamilyExposure.toFixed(0)} TND, exceeding the ${maxFamilyExposure} TND limit for this primary guarantor household`,
-              450,
+              450 + this.renewalPriorityBoost(ctx),
             ],
           );
           return {
@@ -1032,7 +1032,7 @@ export class PipelineService {
         `INSERT INTO capital_queue (pipeline_run_id, application_id, reason, priority_score, queued_at)
          VALUES ($1,$2,$3,$4,NOW())
          ON CONFLICT DO NOTHING`,
-        [ctx.pipelineRunId, ctx.applicationId, 'Placed on Waiting List by reviewer decision', 500],
+        [ctx.pipelineRunId, ctx.applicationId, 'Placed on Waiting List by reviewer decision', 500 + this.renewalPriorityBoost(ctx)],
       );
     } else {
       // Auto-decide based on risk and availability
@@ -1314,6 +1314,26 @@ export class PipelineService {
   // ================================================================
   // Flag Fraud (T-217) — permanent blacklist, not a financing decision
   // ================================================================
+  // T-215/T-216 — Admin Dashboard Waiting List. priority_score convention
+  // (previously write-only, never actually consumed anywhere — the
+  // "priority" concept had no observable effect on anything until this
+  // read path existed): HIGHER priority_score = processed first. Renewals
+  // get a +100 boost at every capital_queue insertion site (T-216:
+  // "returning members get priority").
+  async findCapitalQueue(tenantId: string) {
+    return this.dataSource.query(
+      `SELECT cq.*, a.tuition_amount, a.is_renewal, a.current_status,
+              s.first_name, s.last_name, s.forsa_id, u.name AS university_name
+       FROM capital_queue cq
+       JOIN applications a ON a.id = cq.application_id
+       JOIN students s ON s.id = a.student_id
+       LEFT JOIN universities u ON u.id = a.university_id
+       WHERE a.tenant_id = $1 AND cq.dequeued_at IS NULL
+       ORDER BY cq.priority_score DESC, cq.queued_at ASC`,
+      [tenantId],
+    );
+  }
+
   async findAllFraudRecords(tenantId: string) {
     return this.dataSource.query(
       `SELECT fr.*, s.first_name, s.last_name, s.email, s.forsa_id
@@ -1461,6 +1481,15 @@ export class PipelineService {
   // ================================================================
   // Helpers
   // ================================================================
+
+  // T-216 — "returning members get priority." priority_score was
+  // previously write-only (inserted at every capital_queue site, never
+  // read/ordered by anything — see findCapitalQueue). A flat +100 boost
+  // for renewals is a simple, real implementation now that the Waiting
+  // List admin page actually orders by this column.
+  private renewalPriorityBoost(ctx: any): number {
+    return ctx.application?.is_renewal ? 100 : 0;
+  }
 
   private async computeDcs(ctx: any, trace: PipelineStageTrace[], risk: any): Promise<{ score: number; version: string; policyVersionIds: string[] }> {
     const policyVersionIds: string[] = [];

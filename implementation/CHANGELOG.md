@@ -1,5 +1,36 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — Phase 2 Milestone 8: Remaining portal updates, final milestone)
+- Renewal (T-216): confirmed most requirements already satisfied by
+  existing mechanisms (fresh financing request per period, FORSA Score
+  as a real Stage 4 input). Fixed the one real gap — `capital_queue
+  .priority_score` was write-only, never read/ordered anywhere — with a
+  +100 boost for renewals and a new read path (Waiting List page).
+- New Waiting List (`GET /pipeline/capital-queue`) and confirmed Fraud
+  Records/Membership Queue/Digital Pass admin pages all real now.
+- **Security finding**: `forsa-university`'s login form collected
+  "University ID" as a raw, user-typed field, trusted client-side with
+  zero server-side verification for every "my university" API call —
+  same class of bug as K-03/T-103 (forsa-partner, Phase 1), but worse
+  (manually-typed, not even an array index). Any university-portal user
+  could read any other university's complete data.
+- Fixed via new migration `011_university_identity.sql`
+  (`universities.user_id`, `users.university_id_linked`), new
+  self-scoped `GET /universities/me`, staff-facing `PATCH
+  /universities/:id/link-user`, and removal of the login form's
+  University ID field.
+- T-223 delivered after the fix: `POST /applications/:id/
+  university-confirm` — self-scoped, cross-university-checked, new
+  `UNIVERSITY_CONFIRMED` status between `CONTRACT_SIGNED` and
+  `UNIVERSITY_PAID`. New "Confirm Enrollment" button in
+  `forsa-university`.
+- Fixed missing Badge color/label map entries across all 3 frontend
+  portals for every ApplicationStatus value added since Milestone 2.
+- `forsa-finance` (T-222) and `forsa-partner` (T-224) not started —
+  flagged as remaining work, not dropped.
+- 7 new tests, 106/106 backend tests passing. Migration 011 verified
+  against a real Postgres instance.
+
 ## 2026-07-05 (continued — Phase 2 Milestone 7: Admin decision flow)
 - New migration `010_admin_decision_flow.sql`: `applications
   .financing_tier`, `reviewer_decisions.financing_tier`/`is_override`,

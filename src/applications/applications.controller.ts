@@ -79,6 +79,24 @@ export class ApplicationsController {
     return this.service.transitionStatus(id, t, body.status, u, body.notes);
   }
 
+  // T-223 — the university portal's one write capability. No
+  // @RequirePermissions(): a university-portal user holds none of the
+  // staff `application.*` grants (same pattern as the student portal's
+  // self-scoped routes) — confirmEnrollment does its own scoping check
+  // server-side via universitiesService.findMe, never trusting anything
+  // client-supplied.
+  @Post(':id/university-confirm')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "University portal confirms enrollment/tuition for one of its own students' applications" })
+  confirmEnrollment(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { notes?: string },
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.confirmEnrollment(id, t, u, body?.notes);
+  }
+
   @Patch(':id/assign')
   @RequirePermissions('application.assign')
   @HttpCode(HttpStatus.OK)

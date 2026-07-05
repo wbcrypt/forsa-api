@@ -759,3 +759,81 @@ T-217 (fraud/blacklist).
   added tests for the 2 new Stage 6 caps, `flagFraud`, and
   `overrideDecision`). 97/97 backend tests passing. `tsc --noEmit`/
   `npm run build` clean on `forsa-os` and `forsa-dashboard`.
+
+**Milestone 8 — Remaining portal updates (M9 + M6) — DONE.** The final
+milestone in the user's approved 8-step sequence, covering T-216
+(Renewal), the remaining slice of T-220/T-221, and T-223 (University
+Portal) — plus a severe security finding made and fixed along the way.
+
+- **Renewal (T-216)**: confirmed most of this was already true rather
+  than re-building it — every financing request already requires a
+  fresh `POST /applications/me` call (no auto-renewal path exists), and
+  FORSA Score was already a real Stage 4 risk-assessment input, not
+  merely displayed. The one real gap: "returning members get priority"
+  had no mechanism at all — grepped and confirmed
+  `capital_queue.priority_score` was write-only, inserted at 4 call
+  sites (Stage 6's 3 caps + Stage 9's `waiting_list` handling), never
+  read or ordered by anything anywhere. Added a flat +100 boost for
+  `is_renewal` applications at all 4 sites, and built the read side
+  that finally consumes it.
+- **Waiting List admin page (T-221 remainder)**: `WaitingListPage.tsx`
+  was still an empty Phase 1 placeholder. New `GET /pipeline/
+  capital-queue` (`findCapitalQueue`), ordered by `priority_score DESC,
+  queued_at ASC` — the first read path this column ever had.
+- **University Portal identity bug, found and fixed (T-223)**: while
+  starting T-223's confirmation-actions work, read
+  `forsa-university/src/pages/auth/LoginPage.tsx` and found it collects
+  "University ID" as a raw, user-typed text input, stored directly to
+  `localStorage` with **zero server-side verification** — every
+  subsequent "my university" API call trusted that client-supplied
+  value entirely. This is the exact same class of bug as K-03/T-103
+  (`forsa-partner`'s `partners[0]` issue, fixed in Phase 1) — except
+  worse here, since it's a manually-typed field, not even an array
+  index: any logged-in university-portal user could type a different
+  university's id and immediately read that university's complete
+  student/financial data. **Fixed exactly mirroring T-103's approach**:
+  new migration `011_university_identity.sql` adding `universities
+  .user_id` (unique, FK to `users`) and `users.university_id_linked`;
+  new self-scoped `GET /universities/me` (`findMe`) resolved via the JWT
+  identity, never anything client-supplied. Since no university
+  self-registration flow exists (unlike students/guarantors) to
+  establish this link on its own, also added a staff-facing `PATCH
+  /universities/:id/link-user`. Removed the University ID field from
+  the login form entirely; `AuthContext.tsx` now resolves it server-side
+  via `GET /universities/me` after login. Verified the full 001→011
+  migration chain, including this exact schema, against a real local
+  Postgres instance.
+- **T-223's actual ask, delivered after the security fix**: new `POST
+  /applications/:id/university-confirm` (`ApplicationsService
+  .confirmEnrollment`) — self-scoped the same way (resolves the calling
+  university via `universitiesService.findMe`, never a client-supplied
+  id), and explicitly checks `application.university_id ===
+  university.id` before allowing it (`ForbiddenException` otherwise).
+  Inserts a new `ApplicationStatus.UNIVERSITY_CONFIRMED` between
+  `CONTRACT_SIGNED` and `UNIVERSITY_PAID` in `STATUS_TRANSITIONS` — the
+  university still can never touch a financing decision itself; this is
+  one narrow status transition, not decision-making capability. New
+  "Confirm Enrollment" button on `forsa-university`'s
+  `StudentDetailPage.tsx`, shown only when `current_status ===
+  'contract_signed'`.
+- **Found and fixed a related gap while wiring the new status into the
+  UI**: all 3 frontend portals' `Badge` color/label maps were missing
+  every `ApplicationStatus` value added since Milestone 2
+  (`more_info_required`, `fraud_flagged`, `capital_queue`'s "Waiting
+  List" relabel, and this milestone's `university_confirmed`) — these
+  would have rendered with fallback/default styling. Fixed across
+  `forsa-dashboard`, `forsa-university`, and `forsa-student` together
+  rather than one at a time. The student-facing label for
+  `fraud_flagged` deliberately reads "Under Compliance Review" rather
+  than exposing the raw fraud accusation to the flagged student.
+- **`forsa-finance` (T-222) and `forsa-partner` (T-224) were not
+  started this pass** — flagged explicitly as the remaining Phase 2
+  frontend work, not silently dropped, since this was the last milestone
+  in the user's approved 8-step sequence.
+- 7 new backend tests (2 for `findCapitalQueue`/the renewal boost, 5 for
+  `universities.service.spec.ts`'s identity fix, 2 for
+  `confirmEnrollment`'s cross-university rejection — 106/106 backend
+  tests passing total). `tsc --noEmit`/`npm run build` clean on
+  `forsa-os`, `forsa-dashboard`, `forsa-university`, `forsa-student`.
+  Migration 011 verified against a real local Postgres instance (the
+  sixth migration verified this way across the phase).

@@ -325,6 +325,21 @@ describe('PipelineService — stage gates', () => {
       expect(result.outputs.capitalQueue).toBe(true);
       expect(result.outputs.blockReason).toMatch(/family exposure/i);
     });
+
+    it('T-216 — a renewal application gets a +100 priority_score boost when soft-blocked into the queue', async () => {
+      const renewalCtx = { ...baseCtx, application: { ...baseCtx.application, is_renewal: true } };
+      policyService.resolve = jest.fn()
+        .mockResolvedValueOnce(null).mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+      query
+        .mockResolvedValueOnce([{ deployed_capital: 100000, pending_disbursements: 2 }])
+        .mockResolvedValueOnce([{ university_total: 50000, portfolio_total: 100000 }]) // over concentration cap
+        .mockResolvedValueOnce(undefined); // INSERT capital_queue
+
+      await (service as any).stage6PortfolioCapital(renewalCtx);
+
+      const insertCall = query.mock.calls[2];
+      expect(insertCall[1]).toContain(600); // 500 base + 100 renewal boost
+    });
   });
 
   describe('stage7ApprovalThreshold', () => {
@@ -566,5 +581,26 @@ describe('PipelineService.overrideDecision', () => {
     expect(insertCall[0]).toContain('is_override');
     expect(insertCall[0]).toContain('true');
     expect(insertCall[1]).toContain('[CEO OVERRIDE] Board-approved exception');
+  });
+});
+
+// T-215/T-216 — the Waiting List admin page's data source. priority_score
+// was write-only before this existed.
+describe('PipelineService.findCapitalQueue', () => {
+  it('orders by priority_score DESC, then queued_at ASC, and only returns active (not yet dequeued) entries', async () => {
+    const query = jest.fn().mockResolvedValue([{ id: 'q-1', priority_score: 600 }]);
+    const service = new PipelineService(
+      { query } as unknown as DataSource,
+      { resolve: jest.fn(), resolveMany: jest.fn() } as unknown as PolicyService,
+      {} as unknown as ScoreService,
+      {} as unknown as ApplicationsService,
+    );
+
+    const result = await service.findCapitalQueue('tenant-1');
+
+    expect(result).toEqual([{ id: 'q-1', priority_score: 600 }]);
+    const sql = query.mock.calls[0][0];
+    expect(sql).toContain('dequeued_at IS NULL');
+    expect(sql).toContain('ORDER BY cq.priority_score DESC');
   });
 });

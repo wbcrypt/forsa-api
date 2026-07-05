@@ -28,6 +28,21 @@ export class UniversitiesController {
     return this.service.findAll(t, p, f);
   }
 
+  // T-223 discovery — the university portal was collecting "University ID"
+  // as a raw, user-typed login-form field and trusting it client-side for
+  // every subsequent "my university" API call (the same class of bug as
+  // K-03/T-103's partners[0] issue, fixed in Phase 1, except worse: a
+  // manually-typed field, not even an array index). Resolves via
+  // universities.user_id keyed off the JWT identity — no
+  // @RequirePermissions(): a university-portal user holds none of the
+  // staff `university.*` permission grants. Registered before `:id` so
+  // 'me' is never swallowed as a param value.
+  @Get('me')
+  @ApiOperation({ summary: "Get the logged-in university portal user's own university (T-223 identity fix)" })
+  findMe(@CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.findMe(u, t);
+  }
+
   // Phase 2 T-203 — genuinely public, minimal projection (id/name/city
   // only), so the anonymous Membership Request form can offer a real
   // university picker rather than free text. Registered before `:id` so
@@ -54,6 +69,19 @@ export class UniversitiesController {
     @CurrentUser('id') u: string,
   ) {
     return this.service.update(id, t, dto, u);
+  }
+
+  // T-223 discovery — staff-facing linkage, since no university-portal
+  // self-registration flow exists to establish this on its own.
+  @Patch(':id/link-user')
+  @RequirePermissions('university.edit')
+  linkUser(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: { userId: string },
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.linkUser(id, body.userId, t, u);
   }
 
   @Get(':id/performance')

@@ -84,11 +84,10 @@ None of this had ever been exercised end-to-end before. Fixed by adding a new se
 
 ### D-010 (resolved during this milestone's original planning) confirmed "family" = student + primary guarantor household — implementation matches exactly.
 
-### M6 — Renewal (T-216)
-**Delivers**: every financing period requires a brand-new financing request; returning members get priority, updated documents, and FORSA Score as a real input to the renewal decision (not just displayed).
-**Repos**: `forsa-os`.
-**Depends on**: M4/M5 (needs the Household-Stability-vs-FORSA-Score relationship resolved — D-008 — since renewal is exactly where both systems' outputs meet), M0 (`is_renewal`/`previous_application_id` chaining already exists in schema, reused as-is).
-**Complexity**: **Low-Medium** — mostly wiring an existing chaining mechanism to a real decision input; the hard part (D-008) is resolved upstream in M4, not duplicated here.
+### M6 — Renewal (T-216) — ✅ DONE 2026-07-05
+**Delivered**: confirmed the parts already substantially true rather than re-building them — every financing period already requires a brand-new `POST /applications/me` call (no auto-renewal mechanism exists to disable), and FORSA Score was already a real risk-assessment input (Stage 4), not just displayed, so T-216's "not just displayed" concern was already satisfied. The one genuinely missing piece: **"returning members get priority"** had no mechanism at all — `capital_queue.priority_score` was write-only (inserted at 4 sites, never read/ordered by anything). Fixed with a flat +100 boost for `is_renewal` applications at all 4 insertion sites, now actually consumed by the new Waiting List admin page (`ORDER BY priority_score DESC`).
+**Repos**: `forsa-os`, `forsa-dashboard` (new `WaitingListPage.tsx`, was an empty placeholder; new `GET /pipeline/capital-queue`).
+**Complexity actual**: **Low**, as predicted — the hard part (D-008) really was resolved upstream; this was mostly discovering and fixing a write-only column.
 
 ### M7 — Fraud & blacklist (T-217) — ✅ DONE 2026-07-05
 **Delivered**: new `fraud_records` table (migration 010, append-only via `RULE`, matching the platform's other audit tables), a dedicated `POST /pipeline/runs/:id/fraud` (not folded into the human-decision outcome set — fraud is an identity-trust action, not a financing-amount decision, and needs its own more-restrictive `fraud.flag` permission). One transaction: fraud record + `students.membership_status = 'blacklisted'` + `FRAUD_FLAGGED` application status (terminal, no outgoing transition).
@@ -101,17 +100,15 @@ None of this had ever been exercised end-to-end before. Fixed by adding a new se
 **Repos**: `forsa-os` (`konnect.service.ts`, `score.service.ts`, `payments.service.ts`, `students.service.ts`/`students.controller.ts`, `guarantors.module.ts` — removed a redundant `KonnectService` provider redeclaration that would have broken DI resolution for the new dependency), `forsa-student` (`PaymentsPage.tsx`, `lib/api.ts`).
 **Complexity**: **Low**, as predicted — no schema changes needed, reused existing query logic and permission patterns throughout.
 
-### M9 — Frontend rebuilds (T-219 covered above; T-220 remainder, T-221 remainder, T-222, T-223, T-224)
-**Delivers**: real functionality behind the Phase-1 nav scaffolding, portal by portal.
-- **`forsa-student`** (T-220 remainder): wire the still-stubbed Membership Status/FORSA ID/Digital Pass tiles on the home page to real data — depends on M1/M2.
-- **`forsa-dashboard`** (T-221 remainder): real functionality behind the 6 net-new nav sections (Membership Queue → M1, Financing Queue, AI Queue → M4, Waiting List → M5, Digital Pass admin → M2, Fraud Records → M7) — each sub-page's real dependency is its corresponding backend milestone, not one monolithic dashboard task.
-- **`forsa-finance`** (T-222): payment verification/receipts/Konnect/ledger/late-payments/exports actually working (currently several stubs — `DisbursementsPage` placeholder, non-functional "view receipt" button, raw-JSON export) — depends on M8, otherwise independent.
-- **`forsa-university`** (T-223): student/tuition/enrollment confirmation actions — a deliberate, narrow new write capability (today 100% read-only) — depends on M0's `university_confirmed` status value.
-- **`forsa-partner`** (T-224): "partner sees only their own data" as a standing rule for every new partner-scoped feature from here on (the specific T-103 bug is already fixed) — mostly a review/audit task applied to whatever new partner-facing surface Phase 2 adds, low incremental work.
+### M9 — Frontend rebuilds (T-219 covered above; T-220 remainder, T-221 remainder, T-222, T-223, T-224) — ✅ T-220/T-221/T-223 DONE 2026-07-05; T-222/T-224 not started this pass
+**Delivered**:
+- **`forsa-student`/`forsa-dashboard`** (T-220/T-221 remainder): done across Milestones 2/4/6/7 as each backend piece landed (Membership, Digital Pass, Household Stability, admin decision flow), plus this milestone's Waiting List page (M6) — the nav scaffolding from Phase 1 now has real functionality behind every section except Finance/Partner remainder below.
+- **`forsa-university`** (T-223) — **found a severe pre-existing bug while starting this**: the login form collected "University ID" as a raw, user-typed text field, stored to localStorage with zero server-side verification — every "my university" API call trusted it entirely. The exact same class of bug as K-03/T-103 (forsa-partner's `partners[0]` issue, fixed in Phase 1), except worse — a manually-typed field, not even an array index. Any university-portal user could type a different university's id and read that university's complete student/financial data. **Fixed properly, mirroring T-103's fix exactly**: new `universities.user_id` link (migration 011), new self-scoped `GET /universities/me` resolved via the JWT identity, and a new staff-facing `PATCH /universities/:id/link-user` (no self-registration flow exists for this portal, so staff must establish the link explicitly). Login form's University ID field removed entirely. *Then* delivered the actual T-223 ask: a narrow new write capability — `POST /applications/:id/university-confirm` (self-scoped the same way, verifies `application.university_id === university.id` before allowing it), inserting a new `UNIVERSITY_CONFIRMED` status between `CONTRACT_SIGNED` and `UNIVERSITY_PAID`.
+- **Badge/label maps across all 3 portals** were missing every enum value added since Milestone 2 (`more_info_required`, `fraud_flagged`, `capital_queue`'s "Waiting List" relabel, `university_confirmed`) — found while wiring the new status into the university portal's UI, fixed across `forsa-dashboard`/`forsa-university`/`forsa-student` together rather than one at a time.
+- **`forsa-finance`** (T-222) and **`forsa-partner`** (T-224): **not started this pass** — flagged as the remaining Phase 2 frontend work, not silently dropped.
 
-**Repos**: all 5 frontends except `forsa-guarantor` (guarantor work is covered under M3).
-**Depends on**: varies per portal, as noted above — **this is the one milestone where true parallelization across repos is real and safe** (6 independent git repos, zero merge risk), but each portal's specific slice can only start once its corresponding backend milestone has landed.
-**Complexity**: **Medium overall, Low per portal** — no single portal's remaining work is large; the size is in the count of portals, not the depth of any one.
+**Repos**: `forsa-os`, `forsa-dashboard`, `forsa-university`, `forsa-student`.
+**Complexity actual**: the University Portal identity fix was the unplanned, higher-complexity piece — everything else matched the "Low per portal" estimate.
 
 ### M10 — Notifications (T-225)
 **Delivers**: real event-driven notifications for membership submitted, Bronze granted, Digital Pass ready, financing started, missing documents, AI interview scheduled/ready, Waiting List, Silver/Gold approved, payment received/overdue.
