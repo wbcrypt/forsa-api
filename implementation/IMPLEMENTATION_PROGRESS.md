@@ -394,3 +394,59 @@ unless a genuine new business decision is discovered.
   module), 1 new test in `konnect.service.spec.ts`. 60/60 backend tests
   passing. `tsc --noEmit`/`npm run build` clean on both `forsa-os` and
   `forsa-student`.
+
+**Milestone 2 — Membership Request → Bronze (M0 schema + M1) — DONE.**
+- New migration `007_membership_lifecycle.sql`: `membership_requests`,
+  `students.membership_status`/`member_since`/`forsa_id`, append-only
+  `membership_status_history` (RULE-enforced, mirrors
+  `application_status_history`), `password_setup_tokens` (D-001's
+  set-password-link mechanism, mirroring the existing
+  `user_sessions.session_token_hash`/`mfa_challenges.token_hash`
+  convention — hashed, never raw). **Actually ran this migration against a
+  real local Postgres instance** (started homebrew's `postgresql@18`,
+  created a scratch DB, ran the full `001`→`007` chain with
+  `ON_ERROR_STOP=1`) rather than only reviewing the SQL by eye — confirmed
+  clean apply and an exact schema match against the service code before
+  writing a single line of TypeScript against it. Dropped the scratch DB
+  and stopped the local Postgres service afterward.
+- New `src/membership/` module: `MembershipController`/`MembershipService`,
+  `POST /membership-requests` (`@Public()`), staff list/approve/reject.
+  `approve()` provisions `students`+`users` transactionally (same pattern
+  as T-101's `registerSelf`), sets `membership_status='bronze'`, writes
+  history, and — per D-001 — never invents a real password: the `users`
+  row gets an unusable random placeholder hash, and a one-time hashed
+  token is emailed via a new `membership_approved` notification template
+  with a `/set-password?token=...` link.
+- New `POST /auth/set-password` (`AuthService.setPassword`) consumes that
+  token: validates hash+expiry+unused, hashes the real password
+  (argon2id, same complexity rules as staff accounts), activates the
+  account.
+- New `GET /universities/public` (minimal id/name/city projection) — a
+  gap the task description didn't anticipate: the anonymous Membership
+  Request form needs a university picker, and the existing university
+  list route requires a staff permission.
+- `forsa-dashboard`: `MembershipQueuePage.tsx` (was an empty Phase-1
+  placeholder) now has real list/approve/reject with tabs, a reject-reason
+  modal, and toast feedback — same UI pattern as the existing
+  `PaymentVerificationPage.tsx`.
+- `forsa-student`: new `/join` (public Membership Request form — now the
+  primary "no account?" link from `/login`, superseding the old
+  `/register` per D-004's intent without removing it, since pre-existing
+  accounts still need it to keep working) and `/set-password`.
+- Manually traced the DI graph for the new module before considering it
+  done (rather than assuming `tsc` clean = correctly wired — `tsc` cannot
+  catch NestJS DI resolution errors, and this exact class of bug bit
+  Milestone 1's `guarantors.module.ts` fix): confirmed `DataSource` is
+  implicitly global via `@nestjs/typeorm`'s own `TypeOrmCoreModule`, and
+  `NotificationsModule` is correctly imported and exports what
+  `MembershipService` needs.
+- 8 new tests (`membership.service.spec.ts`), covering the transaction
+  happy path (with an assertion that the emailed link actually contains a
+  token), duplicate-request rejection, already-processed-request
+  rejection, and existing-account conflict. 68/68 backend tests passing.
+  `tsc --noEmit`/`npm run build` clean on `forsa-os`, `forsa-dashboard`,
+  `forsa-student`.
+- **Deliberately deferred to later milestones** (not forgotten): FORSA ID
+  generation logic (`forsa_id` column exists, stays `null` for now — next
+  milestone), Digital Student Pass, the `ApplicationStatus` enum's dead-
+  V2-vocabulary retirement (not a blocking dependency for this flow).

@@ -13,6 +13,7 @@ import { PolicyModule } from './policy/policy.module';
 import { UniversitiesModule } from './universities/universities.module';
 import { PartnersModule } from './partners/partners.module';
 import { StudentsModule } from './students/students.module';
+import { MembershipModule } from './membership/membership.module';
 import { ApplicationsModule } from './applications/applications.module';
 import { PipelineModule } from './pipeline/pipeline.module';
 import { ScoreModule } from './score/score.module';
@@ -44,6 +45,7 @@ import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
     UniversitiesModule,
     PartnersModule,
     StudentsModule,
+    MembershipModule,
     ApplicationsModule,
     PipelineModule,
     ScoreModule,

@@ -6,7 +6,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { UniversitiesService } from './universities.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
-import { CurrentUser, CurrentTenant, RequirePermissions } from '../common/decorators';
+import { CurrentUser, CurrentTenant, RequirePermissions, Public } from '../common/decorators';
 import { PaginationDto } from '../common/utils/pagination.util';
 
 @ApiTags('Universities')
@@ -26,6 +26,17 @@ export class UniversitiesController {
   @RequirePermissions('university.view')
   findAll(@CurrentTenant() t: string, @Query() p: PaginationDto, @Query() f: any) {
     return this.service.findAll(t, p, f);
+  }
+
+  // Phase 2 T-203 — genuinely public, minimal projection (id/name/city
+  // only), so the anonymous Membership Request form can offer a real
+  // university picker rather than free text. Registered before `:id` so
+  // 'public' is never swallowed as a param value.
+  @Public()
+  @Get('public')
+  @ApiOperation({ summary: 'Public minimal university list for the Membership Request form (T-203)' })
+  findAllPublic(@Query('tenantId') tenantId: string) {
+    return this.service.findAllPublic(tenantId);
   }
 
   @Get(':id')

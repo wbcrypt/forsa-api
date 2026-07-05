@@ -347,12 +347,26 @@ subsection as its own workstream; log every non-obvious design call in
 resolve them before writing code that depends on the answer).
 
 ### 2.1 Lifecycle & data model
-- [ ] T-201 Design and migrate new tables/columns for: membership records
+- [~] T-201 Design and migrate new tables/columns for: membership records
       (level: bronze/silver/gold, status, `forsa_id`, `member_since`),
       Digital Student Pass (generate-once/update-status-only — never
       recreate), fraud/blacklist records, waiting-list entries. New
       `migrations/00X_membership.sql`, following the live schema convention
       (raw SQL + `scripts/migrate.ts`), not `database/schema/`.
+      **2026-07-05 — membership records DONE via
+      `migrations/007_membership_lifecycle.sql`**: `membership_requests`
+      (public intake), `students.membership_status`/`member_since`/
+      `forsa_id` (column added now, generation logic is a separate
+      follow-up), `membership_status_history` (append-only, RULE-enforced
+      like `application_status_history`), `password_setup_tokens` (D-001's
+      set-password-link mechanism). Migration verified by actually running
+      it against a real local Postgres instance on top of the full
+      001-006 chain — not just reviewed by eye. **Digital Student Pass
+      table, fraud/blacklist records, and waiting-list entries are NOT yet
+      in this migration** — deferred to their own milestones (Digital Pass
+      next; fraud/blacklist and waiting-list later in the admin-decision
+      milestone) so each migration stays scoped to the feature landing
+      alongside it.
 - [ ] T-202 Decide how the new lifecycle stages (Visitor → Membership Request →
       Bronze → FORSA ID → Digital Pass → Member Dashboard → Complete Profile →
       Financing Eligibility → Financing Request → Documents → AI Interview →
@@ -361,18 +375,51 @@ resolve them before writing code that depends on the answer).
       state machine and pipeline stages 1-10 — see D-004/D-008. Implement the
       resulting single, coherent status model (this is where T-107 above and
       this design converge).
+      **Note 2026-07-05**: the `ApplicationStatus` enum's dead-V2-vocabulary
+      cleanup (part of this task's original D-004 scope) has been
+      deliberately deferred rather than done alongside T-201 — it isn't a
+      blocking dependency for Membership Request → Bronze (that flow never
+      touches `applications.current_status`), and doing it opportunistically
+      when the new status values (`university_confirmed`, `fraud_flagged`,
+      etc.) actually get used avoids a speculative, unused enum change now.
 
 ### 2.2 Membership request & Bronze issuance
-- [ ] T-203 Build a genuinely public `POST /membership-requests` endpoint
+- [x] T-203 Build a genuinely public `POST /membership-requests` endpoint
       (`forsa-os`) collecting only: name, phone, email, city, university,
       programme, academic year, current/future student. Explicitly no
       guarantor, no financial documents, no salary/bank statements at this
       stage.
-- [ ] T-204 On approval: issue Bronze membership, generate FORSA ID, generate
+      **2026-07-05 — DONE.** New `src/membership/` module
+      (`MembershipController`/`MembershipService`). Also added a genuinely
+      public `GET /universities/public` (minimal id/name/city projection)
+      since the anonymous form needs a real university picker and the
+      existing `GET /universities` requires a staff permission — this was
+      a gap the task description didn't anticipate.
+- [x] T-204 On approval: issue Bronze membership, generate FORSA ID, generate
       Digital Student Pass (idempotent — one-time generation, status-only
       updates thereafter). This is also the natural place to finally solve
       T-101/T-102 (registration → real `users` row) since Bronze issuance is
       the first point a real portal login should exist.
+      **2026-07-05 — Bronze issuance + real `users` row DONE; FORSA ID
+      generation and Digital Student Pass are separate follow-up
+      milestones (both already scoped, not forgotten).** `POST
+      /membership-requests/:id/approve` provisions a `students` + `users`
+      row transactionally (same pattern as T-101's `registerSelf`), sets
+      `membership_status='bronze'`, `member_since=CURRENT_DATE`, writes a
+      `membership_status_history` row. **Per D-001, never invents a real
+      password**: the `users` row gets an unusable random placeholder
+      hash, and a one-time hashed token (mirroring the existing
+      `user_sessions.session_token_hash`/`mfa_challenges.token_hash`
+      convention — raw token never stored) is emailed via a new
+      `membership_approved` notification template with a
+      `/set-password?token=...` link. New `POST /auth/set-password`
+      consumes that token. `forsa-dashboard`'s Membership Queue (was an
+      empty placeholder) now has real list/approve/reject. `forsa-student`
+      gained `/join` (public Membership Request form, now the primary
+      "no account?" link from `/login`, superseding the old `/register`
+      per D-004 — `/register` itself is left working, not removed, for
+      any pre-existing account) and `/set-password`. 8 new backend tests
+      (`membership.service.spec.ts`), 68/68 total passing.
 
 ### 2.3 Digital Student Pass
 - [ ] T-205 Build pass generation (FORSA logo, student name, FORSA ID, member

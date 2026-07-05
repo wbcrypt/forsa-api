@@ -36,31 +36,17 @@ parallelization risk in §6) · `forsa-dashboard` · `forsa-student` ·
 
 ## 1. Milestones
 
-### M0 — Data model & status unification (T-201, T-202)
-**Delivers**: the schema foundation everything else builds on.
-- New migration `007_membership_lifecycle.sql`:
-  - `membership_requests` table (public intake, no auth — name/phone/email/city/university/programme/academic-year/current-or-future-student only)
-  - `students.membership_status` column (`bronze`/`silver`/`gold`/`blacklisted`) + append-only `membership_status_history` table (mirrors the existing `application_status_history` pattern)
-  - `students.forsa_id`, `students.member_since`
-  - `digital_student_passes` table (generate-once, status-updates-only — id, student_id, issued_at, status, QR verification token; leave room for wallet-provider fields — Apple/Google Wallet pass IDs, signing certs — as nullable columns added later, not built now)
-- Extend `ApplicationStatus` enum (`src/common/enums.ts`) in place: keep every real value (`new_lead`...`appealing`), drop the dead V2-dashboard duplicates (`applied`, `internal_review`, `pre_approved`, `document_verification`, `contracts_signed`, `university_payment`), add the real new steps (`ai_interview_completed`, `ai_assessment_complete`, `waiting_list`, `more_info_required`, `fraud_flagged`, `university_confirmed`). **No `ALTER TYPE` needed** — confirmed `applications.current_status` is `VARCHAR(100)`, not a native Postgres enum, so this is an application-layer change only.
-- Add `applications.financing_tier` (`silver`/`gold`, set by human decision) as a column **separate from** the existing `current_financing_level` (`level1`/`level2`/`level3`, the approval-authority tier) — per D-004, these are two different axes and must not be conflated.
-
+### M0 — Data model & status unification (T-201, T-202) — ✅ PARTIALLY DONE 2026-07-05 (membership records only)
+**Delivered**: `migrations/007_membership_lifecycle.sql` — `membership_requests`, `students.membership_status`/`member_since`/`forsa_id`, append-only `membership_status_history`, `password_setup_tokens` (D-001's set-password mechanism). **Verified by actually running the full 001-007 migration chain against a real local Postgres instance**, not just reviewed by eye — confirmed clean apply and exact schema match against the service code.
+**Deliberately NOT done in this pass** (scoped out to their own milestones, not forgotten): `digital_student_passes` table (M2 — Digital Student Pass), fraud/blacklist table (M7), waiting-list table (reuses `capital_queue`, M5/M7), the `ApplicationStatus` enum's dead-V2-vocabulary retirement, `applications.financing_tier` column. Rationale: none of these block Membership Request → Bronze specifically, and adding schema for a feature before the milestone that uses it lands risks unused/speculative columns.
 **Repos**: `forsa-os` only.
-**Depends on**: nothing (D-004 already resolved).
-**Complexity**: **Medium-High**. Not individually hard, but it's the one milestone every other milestone reads from — a modeling mistake here (e.g., getting the membership-status ratchet direction wrong, or under-scoping the digital pass table for wallet fields later) cascades into rework across M1–M9. Budget real design review time here specifically, even though the SQL itself is simple.
-**Risk**: none of the new tables need backfill (no live production data yet), which meaningfully de-risks this migration — it's additive-only, no data migration logic required.
+**Complexity actual**: **Medium**, matching the estimate — the SQL itself was simple; the real time went into deciding what belonged in this migration vs. deferred to later ones.
 
-### M1 — Membership Request → Bronze issuance (T-203, T-204)
-**Delivers**: the first true end-to-end vertical slice of the new model — public visitor → staff-approved Bronze member with a real login.
-- `POST /membership-requests` (`@Public()`, `forsa-os`) — validated, minimal fields only, no guarantor/financial documents at this stage
-- Admin Dashboard "Membership Queue" — replaces the existing empty placeholder page (`src/pages/pending/MembershipQueuePage.tsx`, scaffolded in Phase 1) with real list/approve/reject actions
-- On approval: provisions `students` row, `users` row (email a set-password link — do not invent a password), `membership_status='bronze'`, `forsa_id`, triggers Digital Pass generation (M2). This **supersedes** the Phase-1-era `POST /students/register`/`POST /guarantors/register` (per D-001 — those were deliberately built minimal/reversible specifically for this handoff)
-
-**Repos**: `forsa-os`, `forsa-dashboard`.
-**Depends on**: M0.
-**Complexity**: **Medium**. Standard CRUD + approval workflow + provisioning transaction. The main subtlety is the provisioning transaction itself (students + users + FORSA ID all-or-nothing) — reuse the pattern already proven in T-101/T-102's `registerSelf`.
-**Recommendation**: build this milestone first among the membership-lifecycle work — it's the smallest slice that exercises the whole new data model end-to-end, surfacing any M0 modeling mistakes while they're still cheap to fix.
+### M1 — Membership Request → Bronze issuance (T-203, T-204) — ✅ DONE 2026-07-05
+**Delivered**: `POST /membership-requests` (`@Public()`) via new `src/membership/` module; Admin Dashboard Membership Queue (was an empty placeholder, now real list/approve/reject); on approval, provisions `students` + `users` transactionally, sets Bronze + `member_since`, emails a set-password link per D-001 (new `POST /auth/set-password` + `password_setup_tokens`, mirroring the existing session-token-hash convention — never stores the raw token). `forsa-student` gained `/join` (now the primary "no account?" link from `/login`, superseding `/register` per D-004 without removing it) and `/set-password`. Also added a genuinely public `GET /universities/public` — a gap the original task description didn't anticipate (the anonymous form needs a university picker; the existing university list route is staff-only). 8 new tests, 68/68 total passing.
+**FORSA ID generation and Digital Student Pass are separate follow-up milestones** — `forsa_id` stays `null` after this milestone, filled in by the next one.
+**Repos**: `forsa-os`, `forsa-dashboard`, `forsa-student`.
+**Complexity actual**: **Medium**, matching the estimate.
 
 ### M2 — Digital Student Pass (T-205, T-206)
 **Delivers**: pass generation + public QR verification.

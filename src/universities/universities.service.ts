@@ -37,6 +37,18 @@ export class UniversitiesService {
     return university;
   }
 
+  // Phase 2 T-203 — public, minimal projection only (no PII, no financial/
+  // agreement data) for the anonymous Membership Request form.
+  async findAllPublic(tenantId: string) {
+    if (!tenantId) throw new BadRequestException('tenantId is required');
+    return this.dataSource.query(
+      `SELECT id, name, city FROM universities
+       WHERE tenant_id = $1 AND status = $2
+       ORDER BY name ASC`,
+      [tenantId, UniversityStatus.ACTIVE],
+    );
+  }
+
   async findAll(tenantId: string, pagination: PaginationDto, filters?: any) {
     const { page = 1, limit = 20 } = pagination;
     const offset = getSkip(page, limit);

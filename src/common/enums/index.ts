@@ -276,3 +276,20 @@ export enum StudentStatus {
   DECEASED = 'deceased',
   SUSPENDED = 'suspended',
 }
+
+// Phase 2 — D-004: coarse, long-lived membership tier, distinct from
+// ApplicationStatus (fine-grained, per financing request). Pure ratchet
+// upward except the fraud/blacklist path — nothing ever moves a student
+// back down from silver/gold to bronze automatically.
+export enum MembershipStatus {
+  BRONZE = 'bronze',
+  SILVER = 'silver',
+  GOLD = 'gold',
+  BLACKLISTED = 'blacklisted',
+}
+
+export enum MembershipRequestStatus {
+  PENDING = 'pending',
+  APPROVED = 'approved',
+  REJECTED = 'rejected',
+}

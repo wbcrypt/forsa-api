@@ -1,5 +1,25 @@
 # FORSA — Changelog
 
+## 2026-07-05 (continued — Phase 2 Milestone 2: Membership Request → Bronze)
+- New migration `007_membership_lifecycle.sql`: `membership_requests`,
+  `students.membership_status`/`member_since`/`forsa_id`,
+  `membership_status_history` (append-only), `password_setup_tokens`.
+  Verified by actually running it against a real local Postgres instance
+  on top of the full 001-006 chain.
+- New `src/membership/` module: `POST /membership-requests` (public),
+  staff list/approve/reject. Approval provisions `students`+`users`
+  transactionally, issues Bronze, and — per D-001 — never invents a real
+  password: emails a one-time hashed set-password link instead (new
+  `POST /auth/set-password`, new `membership_approved` template).
+- New `GET /universities/public` — the anonymous Membership Request form
+  needs a university picker; the existing list route is staff-only.
+- `forsa-dashboard`'s `MembershipQueuePage.tsx` (was an empty placeholder)
+  now has real functionality.
+- `forsa-student`: new `/join` (public form, now the primary sign-up path
+  from `/login`) and `/set-password`.
+- 8 new backend tests, 68/68 total passing. `tsc`/`build` clean across
+  `forsa-os`, `forsa-dashboard`, `forsa-student`.
+
 ## 2026-07-05 (Phase 2 begins — decisions resolved, Milestone 1 done)
 - Resolved D-003 (hardcoded, centralized Household Stability weights),
   D-008 (Household Stability/FORSA Score stay permanently separate), D-010

@@ -21,6 +21,7 @@ import {
   generateSecureToken,
   hashToken,
 } from '../common/utils/encryption.util';
+import { hashPassword, validatePasswordComplexity } from '../common/utils/password.util';
 import { SecurityEventService } from './services/security-event.service';
 import { MfaService } from './services/mfa.service';
 import { LoginDto } from './dto/login.dto';
@@ -248,6 +249,43 @@ export class AuthService {
       refreshToken,
       expiresIn: 900, // 15 minutes in seconds
     };
+  }
+
+  /**
+   * D-001/T-204 — consumes a one-time password-setup token (emailed on
+   * membership approval, since the account is provisioned with an
+   * unusable placeholder hash, never a real invented password) and sets
+   * the user's actual password. Mirrors the token_hash-lookup pattern
+   * already used for sessions/MFA — the raw token is never stored.
+   */
+  async setPassword(rawToken: string, newPassword: string): Promise<void> {
+    validatePasswordComplexity(newPassword);
+
+    const tokenHash = hashToken(rawToken);
+    const [tokenRow] = await this.dataSource.query<any[]>(
+      `SELECT id, user_id, tenant_id FROM password_setup_tokens
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()`,
+      [tokenHash],
+    );
+    if (!tokenRow) {
+      throw new BadRequestException('This set-password link is invalid or has expired');
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.query(
+        `UPDATE users
+         SET password_hash = $2, must_change_password = false,
+             status = $3, email_verified = true, password_changed_at = NOW()
+         WHERE id = $1`,
+        [tokenRow.user_id, passwordHash, UserStatus.ACTIVE],
+      );
+      await manager.query(
+        `UPDATE password_setup_tokens SET used_at = NOW() WHERE id = $1`,
+        [tokenRow.id],
+      );
+    });
   }
 
   /**

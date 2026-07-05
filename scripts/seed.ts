@@ -48,6 +48,9 @@ const PERMISSIONS = [
   ['student.create','students','create','Create students',false],
   ['student.edit','students','edit','Edit student details',false],
   ['student.view_pii','students','view_pii','View student PII',true],
+  // Membership (Phase 2 — Membership Request -> Bronze, T-203/T-204)
+  ['membership.view','membership','view','View membership requests',false],
+  ['membership.approve','membership','approve','Approve/reject membership requests, issuing Bronze membership',true],
   // Applications
   ['application.view','applications','view','View applications',false],
   ['application.create','applications','create','Create applications',false],
@@ -147,6 +150,9 @@ const NOTIFICATION_TEMPLATES = [
    '<p>Dear {{studentName}},</p><p>Your payment of {{amount}} {{currency}} has been received. Reference: {{paymentReference}}</p>',true],
   ['contract_ready','email','Contract Ready for Signature','Please Sign Your Financing Contract',
    '<p>Dear {{studentName}},</p><p>Your financing contract is ready for your signature.</p>',true],
+  // Phase 2 — Membership Request -> Bronze (T-204)
+  ['membership_approved','email','Membership Approved — Set Your Password','🎉 Welcome to FORSA — Set Your Password',
+   '<p>Dear {{studentName}},</p><p>Your FORSA membership request has been approved! You are now a Bronze member.</p><p>Set your password to access your account: <a href="{{setPasswordUrl}}">{{setPasswordUrl}}</a></p><p>This link expires in 48 hours.</p>',true],
 ];
 
 async function main() {

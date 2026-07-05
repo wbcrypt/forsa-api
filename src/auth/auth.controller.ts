@@ -21,6 +21,7 @@ import { MfaService } from './services/mfa.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public, CurrentUser, ClientIp, UserAgent } from '../common/decorators';
 
@@ -106,6 +107,18 @@ export class AuthController {
       expiresIn: tokens.expiresIn,
       tokenType: 'Bearer',
     };
+  }
+
+  // D-001/T-204 — consumes a one-time set-password token emailed on
+  // membership approval (the account is provisioned with an unusable
+  // placeholder hash, never a real invented password).
+  @Public()
+  @Post('set-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set password via a one-time membership-approval token (T-204)' })
+  async setPassword(@Body() dto: SetPasswordDto) {
+    await this.authService.setPassword(dto.token, dto.newPassword);
+    return { message: 'Password set successfully. You can now log in.' };
   }
 
   @UseGuards(JwtAuthGuard)
