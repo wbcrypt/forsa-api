@@ -9,16 +9,20 @@ mark them Fixed with the commit/date so the history stays intact.
 Status legend: `OPEN` · `FIXED` · `WON'T FIX` (with reason) · `SUPERSEDED`
 (overtaken by Phase 2 redesign, no longer applicable as originally scoped).
 
+See `LAUNCH_BLOCKERS.md` for which of the still-open issues below actually
+gate a launch vs. can wait — don't assume severity (Critical/High/Medium/Low)
+below equals launch-blocking; that file makes the explicit call.
+
 ## Critical
 
 | # | Issue | Repo | Task | Status |
 |---|---|---|---|---|
-| K-01 | Self-registration → login broken end-to-end for students (`POST /students` never creates a `users`/auth row) | forsa-os, forsa-student | T-101 | PARTIALLY FIXED (2026-07-05, forsa-student frontend half only — see MASTER_TASK_LIST T-101) |
-| K-02 | Guarantor self-registration page unrouted + internally broken (`login()` missing `tenantId`, posts to wrong endpoint) | forsa-guarantor | T-102 | OPEN |
-| K-03 | Partner portal first-login misattributes an arbitrary partner's data (`partners[0]` trust bug) — can leak another partner's students/commissions | forsa-partner, forsa-os | T-103 | PARTIALLY FIXED (2026-07-05, backend `GET /partners/me` endpoint done; `forsa-partner` frontend still uses `partners[0]` until that repo switches to the new endpoint) |
+| K-01 | Self-registration → login broken end-to-end for students (`POST /students` never creates a `users`/auth row) | forsa-os, forsa-student | T-101 | FIXED (2026-07-05, both halves — see MASTER_TASK_LIST T-101) |
+| K-02 | Guarantor self-registration page unrouted + internally broken (`login()` missing `tenantId`, posts to wrong endpoint) | forsa-guarantor | T-102 | FIXED (2026-07-05) |
+| K-03 | Partner portal first-login misattributes an arbitrary partner's data (`partners[0]` trust bug) — can leak another partner's students/commissions | forsa-partner, forsa-os | T-103 | FIXED (2026-07-05, both halves) |
 | K-04 | Admin Dashboard payment verification double-API-prefix bug (`/api/v1/api/v1/...` → 404s) — breaks the primary staff payment-confirmation workflow | forsa-dashboard | T-104 | FIXED (2026-07-05) |
 | K-05 | Konnect webhook route guarded by `JwtAuthGuard`+`PermissionsGuard` with no `@Public()` override — server-to-server callback likely 401s despite a comment claiming otherwise | forsa-os | T-105 | FIXED (2026-07-05, route-level `@Public()`+`@SkipThrottle()` added; signature-verification test added in `konnect.service.spec.ts` per T-109) |
-| K-06 | Zero business-logic call sites for `NotificationsService` — no email/in-app notification is ever sent for any event | forsa-os | T-106 | OPEN |
+| K-06 | Zero business-logic call sites for `NotificationsService` — no email/in-app notification is ever sent for any event | forsa-os | T-106 | FIXED (2026-07-05) — 8 seeded templates wired to their trigger points; Phase 2's expanded membership-event notification list (T-225) remains open |
 
 ## High
 
