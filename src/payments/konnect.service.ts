@@ -9,7 +9,10 @@ import { ConfigService } from '@nestjs/config'
 import { InjectDataSource } from '@nestjs/typeorm'
 import { DataSource } from 'typeorm'
 import axios from 'axios'
+import { isPast } from 'date-fns'
 import { LedgerService } from './ledger.service'
+import { ScoreService } from '../score/score.service'
+import { ScoreDimension, SourceTrustLevel } from '../common/enums'
 
 @Injectable()
 export class KonnectService {
@@ -25,6 +28,7 @@ export class KonnectService {
     private readonly config: ConfigService,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly ledger: LedgerService,
+    private readonly scoreService: ScoreService,
   ) {
     this.apiKey      = this.config.get('konnect.apiKey') || ''
     this.walletId    = this.config.get('konnect.walletId') || ''
@@ -229,6 +233,30 @@ export class KonnectService {
       amount: payment.amount,
       currency: 'TND',
       description: `Konnect auto-payment for installment #${payment.sequence_number}`,
+    })
+
+    // K-13 — the manual/receipt-verification path (payments.service.ts)
+    // records a FORSA Score event on every fully-paid installment; the
+    // Konnect auto-verification path never did, so a student paying
+    // entirely via Konnect built no payment-reliability history at all.
+    // Mirrors the exact same on-time/late logic and point values as
+    // payments.service.ts#verifyPayment.
+    const isLate = payment.grace_due_date && isPast(new Date(payment.grace_due_date))
+    await this.scoreService.recordEvent({
+      tenantId: payment.sched_tenant,
+      studentId: payment.student_id,
+      dimension: ScoreDimension.PAYMENT_RELIABILITY,
+      eventCode: isLate ? 'PAYMENT_LATE' : 'PAYMENT_ON_TIME',
+      points: isLate ? -20 : 15,
+      sourceType: SourceTrustLevel.SYSTEM_VERIFIED,
+      sourceId: 'konnect',
+      description: `Installment #${payment.sequence_number} ${isLate ? 'paid late' : 'paid on time'} — Konnect auto-verified`,
+      referenceId: payment.id,
+      referenceType: 'payment',
+      // recorded_by is a nullable UUID column — null is correct for a
+      // gateway-triggered event with no human actor (see score.service.ts's
+      // recordEvent for the K-13 warm-up finding this fixes).
+      recordedBy: null,
     })
 
     this.logger.log(`✅ Konnect payment auto-verified: ${order_id} — installment #${payment.sequence_number}`)

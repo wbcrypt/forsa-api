@@ -511,36 +511,52 @@ resolve them before writing code that depends on the answer).
       matching key (national ID hash, not raw PII) up front.
 
 ### 2.10 Payment system
-- [~] T-218 Keep the three payment methods (bank transfer, cash deposit,
+- [x] T-218 Keep the three payment methods (bank transfer, cash deposit,
       Konnect) flowing through one common workflow: Payment → Verification →
       Ledger → Receipt → FORSA Score Update. This is where T-105/T-111/the
       original audit's ledger-shape inconsistency (Konnect vs. manual path
       writing structurally different `financial_ledger` rows) and the
       missing Konnect→score-event call all get fixed together, since the spec
       now requires one unified pipeline rather than two parallel ones.
-      **2026-07-05 — ledger-shape half DONE (K-14, launch blocker), Konnect
-      score-event half NOT done (K-13, tracked separately, Post-Launch).**
-      New `src/payments/ledger.service.ts` is now the single place that
-      writes to `financial_ledger` — both `payments.service.ts` (manual/
-      receipt-verification path) and `konnect.service.ts` call
+      **2026-07-05 — ledger-shape half DONE (K-14, launch blocker); Konnect
+      score-event half also now DONE (K-13, fixed as Phase 2's M8 warm-up
+      milestone).** New `src/payments/ledger.service.ts` is the single place
+      that writes to `financial_ledger` — both `payments.service.ts`
+      (manual/receipt-verification path) and `konnect.service.ts` call
       `LedgerService.recordEntries()`. This was a more serious bug than
       "structurally different": `konnect.service.ts` was inserting into
       `debit_account`/`credit_account` columns that **don't exist** in the
-      live schema (only `entry_type`/`account` do — see
-      `migrations/001_initial_schema.sql`), with `entry_type = 'payment'`
-      violating the table's `CHECK (entry_type IN ('debit','credit'))`
-      constraint. This meant every real Konnect payment confirmation would
-      throw a SQL error on the ledger write — *after* the payment had
-      already been marked `verified` and the installment `paid`, leaving a
-      verified payment with no ledger entry at all. Fixed + locked down with
-      a new test (`konnect.service.spec.ts`) asserting the happy path calls
-      `LedgerService.recordEntries` with the correct shape and that no query
-      references the nonexistent columns. Konnect still doesn't fire a
-      FORSA Score event on confirmation (K-13) — left open, classified
-      Post-Launch in `LAUNCH_BLOCKERS.md` since it's a scoring-consistency
-      gap, not a financial-integrity one.
-- [ ] T-219 Student dashboard must show complete payment history end-to-end
+      live schema, violating the `entry_type` CHECK constraint — every real
+      Konnect confirmation would throw a SQL error on the ledger write,
+      after the payment was already marked verified. Fixed + locked down
+      with tests. **K-13**: `konnect.service.ts` now calls
+      `ScoreService.recordEvent` with the same on-time/late logic as the
+      manual path's `verifyPayment`. Found and fixed a more severe sibling
+      bug while doing this: `recordedBy: 'system'` was being inserted into
+      `score_events.recorded_by` (a `UUID` column) on every automated score
+      event — both this new Konnect path and the pre-existing daily
+      overdue-installment cron job — throwing `invalid input syntax for
+      type uuid`, silently swallowed by the cron job's `.catch()`, meaning
+      `PAYMENT_OVERDUE` events were never actually recorded in production.
+      Fixed by widening `ScoreService.recordEvent`'s type to `string | null`
+      and passing `null` (the column is nullable) for system-triggered
+      events. Both payment methods now flow through one unified pipeline
+      with consistent ledger + score consequences.
+- [x] T-219 Student dashboard must show complete payment history end-to-end
       (not just recent installments).
+      **2026-07-05 — DONE (Phase 2 M8 warm-up).** Found the data source
+      already existed: `GET /students/:id/payments` (via
+      `getPaymentHistory`) already spans every payment across every
+      application/financing period for a student — it just required the
+      staff-only `payment.view` permission, so an actual student portal
+      user 403'd on it. Added a self-scoped `GET /students/me/payments`
+      (`findMyPayments`, same JWT-identity-resolution pattern as the
+      existing `findMe`), and wired `forsa-student`'s `PaymentsPage.tsx`
+      with a new "Complete Payment History" section that renders
+      regardless of whether a *current* schedule exists — important for a
+      renewed student between financing periods, whose prior-period
+      payments would otherwise be invisible once that period's schedule is
+      no longer "the" active one.
 
 ### 2.11 Student dashboard
 - [~] T-220 Rebuild (`forsa-student`) around: Welcome, Membership Status,

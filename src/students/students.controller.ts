@@ -44,6 +44,20 @@ export class StudentsController {
     return this.service.findMe(u, t);
   }
 
+  // T-219 — the pre-existing GET /:id/payments route (@RequirePermissions
+  // 'payment.view', a staff-only permission) already spans every payment
+  // across every application/financing period for a student, not just the
+  // current one — exactly the "complete payment history end-to-end" data
+  // T-219 asks for. It just wasn't reachable by an actual student portal
+  // user, who holds none of the staff permission grants. Same self-scoped
+  // pattern as findMe above: resolves via students.user_id off the JWT
+  // identity, never a client-supplied id.
+  @Get('me/payments')
+  @ApiOperation({ summary: 'Get the logged-in student portal user\'s own complete payment history, across all applications (T-219)' })
+  findMyPayments(@CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.findMyPayments(u, t);
+  }
+
   @Post()
   @RequirePermissions('student.create')
   create(@Body() dto: any, @CurrentTenant() t: string, @CurrentUser('id') u: string) {

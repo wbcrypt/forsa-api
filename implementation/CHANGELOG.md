@@ -1,5 +1,27 @@
 # FORSA — Changelog
 
+## 2026-07-05 (Phase 2 begins — decisions resolved, Milestone 1 done)
+- Resolved D-003 (hardcoded, centralized Household Stability weights),
+  D-008 (Household Stability/FORSA Score stay permanently separate), D-010
+  new (family = student + primary guarantor household). User approved
+  `PHASE_2_PLAN.md` with a revised 8-step execution order (§5a).
+- **Milestone 1 (payment cleanup warm-up) done**: K-13 (Konnect now fires a
+  FORSA Score event on confirmation) and T-219 (student portal complete
+  payment history via new self-scoped `GET /students/me/payments`).
+- Fixed a live bug found along the way: `recordedBy: 'system'` was being
+  inserted into `score_events.recorded_by` (a `UUID` column), throwing on
+  every automated score event — the pre-existing overdue-installment cron
+  job silently swallowed this, meaning `PAYMENT_OVERDUE` events were never
+  actually recorded. Fixed by widening the type to `string | null` and
+  passing `null` for system-triggered events.
+- Fixed a DI foot-gun found along the way: `guarantors.module.ts`
+  redundantly redeclared `KonnectService` as a local provider despite
+  already importing `PaymentsModule` (which exports it) — this would have
+  broken resolving `KonnectService`'s new `ScoreService` dependency.
+  Removed the redundant declaration.
+- 60/60 backend tests passing, `tsc`/`build` clean on `forsa-os` and
+  `forsa-student`.
+
 ## 2026-07-05 (continued — launch-blocker hardening sprint, all 7 fixed)
 - Created `LAUNCH_BLOCKERS.md`: classified 33 remaining open issues as 7
   Launch Blockers / 26 Post-Launch. Fixed 4 stale `KNOWN_ISSUES.md` statuses

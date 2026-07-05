@@ -446,7 +446,13 @@ export class PaymentsService {
           description: 'Payment overdue — grace period passed',
           referenceId: inst.id,
           referenceType: 'installment',
-          recordedBy: 'system',
+          // K-13 warm-up — was the literal string 'system', which threw
+          // "invalid input syntax for type uuid" against recorded_by's real
+          // column type on every run, silently swallowed by this .catch()
+          // below — PAYMENT_OVERDUE score events were never actually being
+          // recorded. recorded_by is nullable; null is the correct value
+          // for a system-triggered event with no human actor.
+          recordedBy: null,
         }).catch(err => this.logger.error('Score event failed for overdue installment', err));
 
         await this.notifyStudent(ps.tenant_id, ps.student_id, 'payment_overdue', {

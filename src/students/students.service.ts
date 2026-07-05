@@ -388,6 +388,19 @@ export class StudentsService {
     );
   }
 
+  // T-219 — self-scoped equivalent of getPaymentHistory above, resolving
+  // the student id server-side from the caller's own user_id first (never
+  // trusting a client-supplied id), then reusing the exact same query —
+  // already spans every application/financing period, not just one.
+  async findMyPayments(userId: string, tenantId: string) {
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2`,
+      [userId, tenantId],
+    );
+    if (!student) throw new NotFoundException('No student profile linked to this user');
+    return this.getPaymentHistory(student.id, tenantId);
+  }
+
   private async audit(tenantId: string, userId: string, action: string, targetId: string, prev: any, next: any) {
     await this.dataSource.query(
       `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, previous_value, new_value, created_at)

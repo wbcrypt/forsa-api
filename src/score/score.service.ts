@@ -34,7 +34,13 @@ export class ScoreService {
     description: string;
     referenceId?: string;
     referenceType?: string;
-    recordedBy: string;
+    // K-13 warm-up finding — recorded_by is a nullable UUID column with no
+    // "system actor" row to reference; passing the literal string 'system'
+    // here throws "invalid input syntax for type uuid" at the DB. Automated/
+    // system-triggered events (cron jobs, gateway webhooks) must pass null,
+    // not a placeholder string — reserve a real string only for genuine
+    // human actor UUIDs.
+    recordedBy: string | null;
     policyVersionId?: string;
     severity?: ScoreSeverity;
   }): Promise<{ eventId: string; newBalance: number; newBand: ScoreBand }> {

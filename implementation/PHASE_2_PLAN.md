@@ -124,12 +124,10 @@ parallelization risk in §6) · `forsa-dashboard` · `forsa-student` ·
 **Complexity**: **Medium** — the blacklist-enforcement logic itself is simple; the hashing/matching-key design is the part that needs care (get it wrong and either miss real matches or, worse, create false-positive collisions blocking an innocent applicant).
 **Can run in parallel with**: M4, M5, M6 — genuinely independent of the AI/scoring/renewal work, only needs M0.
 
-### M8 — Payment system remainder (T-218 remainder = K-13, T-219)
-**Delivers**: Konnect confirmations fire a FORSA Score event (matching the manual-verification path, which already does); student dashboard shows complete end-to-end payment history, not just recent installments.
-**Repos**: `forsa-os` (`konnect.service.ts`), `forsa-student`.
-**Depends on**: nothing — the ledger unification (K-14) is already done; this is a small, fully independent follow-up.
-**Complexity**: **Low**.
-**Recommendation**: this is the lowest-risk, most self-contained milestone in the whole plan — good candidate to start immediately, in parallel with M0, as a warm-up that can't block or be blocked by anything else.
+### M8 — Payment system remainder (T-218 remainder = K-13, T-219) — ✅ DONE 2026-07-05
+**Delivered**: Konnect confirmations now fire a FORSA Score event, matching the manual-verification path. Student dashboard now shows complete end-to-end payment history via a new self-scoped `GET /students/me/payments`, rendered independently of whether a *current* schedule exists (important for renewed students between financing periods). **Bonus find**: fixed a live, silently-swallowed bug where `recordedBy: 'system'` was inserted into a `UUID` column (`score_events.recorded_by`), throwing on every automated score event including the pre-existing daily overdue-installment cron job — `PAYMENT_OVERDUE` events were never actually being recorded before this fix. 60/60 backend tests passing (2 new: `konnect.service.spec.ts`, new `students.service.spec.ts`).
+**Repos**: `forsa-os` (`konnect.service.ts`, `score.service.ts`, `payments.service.ts`, `students.service.ts`/`students.controller.ts`, `guarantors.module.ts` — removed a redundant `KonnectService` provider redeclaration that would have broken DI resolution for the new dependency), `forsa-student` (`PaymentsPage.tsx`, `lib/api.ts`).
+**Complexity**: **Low**, as predicted — no schema changes needed, reused existing query logic and permission patterns throughout.
 
 ### M9 — Frontend rebuilds (T-219 covered above; T-220 remainder, T-221 remainder, T-222, T-223, T-224)
 **Delivers**: real functionality behind the Phase-1 nav scaffolding, portal by portal.

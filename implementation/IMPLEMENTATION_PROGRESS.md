@@ -342,3 +342,55 @@ Phase 2 starts.** Done, in order:
 for this gate). Verification discipline held throughout: every change
 typechecked and built (backend + each touched frontend) before committing.
 See `NEXT_SESSION.md` for the Phase 2 kickoff plan.
+
+## Phase 2 — begins 2026-07-05
+
+User approved `PHASE_2_PLAN.md` and resolved all three remaining gating
+decisions: D-003 (hardcoded, centralized Household Stability weights —
+35/25/20/10/10), D-008 (Household Stability and FORSA Score stay
+permanently separate), and D-010/new (family = student + primary
+guarantor household). User also gave a revised 8-step execution order
+(§5a of the plan), splitting the original M1 milestone into distinct
+Membership Request→Bronze and FORSA ID steps. Instructed to continue
+through all steps without stopping, updating docs after each milestone,
+unless a genuine new business decision is discovered.
+
+**Milestone 1 — Payment cleanup warm-up (M8: K-13 + T-219) — DONE.**
+- K-13: `konnect.service.ts` now fires a `ScoreService.recordEvent` call on
+  confirmed payments, mirroring `payments.service.ts#verifyPayment`'s
+  on-time/late logic exactly. `KonnectService` gained `ScoreService` as a
+  new constructor dependency (via the already-imported `ScoreModule` in
+  `PaymentsModule`).
+- Along the way, discovered `guarantors.module.ts` redundantly redeclared
+  `KonnectService` as a local provider on top of already importing
+  `PaymentsModule` (which exports a fully-wired instance) — this redundant
+  declaration would have failed to resolve the new `ScoreService`
+  dependency (no `ScoreModule` import in `GuarantorsModule`'s own scope).
+  Removed the redundant declaration; `GuarantorsService` still gets the
+  correctly-wired singleton via the `PaymentsModule` import alone.
+- Also discovered, while wiring the new score event, a live and more
+  severe latent bug: `recordedBy: 'system'` was being passed to
+  `ScoreService.recordEvent`, which inserts it into `score_events
+  .recorded_by` — a `UUID` column. This throws `invalid input syntax for
+  type uuid` at the database. The pre-existing daily overdue-installment
+  cron job (`payments.service.ts`) had this exact same bug, silently
+  swallowed by a `.catch()` — meaning `PAYMENT_OVERDUE` score events have
+  never actually been recorded in production. Fixed by widening
+  `recordEvent`'s `recordedBy` type to `string | null` and passing `null`
+  (the column is nullable) for both the cron job and the new Konnect path.
+- T-219: found the actual data source already existed —
+  `getPaymentHistory` (backing the existing but staff-only `GET
+  /students/:id/payments`) already spans every payment across every
+  application/financing period. It just wasn't reachable by an actual
+  student portal user (`payment.view` is a staff permission). Added
+  `GET /students/me/payments` (`findMyPayments`), self-scoped via the
+  caller's own `user_id` — same pattern as the existing `findMe`. Wired
+  `forsa-student`'s `PaymentsPage.tsx` with a new "Complete Payment
+  History" section, deliberately rendered from every page state (including
+  the "no current schedule" empty states) since a renewed student's
+  prior-period payments shouldn't disappear just because their current
+  period has no active schedule yet.
+- New test files: `students.service.spec.ts` (first test coverage for this
+  module), 1 new test in `konnect.service.spec.ts`. 60/60 backend tests
+  passing. `tsc --noEmit`/`npm run build` clean on both `forsa-os` and
+  `forsa-student`.

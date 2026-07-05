@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { KonnectService } from './konnect.service';
 import { LedgerService } from './ledger.service';
+import { ScoreService } from '../score/score.service';
 
 jest.mock('axios');
 
@@ -26,10 +27,12 @@ describe('KonnectService.processWebhook — signature verification', () => {
     };
     const dataSource = { query: jest.fn().mockResolvedValue([]) };
     const ledger = { recordEntries: jest.fn().mockResolvedValue(undefined) };
+    const scoreService = { recordEvent: jest.fn().mockResolvedValue(undefined) };
     return new KonnectService(
       config as unknown as ConfigService,
       dataSource as unknown as DataSource,
       ledger as unknown as LedgerService,
+      scoreService as unknown as ScoreService,
     );
   };
 
@@ -96,12 +99,14 @@ describe('KonnectService.processWebhook — ledger write on confirmed payment', 
       .mockResolvedValueOnce(undefined);    // UPDATE installments paid
     const dataSource = { query };
     const ledger = { recordEntries: jest.fn().mockResolvedValue(undefined) };
+    const scoreService = { recordEvent: jest.fn().mockResolvedValue(undefined) };
     (axios.get as jest.Mock).mockResolvedValue({ data: { payment: { status: 'paid' } } });
 
     const service = new KonnectService(
       config as unknown as ConfigService,
       dataSource as unknown as DataSource,
       ledger as unknown as LedgerService,
+      scoreService as unknown as ScoreService,
     );
 
     const result = await service.processWebhook(
@@ -117,5 +122,44 @@ describe('KonnectService.processWebhook — ledger write on confirmed payment', 
     // The old broken code path inserted directly via dataSource.query — confirm
     // no query call references the nonexistent debit_account/credit_account columns.
     expect(query.mock.calls.some(c => String(c[0]).includes('debit_account'))).toBe(false);
+  });
+
+  // K-13 — locks in the fix: Konnect confirmations now record a FORSA Score
+  // event, matching what the manual-verification path already does. Before
+  // this, a student paying entirely via Konnect built no payment-reliability
+  // history at all.
+  it('records an on-time PAYMENT_RELIABILITY score event on confirmed payment', async () => {
+    const config = { get: () => undefined };
+    const paymentRow = {
+      id: 'payment-1', installment_id: 'inst-1', amount: 500, sequence_number: 2,
+      application_id: 'app-1', sched_tenant: 'tenant-1', student_id: 'student-1',
+      grace_due_date: null,
+    };
+    const query = jest.fn()
+      .mockResolvedValueOnce([paymentRow])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+    const dataSource = { query };
+    const ledger = { recordEntries: jest.fn().mockResolvedValue(undefined) };
+    const scoreService = { recordEvent: jest.fn().mockResolvedValue(undefined) };
+    (axios.get as jest.Mock).mockResolvedValue({ data: { payment: { status: 'paid' } } });
+
+    const service = new KonnectService(
+      config as unknown as ConfigService,
+      dataSource as unknown as DataSource,
+      ledger as unknown as LedgerService,
+      scoreService as unknown as ScoreService,
+    );
+
+    await service.processWebhook({ order_id: 'FORSA-1', payment_ref: 'ref-1', status: 'paid' }, undefined);
+
+    expect(scoreService.recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: 'tenant-1', studentId: 'student-1',
+        eventCode: 'PAYMENT_ON_TIME', points: 15,
+        referenceId: 'payment-1', referenceType: 'payment',
+        recordedBy: null,
+      }),
+    );
   });
 });
