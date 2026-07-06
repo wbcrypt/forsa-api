@@ -39,4 +39,13 @@ export class ExecutionController {
   getHistory(@CurrentTenant() t: string, @Query('limit') limit: number) {
     return this.service.getExecutionHistory(t, limit || 50);
   }
+
+  // T-222 — Finance portal's Disbursements page (read-only; execution
+  // itself remains admin-portal/DEE only).
+  @Get('disbursements')
+  @RequirePermissions('execution.view')
+  @ApiOperation({ summary: 'View university disbursement history' })
+  getDisbursements(@CurrentTenant() t: string, @Query('limit') limit: number) {
+    return this.service.getDisbursements(t, limit || 100);
+  }
 }

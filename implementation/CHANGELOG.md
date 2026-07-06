@@ -1,5 +1,26 @@
 # FORSA — Changelog
 
+## 2026-07-06 — T-222 (Finance portal) + T-224 (Partner portal), completing the Phase 2 backlog
+- Finance: real Disbursements page (`GET /execution/disbursements`,
+  data already existed via the DEE, just no read path), fixed the
+  non-functional "View receipt" button (generic pre-signed-URL
+  pattern), fixed Reports' raw-JSON export to emit real multi-section
+  CSV. Deleted 2 dead files (`HomePage.tsx`,
+  `pages/payments/PaymentsPage.tsx`) — copy-pasted student-portal code,
+  unrouted, broken imports.
+- Partner: auditing the T-224 standing rule surfaced 3 more live
+  identity/permission violations beyond the already-fixed T-103 bug —
+  `applicationsApi.list`, `getDashboard`, `getCommissions` all called
+  staff-permissioned routes a partner account doesn't hold; two of the
+  three underlying queries had no partner-scoping filter at all (would
+  leak every partner's data across the tenant if those permissions were
+  ever broadly granted). Fixed with new self-scoped `GET /partners/me
+  /applications`, `/me/dashboard`, `/me/commissions`. Also found
+  `partnerApi.update()` called a `PATCH /partners/:id` that never
+  existed — profile editing was unconditionally 404. Added `PATCH
+  /partners/me`.
+- 6 new tests, 112/112 backend tests passing.
+
 ## 2026-07-05 (continued — Phase 2 Milestone 8: Remaining portal updates, final milestone)
 - Renewal (T-216): confirmed most requirements already satisfied by
   existing mechanisms (fresh financing request per period, FORSA Score

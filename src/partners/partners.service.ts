@@ -79,6 +79,113 @@ export class PartnersService {
     return partner;
   }
 
+  // T-224 discovery — forsa-partner's Dashboard/Students/Reports pages
+  // called GET /applications?partnerId=X (a staff-only application.view
+  // route) expecting it to filter by partner. It doesn't: findAll's
+  // recognized filters are status/universityId/financingLevel/
+  // assignedTo/search — partnerId was never one of them, so the
+  // parameter was silently ignored. Combined with application.view being
+  // a staff permission no partner-portal account holds, this meant the
+  // pages either 403'd outright, or — if that permission were ever
+  // broadly granted — would return every application across the entire
+  // tenant to any partner, a cross-partner data leak. Fixed the same way
+  // as every other self-scoped route this phase: resolve the partner
+  // via the JWT identity (partners.user_id), never a client-supplied id
+  // or query param, and filter by that partner's own id server-side.
+  async getMyApplications(userId: string, tenantId: string, pagination: PaginationDto) {
+    const partner = await this.findMe(userId, tenantId);
+    const { page = 1, limit = 20 } = pagination;
+    const offset = getSkip(page, limit);
+
+    const [data, [count]] = await Promise.all([
+      this.dataSource.query<any[]>(
+        `SELECT a.id, a.current_status, a.current_financing_level, a.tuition_amount,
+                a.currency, a.lead_date, a.academic_year,
+                s.first_name, s.last_name, s.email,
+                u.name AS university_name, p.name AS program_name
+         FROM applications a
+         JOIN students s ON s.id = a.student_id
+         JOIN universities u ON u.id = a.university_id
+         LEFT JOIN programs p ON p.id = a.program_id
+         WHERE a.tenant_id = $1 AND a.partner_id = $2
+         ORDER BY a.created_at DESC
+         LIMIT $3 OFFSET $4`,
+        [tenantId, partner.id, limit, offset],
+      ),
+      this.dataSource.query<any[]>(
+        `SELECT COUNT(*) FROM applications WHERE tenant_id = $1 AND partner_id = $2`,
+        [tenantId, partner.id],
+      ),
+    ]);
+
+    return paginate(data, parseInt(count.count, 10), page, limit);
+  }
+
+  // T-224 discovery — forsa-partner's ProfilePage.tsx called
+  // partnerApi.update(partner.id, ...) -> PATCH /partners/:id, but no
+  // such route (or service method) has ever existed in this controller —
+  // editing name/website was completely non-functional (404), not just
+  // an identity-trust issue. Self-scoped like every other 'me' route:
+  // resolves the partner via the JWT identity, updates only the two
+  // fields a partner is allowed to self-manage (name, website) — status,
+  // type, commission rates, agreements remain staff-only via the
+  // existing :id routes.
+  async updateMe(userId: string, tenantId: string, dto: { name?: string; website?: string }) {
+    const partner = await this.findMe(userId, tenantId);
+    const [updated] = await this.dataSource.query<any[]>(
+      `UPDATE partners SET name = COALESCE($3, name), website = COALESCE($4, website), updated_at = NOW()
+       WHERE id = $1 AND tenant_id = $2
+       RETURNING *`,
+      [partner.id, tenantId, dto.name, dto.website],
+    );
+    return updated;
+  }
+
+  // T-224 discovery — forsa-partner's DashboardPage/ReportsPage called
+  // partnerApi.getDashboard(partner.id) -> GET /partners/:id/dashboard,
+  // gated behind the staff-only partner.view permission — no partner-
+  // portal account holds it, so this 403'd unconditionally. Same fix
+  // pattern as getMyApplications/updateMe above: self-scoped, resolved
+  // via the JWT identity.
+  async getMyDashboard(userId: string, tenantId: string) {
+    const partner = await this.findMe(userId, tenantId);
+    return this.getPartnerDashboard(partner.id, tenantId);
+  }
+
+  // T-224 discovery — worse than the two above: partnerApi
+  // .getCommissions() called GET /partners/commissions, gated behind
+  // partner.commission.approve (a staff *approval* permission) — 403'd
+  // unconditionally for any partner-portal account. And even setting
+  // that aside, getCommissions()'s query has no partner_id filter at
+  // all (`WHERE pc.tenant_id = $1`) — every partner's commissions across
+  // the entire tenant, not just the caller's own. Self-scoped and
+  // properly filtered by the resolved partner's own id.
+  async getMyCommissions(userId: string, tenantId: string, pagination: PaginationDto) {
+    const partner = await this.findMe(userId, tenantId);
+    const { page = 1, limit = 20 } = pagination;
+    const offset = getSkip(page, limit);
+
+    const [data, [count]] = await Promise.all([
+      this.dataSource.query<any[]>(
+        `SELECT pc.*, s.first_name, s.last_name, u.name AS university_name
+         FROM partner_commissions pc
+         JOIN students s ON s.id = pc.student_id
+         JOIN applications a ON a.id = pc.application_id
+         JOIN universities u ON u.id = a.university_id
+         WHERE pc.tenant_id = $1 AND pc.partner_id = $2
+         ORDER BY pc.created_at DESC
+         LIMIT $3 OFFSET $4`,
+        [tenantId, partner.id, limit, offset],
+      ),
+      this.dataSource.query<any[]>(
+        `SELECT COUNT(*) FROM partner_commissions WHERE tenant_id = $1 AND partner_id = $2`,
+        [tenantId, partner.id],
+      ),
+    ]);
+
+    return paginate(data, parseInt(count.count, 10), page, limit);
+  }
+
   async findOne(id: string, tenantId: string) {
     const [partner] = await this.dataSource.query<any[]>(
       `SELECT p.*,

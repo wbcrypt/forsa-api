@@ -237,4 +237,30 @@ export class ExecutionService {
       [tenantId, limit],
     );
   }
+
+  // T-222 — forsa-finance's Disbursements page was a placeholder
+  // ("managed in the Admin Dashboard"). recordDisbursement() above
+  // already writes real university_disbursements rows (via the DEE, on
+  // tuition-payment execution) — there was simply no read path for
+  // Finance to view that history. University payment *execution* still
+  // only happens through the admin portal/DEE, preserving the intended
+  // separation; this is read-only.
+  async getDisbursements(tenantId: string, limit = 100) {
+    return this.dataSource.query(
+      `SELECT ud.id, ud.amount, ud.currency, ud.payment_reference,
+              ud.payment_method, ud.disbursed_at, ud.status,
+              un.name AS university_name,
+              s.first_name, s.last_name,
+              u.full_name AS recorded_by_name
+       FROM university_disbursements ud
+       JOIN universities un ON un.id = ud.university_id
+       JOIN applications a ON a.id = ud.application_id
+       JOIN students s ON s.id = a.student_id
+       LEFT JOIN users u ON u.id = ud.recorded_by
+       WHERE ud.tenant_id = $1
+       ORDER BY ud.disbursed_at DESC
+       LIMIT $2`,
+      [tenantId, limit],
+    );
+  }
 }

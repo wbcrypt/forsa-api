@@ -885,14 +885,42 @@ resolve them before writing code that depends on the answer).
       it, so a pipeline run paused for human review had no UI path at all.
 
 ### 2.13 Finance portal
-- [ ] T-222 Confirm/extend (`forsa-finance`) to fully support: payment
+- [x] T-222 Confirm/extend (`forsa-finance`) to fully support: payment
       verification, receipts, Konnect, ledger, late payments, exports — this
       is largely T-107(original)/T-305/T-306/T-307-class fixes from the audit,
       done properly this time rather than left as stubs (`DisbursementsPage`
       placeholder, non-functional "view receipt" button, raw-JSON export all
       need to actually work).
-      **Not started as of 2026-07-05** — flagged explicitly as remaining
-      Phase 2 frontend work, not silently dropped.
+      **2026-07-06 — DONE.** `DisbursementsPage.tsx` was a placeholder
+      deferring entirely to the Admin Dashboard — but `university
+      _disbursements` rows were already being written for real (via the
+      DEE's `recordDisbursement`, on tuition-payment execution); there
+      was simply no read path. New `GET /execution/disbursements`
+      (`ExecutionService.getDisbursements`) + real page. Execution itself
+      still only happens through the admin portal/DEE, preserving the
+      intended separation. "View receipt" button: `onView={() =>
+      setSelected(p)}` set state but nothing ever rendered off it — the
+      button did nothing visible. Added `receipt_document_id` to
+      `listReceipts`'s SELECT (existed on the column, just never
+      selected) and wired the button to the same generic pre-signed-URL
+      pattern (`GET /documents/:id/download-url`) every other portal
+      already uses for document viewing. Raw-JSON export:
+      `ReportsPage.tsx`'s `exportCSV` function was named for CSV but
+      called `JSON.stringify` and downloaded a `.json` file — the report
+      data is a mix of a summary object and array sections (e.g.
+      finance: `ledger[]`, `receivables{}`, `recentDisbursements[]`), so
+      rewrote it to emit a real multi-section CSV (each section its own
+      header + rows) rather than forcing a mismatched shape into one flat
+      table. **Also found and removed 2 completely dead files**:
+      `HomePage.tsx` and `pages/payments/PaymentsPage.tsx` were entirely
+      copy-pasted from the *student* portal (self-service "my
+      application"/"my payments" content, `user!.id`-based queries) with
+      broken imports (`studentApi`/`paymentApi` don't exist in this
+      repo's `lib/api.ts`) — neither was ever routed in `App.tsx`
+      (`DashboardPage.tsx` is the real home page); both would have thrown
+      immediately if anyone had wired them in. Deleted rather than fixed,
+      since they served no purpose in a finance-staff portal. 1 new
+      backend test (`execution.service.spec.ts`).
 
 ### 2.14 University portal
 - [x] T-223 Confirm/extend (`forsa-university`) to support: student
@@ -941,10 +969,48 @@ resolve them before writing code that depends on the answer).
       `forsa-university`/`forsa-student` together.
 
 ### 2.15 Partner portal
-- [ ] T-224 Partner must only ever access their own students/referrals/
+- [x] T-224 Partner must only ever access their own students/referrals/
       statistics/commissions — **never trust client-side identity** for this
       (this is exactly T-103 above, generalized as a standing rule for every
       new partner-scoped feature added from here on, not just the one bug).
+      **2026-07-06 — DONE. Applied the standing rule to 3 real, live
+      violations found this pass, not just re-confirmed as a rule.**
+      T-103 itself (the `partners[0]` bug) was already fixed and remains
+      solid. But auditing every `forsa-partner` API call against it
+      surfaced three more instances of the same underlying mistake — a
+      partner-facing page calling a **staff-permissioned** route instead
+      of a self-scoped one:
+      1. `applicationsApi.list({ partnerId: partner.id })` called
+         `GET /applications` (`application.view`, staff-only). Worse:
+         `findAll`'s recognized filters (`status`/`universityId`/
+         `financingLevel`/`assignedTo`/`search`) never included
+         `partnerId` at all — it was silently ignored. Either a 403 (no
+         partner-portal account holds `application.view`) or, if that
+         permission were ever broadly granted, every application across
+         the entire tenant leaking to any partner.
+      2. `partnerApi.getDashboard(partner.id)` called
+         `GET /partners/:id/dashboard` (`partner.view`, staff-only) —
+         403'd unconditionally for a partner's own dashboard.
+      3. `partnerApi.getCommissions()` called `GET /partners/commissions`
+         (`partner.commission.approve`, a staff *approval* permission,
+         not just viewing) — 403'd unconditionally, and independent of
+         that, the query itself had **no `partner_id` filter at all**
+         (`WHERE pc.tenant_id = $1`) — every partner's commissions across
+         the tenant, not just the caller's own.
+      **Also found, while here, a fourth bug of a different kind**:
+      `partnerApi.update(partner.id, {...})` called `PATCH /partners
+      /:id` — but no `PATCH` route (or service method) for partners has
+      ever existed. Profile editing (`ProfilePage.tsx`) was completely
+      non-functional (404), not an identity-trust issue at all.
+      **Fixed all four** with new self-scoped routes mirroring
+      `GET /partners/me`'s existing, working pattern — each resolves the
+      partner via `partners.user_id` keyed off the JWT identity, never a
+      client-supplied id: `GET /partners/me/applications`, `GET
+      /partners/me/dashboard`, `GET /partners/me/commissions`, `PATCH
+      /partners/me`. None carry a `@RequirePermissions()` — a partner-
+      portal account holds none of the staff grants, same as every other
+      self-scoped route in this codebase; the service layer does the
+      actual scoping. 5 new tests (`partners.service.spec.ts`, new file).
 
 ### 2.16 Notifications (event-driven)
 - [ ] T-225 Build real event-driven notifications for at minimum: membership

@@ -643,7 +643,7 @@ export class PaymentsService {
       `SELECT
          p.id, p.status, p.amount, p.currency, p.payment_date,
          p.bank_name, p.student_bank_ref AS reference_number,
-         p.student_amount, p.receipt_filename,
+         p.student_amount, p.receipt_filename, p.receipt_document_id,
          p.receipt_uploaded_at, p.verified_at, p.verification_notes,
          p.rejection_reason, p.notes,
          p.payment_method,

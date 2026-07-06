@@ -837,3 +837,70 @@ Portal) — plus a severe security finding made and fixed along the way.
   `forsa-os`, `forsa-dashboard`, `forsa-university`, `forsa-student`.
   Migration 011 verified against a real local Postgres instance (the
   sixth migration verified this way across the phase).
+
+**Post-Milestone-8 — T-222 (Finance portal) and T-224 (Partner portal),
+completing the full Phase 2 backlog.** The user asked to continue past
+the 8 approved milestones into the remaining Phase 2 items.
+
+- **T-222 (`forsa-finance`)**: `DisbursementsPage.tsx` was a placeholder
+  deferring entirely to the Admin Dashboard, but `university
+  _disbursements` rows were already being written for real (the DEE's
+  `recordDisbursement`, on tuition-payment execution) — there was simply
+  no read path. New `GET /execution/disbursements`
+  (`ExecutionService.getDisbursements`) + a real page. Execution itself
+  still only happens through the admin portal/DEE.
+- **"View receipt" button did nothing**: `onView={() =>
+  setSelected(p)}` set state with nothing ever rendering off it. Added
+  `receipt_document_id` to `listReceipts`'s SELECT (the column existed,
+  just was never selected) and wired the button to the same generic
+  pre-signed-URL pattern (`GET /documents/:id/download-url`) every other
+  portal already uses.
+- **Raw-JSON "CSV" export**: `ReportsPage.tsx`'s `exportCSV` was named
+  for CSV but called `JSON.stringify` and downloaded a `.json` file. The
+  report data is a mix of a summary object and array sections (e.g.
+  finance report: `ledger[]`, `receivables{}`, `recentDisbursements[]`)
+  — rewrote to emit a real multi-section CSV rather than forcing a
+  mismatched shape into one flat table.
+- **Found and deleted 2 completely dead files**: `HomePage.tsx` and
+  `pages/payments/PaymentsPage.tsx` were entirely copy-pasted from the
+  *student* portal (self-service "my application"/"my payments" content,
+  `user!.id`-based queries), with broken imports (`studentApi`/
+  `paymentApi` don't exist in this repo's `lib/api.ts`) — confirmed
+  neither was ever routed in `App.tsx` (`DashboardPage.tsx` is the real
+  home page) before deleting rather than fixing them.
+- **T-224 (`forsa-partner`)**: re-read the standing rule ("partner must
+  only ever access their own data, never trust client-side identity")
+  and actually audited every API call in the repo against it, rather
+  than treating the rule as already-satisfied. Found **3 more live
+  violations** beyond the already-fixed T-103 bug — each one a
+  partner-facing page calling a **staff-permissioned** route instead of
+  a self-scoped one:
+  1. `applicationsApi.list({ partnerId: partner.id })` called `GET
+     /applications` (`application.view`, staff-only). Worse:
+     `findAll`'s recognized filters never included `partnerId` at all —
+     silently ignored. Either 403 (no partner account holds
+     `application.view`) or, if ever granted, every application across
+     the tenant leaking to any partner.
+  2. `partnerApi.getDashboard(partner.id)` called `GET /partners/:id
+     /dashboard` (`partner.view`, staff-only) — 403'd unconditionally.
+  3. `partnerApi.getCommissions()` called `GET /partners/commissions`
+     (`partner.commission.approve`, a staff *approval* permission) —
+     403'd, and the query itself had **no `partner_id` filter at all**
+     (`WHERE pc.tenant_id = $1`) — every partner's commissions across
+     the tenant.
+  **Also found a fourth, different bug**: `partnerApi.update(partner
+  .id, ...)` called `PATCH /partners/:id` — no such route or service
+  method has ever existed. `ProfilePage.tsx`'s save action was
+  completely non-functional (404), unrelated to identity trust.
+  Fixed all four with new self-scoped routes mirroring `GET
+  /partners/me`'s existing, working pattern: `GET /partners/me
+  /applications`, `GET /partners/me/dashboard`, `GET /partners/me
+  /commissions`, `PATCH /partners/me` — each resolves the partner via
+  `partners.user_id` keyed off the JWT identity, never a client-supplied
+  id, and none carry a `@RequirePermissions()` (matching every other
+  self-scoped route in the codebase — the service layer does the actual
+  scoping).
+- 6 new backend tests (`execution.service.spec.ts` — 1; `partners
+  .service.spec.ts`, new file — 5). 112/112 backend tests passing.
+  `tsc --noEmit`/`npm run build` clean on `forsa-os`, `forsa-finance`,
+  `forsa-partner`.

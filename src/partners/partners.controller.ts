@@ -45,6 +45,42 @@ export class PartnersController {
     return this.service.findMe(u, t);
   }
 
+  // T-224 discovery — same JWT-scoped-identity pattern as 'me' above.
+  // Must also stay registered before ':id'.
+  @Get('me/applications')
+  @ApiOperation({ summary: "List the logged-in partner's own referred applications (T-224 identity fix)" })
+  getMyApplications(@CurrentUser('id') u: string, @CurrentTenant() t: string, @Query() p: PaginationDto) {
+    return this.service.getMyApplications(u, t, p);
+  }
+
+  // T-224 discovery — same pattern: getDashboard(':id') requires the
+  // staff-only partner.view permission, which no partner-portal account
+  // holds — 403'd unconditionally for the portal's own dashboard.
+  @Get('me/dashboard')
+  getMyDashboard(@CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.getMyDashboard(u, t);
+  }
+
+  // T-224 discovery — see partners.service.ts's getMyCommissions comment:
+  // the staff GET /partners/commissions both 403'd for partner accounts
+  // and, independent of that, never filtered by partner_id at all.
+  @Get('me/commissions')
+  getMyCommissions(@CurrentUser('id') u: string, @CurrentTenant() t: string, @Query() p: PaginationDto) {
+    return this.service.getMyCommissions(u, t, p);
+  }
+
+  // T-224 discovery — no PATCH route for partners existed at all before
+  // this; profile editing was completely non-functional (404), not just
+  // an identity-trust gap.
+  @Patch('me')
+  updateMe(
+    @CurrentUser('id') u: string,
+    @CurrentTenant() t: string,
+    @Body() body: { name?: string; website?: string },
+  ) {
+    return this.service.updateMe(u, t, body);
+  }
+
   @Get(':id')
   @RequirePermissions('partner.view')
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() t: string) {
