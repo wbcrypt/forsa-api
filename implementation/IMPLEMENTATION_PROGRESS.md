@@ -7,6 +7,79 @@ this file has the narrative.
 
 ---
 
+## Session — 2026-07-06 (Legal language & terminology audit)
+
+**Goal**: audit and align all user-facing wording across all 7 repositories
+with the approved FORSA language policy — present FORSA as a membership-
+based educational ecosystem and tuition-facilitation platform, never as a
+bank, lender, credit provider, or loan company. Arabic and French
+prioritized over English per the policy. No new features, no workflow
+redesign.
+
+**What was found**: the explicit prohibited-term list (loan, borrower,
+lender, debt, credit, interest rate, APR, consumer credit, financing
+company — and the French/Arabic equivalents) had **zero matches** anywhere
+in any of the 7 repositories, in any language, even before this session's
+changes. This product was already built without banking/lending
+vocabulary — a good sign for whoever built the earlier phases.
+
+The real, substantial finding was the bare word "financing"/"financement"/
+"تمويل" — not on the prohibited list itself, but precisely the framing the
+policy's required terminology ("Tuition Facilitation Plan"/"Plan de
+facilitation des frais universitaires"/"خطة تيسير المعاليم الجامعية") is
+meant to replace. Found in 26 places spanning every portal: the student
+Financing Request button and its consent checkboxes, empty states across
+4 portals, dashboard stat cards ("Total Financed," "Financing Queue"),
+a contract-ready notification email (subject *and* body), a partner
+referral share message, and three backend exception messages. Fixed all
+26 — every multi-language string corrected in Arabic, French, and English
+together (Arabic decided first, per the policy's stated priority), never
+left partially updated.
+
+**Two items deliberately not edited, flagged for legal review instead**:
+1. "Lettres de change signed" (`forsa-dashboard`'s activation checklist) —
+   a named French legal/financial instrument that may be load-bearing in
+   FORSA's actual signed agreements; renaming a legal instrument's name in
+   the UI without knowing whether the underlying legal document still
+   calls it that would be worse than leaving it for counsel to confirm.
+2. The Terms of Service / Privacy Policy text itself — referenced by name
+   throughout every portal's consent flow, but the actual document content
+   does not exist anywhere in these 7 repositories. Confirms
+   `CHANGELOG.md`'s standing note that T-226 (legal copy) remains open and
+   separately tracked — this audit could only fix wording that's actually
+   in the codebase.
+
+**Also intentionally left alone**: internal ledger/accounting "credit"/
+"debit" terminology (`ledger.service.ts`, `konnect.service.ts`,
+`reports.service.ts`, one Finance-portal table header) — standard
+double-entry bookkeeping vocabulary for internal Finance staff, a
+different concept entirely from "credit" in the consumer-lending sense the
+policy targets. Database schema identifiers (`financing_decisions` table,
+`financing_tier`/`max_financing_amount` columns, `FinancingLevel` enum)
+were also left unchanged — never displayed to a user as raw text, and
+renaming them would require a schema migration, out of scope for a
+language audit.
+
+**Verification**: `tsc --noEmit` clean across `forsa-os` and all 6
+frontend repos; 137/137 backend tests still passing (none asserted on the
+strings changed). No frontend repo has an automated test suite. The one
+live-database template row affected (`contract_ready`) was updated
+directly in this session's local Postgres in addition to the seed-script
+fix, since `ON CONFLICT DO NOTHING` means the seed script alone wouldn't
+retroactively update an already-seeded row.
+
+**Delivered**: `LANGUAGE_AUDIT_REPORT.md` — full findings, files changed,
+terms replaced (with a before/after table per language), the two
+lawyer-review items, and an explicit confirmation that no public-facing
+copy presents FORSA as a bank, lender, credit provider, or loan company.
+
+**Still open**: T-226 (actual legal document content — doesn't exist yet,
+needs legal/compliance to produce it) and the "Lettres de change"
+legal-instrument question, both flagged for counsel, not resolved by this
+pass.
+
+---
+
 ## Session — 2026-07-06 (Phase 3.5 — final engineering pass, feature freeze gate)
 
 **Goal**: resolve the two items Phase 3 deliberately left for a business

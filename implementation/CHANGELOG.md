@@ -1,5 +1,26 @@
 # FORSA — Changelog
 
+## 2026-07-06 (continued) — Legal language & terminology audit
+- Swept all 7 repositories for the approved FORSA language policy's
+  explicitly prohibited terms (loan/borrower/lender/debt/credit/interest
+  rate/APR + French and Arabic equivalents) — zero matches found in any
+  language, confirming the product was already built without banking/
+  lending vocabulary.
+- Found and fixed 26 instances of "financing"/"financement"/"تمويل"
+  framing across every portal (buttons, consent checkboxes, empty states,
+  dashboard stat cards, a contract-ready email template, backend exception
+  messages) — not explicitly prohibited, but the exact framing the
+  required "Tuition Facilitation Plan" terminology is meant to replace.
+  Every multi-language string was corrected in Arabic, French, and English
+  together, Arabic-first per the approved priority order.
+- Two items flagged for legal review rather than edited: "Lettres de
+  change" (a named legal financial instrument, possibly load-bearing in
+  real signed agreements) and the Terms of Service/Privacy Policy content
+  itself, which doesn't exist anywhere in these repositories (confirms
+  T-226 remains open, tracked separately).
+- `tsc --noEmit` clean on `forsa-os` and all 6 frontends; 137/137 backend
+  tests passing. Delivered `LANGUAGE_AUDIT_REPORT.md`.
+
 ## 2026-07-06 (continued) — Phase 3.5: final engineering pass, feature freeze gate
 - Implemented all 4 approved business decisions: `/register` redirects to
   `/join` (T-101 removed entirely); self-submitted Financing Requests now

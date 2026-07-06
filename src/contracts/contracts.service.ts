@@ -54,7 +54,7 @@ export class ContractsService {
        WHERE fd.id = $1 AND fd.tenant_id = $2`,
       [params.financingDecisionId, params.tenantId],
     );
-    if (!decision) throw new NotFoundException('Financing decision not found');
+    if (!decision) throw new NotFoundException('Tuition facilitation decision not found');
 
     // Get contract template from policy
     const templatePolicy = await this.policyService.resolve(

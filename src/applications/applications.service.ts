@@ -463,7 +463,7 @@ export class ApplicationsService {
       [id],
     );
 
-    if (!decision) throw new BadRequestException('No financing decision found to appeal');
+    if (!decision) throw new BadRequestException('No tuition facilitation decision found to appeal');
 
     const appealDeadline = new Date();
     appealDeadline.setDate(appealDeadline.getDate() + 30); // 30 day appeal window

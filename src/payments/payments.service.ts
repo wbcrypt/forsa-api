@@ -83,7 +83,7 @@ export class PaymentsService {
       [params.applicationId],
     );
 
-    if (!decision) throw new BadRequestException('No financing decision found');
+    if (!decision) throw new BadRequestException('No tuition facilitation decision found');
 
     // Get payment policy parameters
     const graceDaysPolicy = await this.policyService.resolve(
