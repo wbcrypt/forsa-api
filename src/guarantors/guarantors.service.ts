@@ -78,6 +78,11 @@ export class GuarantorsService {
    */
   private async findLinkedStudent(userId: string, tenantId: string) {
     // Lookup via guarantors.user_id → student_guarantors → students → applications
+    // Phase 3 (browser E2E testing) discovery — selected a.program_name,
+    // a column that has never existed on applications (the real column
+    // is program_id, a FK to programs) — this has thrown a 500 on every
+    // call since it was built, meaning the Guarantor Portal's core
+    // feature (see which student you're backing) has never worked.
     const [link] = await this.db.query<any[]>(
       `SELECT
          g.id AS guarantor_id,
@@ -87,13 +92,14 @@ export class GuarantorsService {
          a.current_status,
          a.university_id,
          u.name AS university_name,
-         a.program_name,
+         p.name AS program_name,
          a.tuition_amount
        FROM guarantors g
        JOIN student_guarantors sg ON sg.guarantor_id = g.id
        JOIN students s ON s.id = sg.student_id
        JOIN applications a ON a.student_id = s.id AND a.tenant_id = $2
        LEFT JOIN universities u ON u.id = a.university_id
+       LEFT JOIN programs p ON p.id = a.program_id
        WHERE g.user_id = $1 AND g.tenant_id = $2
        ORDER BY a.created_at DESC
        LIMIT 1`,

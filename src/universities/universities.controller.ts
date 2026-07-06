@@ -43,6 +43,15 @@ export class UniversitiesController {
     return this.service.findMe(u, t);
   }
 
+  // Phase 3 (browser E2E testing) discovery — see universities.service
+  // .ts's getMyPerformance comment: the dashboard's performance stats
+  // call was staff-only and 403'd for every real university account.
+  @Get('me/performance')
+  @ApiOperation({ summary: "Get the logged-in university portal user's own performance stats" })
+  getMyPerformance(@CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.getMyPerformance(u, t);
+  }
+
   // Phase 2 T-203 — genuinely public, minimal projection (id/name/city
   // only), so the anonymous Membership Request form can offer a real
   // university picker rather than free text. Registered before `:id` so
@@ -52,6 +61,17 @@ export class UniversitiesController {
   @ApiOperation({ summary: 'Public minimal university list for the Membership Request form (T-203)' })
   findAllPublic(@Query('tenantId') tenantId: string) {
     return this.service.findAllPublic(tenantId);
+  }
+
+  // Phase 3 (browser E2E testing) discovery — the Financing Request
+  // form's program dropdown called the staff-only GET /:id/programs and
+  // 403'd for every real student. Registered before ':id/programs' so
+  // ':id/programs/public' isn't swallowed by the ':id' param route
+  // matching 'public' as an id — same reasoning as 'public' above.
+  @Get(':id/programs/public')
+  @ApiOperation({ summary: 'Public minimal program list for a university, for the Financing Request form' })
+  findProgramsPublic(@Param('id', ParseUUIDPipe) id: string, @Query('tenantId') tenantId: string) {
+    return this.service.findProgramsPublic(id, tenantId);
   }
 
   @Get(':id')

@@ -38,6 +38,16 @@ export class ApplicationsController {
     return this.service.createForSelf(u, t, dto);
   }
 
+  // Phase 3 (browser E2E testing) discovery — see applications.service
+  // .ts's findAllForMyUniversity comment. No @RequirePermissions(): a
+  // university-portal account holds none of the staff grants, same
+  // pattern as every other self-scoped route in this codebase.
+  @Get('university-mine')
+  @ApiOperation({ summary: "List the logged-in university portal user's own applications" })
+  findAllForMyUniversity(@CurrentUser('id') u: string, @CurrentTenant() t: string, @Query() p: PaginationDto, @Query() f: any) {
+    return this.service.findAllForMyUniversity(u, t, p, f);
+  }
+
   @Get()
   @RequirePermissions('application.view')
   @ApiOperation({ summary: 'List applications with filters' })

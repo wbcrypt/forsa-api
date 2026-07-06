@@ -25,6 +25,19 @@ import { SetPasswordDto } from './dto/set-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public, CurrentUser, ClientIp, UserAgent } from '../common/decorators';
 
+// Phase 3 (browser E2E testing) discovery — @Throttle() below hardcoded
+// 900000ms/5 directly, completely ignoring LOGIN_THROTTLE_TTL_SECONDS/
+// LOGIN_THROTTLE_LIMIT (parsed into configuration.ts's security.loginTtl/
+// loginLimit, but never actually read anywhere — dead config). .env.local
+// sets these to a "relaxed for local dev" 60s/20, but every environment
+// — local dev included — got the hardcoded production-strength 5-attempts-
+// per-15-minutes limit regardless, since @Throttle() is a static decorator
+// and can't read an injected ConfigService. Read directly from
+// process.env at module load instead, matching configuration.ts's own
+// parsing so the two never drift again.
+const LOGIN_THROTTLE_TTL_MS = parseInt(process.env.LOGIN_THROTTLE_TTL_SECONDS || '900', 10) * 1000;
+const LOGIN_THROTTLE_LIMIT = parseInt(process.env.LOGIN_THROTTLE_LIMIT || '5', 10);
+
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
@@ -37,7 +50,7 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { ttl: 900000, limit: 5 } }) // 5 per 15 min per IP
+  @Throttle({ default: { ttl: LOGIN_THROTTLE_TTL_MS, limit: LOGIN_THROTTLE_LIMIT } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful or MFA required' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })

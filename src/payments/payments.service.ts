@@ -361,6 +361,24 @@ export class PaymentsService {
     return schedule || null;
   }
 
+  // Phase 3 (browser E2E testing) discovery — forsa-student's
+  // PaymentsPage.tsx/HomePage.tsx call GET /payments/schedules
+  // /applications/:applicationId directly, a staff-only route
+  // (payment.view) — every real student's payment schedule/next-due
+  // view has 403'd since these pages were built. Self-scoped: verifies
+  // the calling student actually owns this application before returning
+  // its schedule, never trusting the applicationId alone.
+  async findMyScheduleForApplication(userId: string, applicationId: string, tenantId: string) {
+    const [owned] = await this.dataSource.query<any[]>(
+      `SELECT a.id FROM applications a
+       JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND s.user_id = $3`,
+      [applicationId, tenantId, userId],
+    );
+    if (!owned) throw new NotFoundException('Application not found');
+    return this.getScheduleForApplication(applicationId, tenantId);
+  }
+
   async getInstallmentPayments(installmentId: string, tenantId: string) {
     return this.dataSource.query(
       `SELECT p.*, u.full_name AS received_by_name

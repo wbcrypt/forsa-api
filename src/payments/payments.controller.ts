@@ -37,6 +37,20 @@ export class PaymentsController {
     return this.service.getScheduleForApplication(id, t);
   }
 
+  // Phase 3 (browser E2E testing) discovery — forsa-student called the
+  // staff-only route above directly with its own applicationId, 403ing
+  // for every real student. Self-scoped: verifies the caller actually
+  // owns the application server-side, never trusting the id alone.
+  @Get('schedules/me/applications/:applicationId')
+  @ApiOperation({ summary: "Get the logged-in student's own payment schedule for one of their applications" })
+  getMyScheduleForApplication(
+    @Param('applicationId', ParseUUIDPipe) id: string,
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.findMyScheduleForApplication(u, id, t);
+  }
+
   @Get('schedules/:id')
   @RequirePermissions('payment.view')
   getSchedule(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() t: string) {

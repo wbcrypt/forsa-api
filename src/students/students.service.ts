@@ -376,6 +376,11 @@ export class StudentsService {
 
   async getPaymentHistory(studentId: string, tenantId: string) {
     await this.findOne(studentId, tenantId);
+    // Phase 3 (browser E2E testing) discovery — ordered by p.paid_at,
+    // a column that doesn't exist on payments (the real column is
+    // payment_date) — this has thrown a 500 on every call since T-219
+    // built it; the "Complete Payment History" feature never actually
+    // worked.
     return this.dataSource.query(
       `SELECT p.*, i.due_date, i.sequence_number, i.amount AS installment_amount,
               ps.total_amount
@@ -383,7 +388,7 @@ export class StudentsService {
        JOIN installments i ON i.id = p.installment_id
        JOIN payment_schedules ps ON ps.id = i.payment_schedule_id
        WHERE p.student_id = $1 AND p.tenant_id = $2
-       ORDER BY p.paid_at DESC`,
+       ORDER BY p.payment_date DESC`,
       [studentId, tenantId],
     );
   }
@@ -399,6 +404,25 @@ export class StudentsService {
     );
     if (!student) throw new NotFoundException('No student profile linked to this user');
     return this.getPaymentHistory(student.id, tenantId);
+  }
+
+  // Phase 3 (browser E2E testing) discovery — forsa-student's HomePage.tsx
+  // has called GET /students/:id and GET /students/:id/applications with
+  // user.id (the auth user's own account id, not the actual students.id
+  // row) since this page was first built — both are staff-only
+  // (student.view). Every real student's home page has 403'd on both
+  // calls since the day this page shipped, silently falling through to
+  // "not a member yet"/"no application" placeholders even for a fully
+  // provisioned Bronze member with a live application. GET /students/me
+  // already existed (T-207-era); this is the missing applications
+  // sibling, same self-scoping pattern as findMyPayments above.
+  async findMyApplications(userId: string, tenantId: string) {
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2`,
+      [userId, tenantId],
+    );
+    if (!student) throw new NotFoundException('No student profile linked to this user');
+    return this.getApplicationHistory(student.id, tenantId);
   }
 
   private async audit(tenantId: string, userId: string, action: string, targetId: string, prev: any, next: any) {

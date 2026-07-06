@@ -317,6 +317,20 @@ export class UniversitiesService {
     return stats;
   }
 
+  // Phase 3 (browser E2E testing) discovery — forsa-university's
+  // DashboardPage.tsx calls GET /universities/:id and GET /universities
+  // /:id/performance directly with the id resolved from GET /universities
+  // /me (T-223's fix) — but both are staff-only (university.view). Every
+  // real university-portal account has a completely broken dashboard
+  // ("Failed to load data" on every page) since T-223's own identity fix
+  // only addressed *where* universityId came from, not that every
+  // downstream call using it still hits staff-only routes. Self-scoped
+  // sibling, same pattern as findMe.
+  async getMyPerformance(userId: string, tenantId: string) {
+    const university = await this.findMe(userId, tenantId);
+    return this.getPerformance(university.id, tenantId);
+  }
+
   async createProgram(universityId: string, tenantId: string, dto: any) {
     await this.findOne(universityId, tenantId);
 
@@ -341,6 +355,25 @@ export class UniversitiesService {
     return this.dataSource.query(
       `SELECT * FROM programs WHERE university_id = $1 AND status = 'active' ORDER BY name`,
       [universityId],
+    );
+  }
+
+  // Phase 3 (browser E2E testing) discovery — mirrors findAllPublic
+  // above. The Financing Request form (forsa-student's ApplyPage.tsx)
+  // needs a program dropdown for the university the applicant picked,
+  // but the only existing route (findPrograms via GET /:id/programs)
+  // requires the staff-only university.view permission and 403s for a
+  // real student — this form's program dropdown has been silently empty
+  // since it was built. Minimal projection only (id/name), same
+  // philosophy as findAllPublic.
+  async findProgramsPublic(universityId: string, tenantId: string) {
+    if (!tenantId) throw new BadRequestException('tenantId is required');
+    return this.dataSource.query(
+      `SELECT p.id, p.name FROM programs p
+       JOIN universities u ON u.id = p.university_id
+       WHERE p.university_id = $1 AND u.tenant_id = $2 AND p.status = 'active'
+       ORDER BY p.name`,
+      [universityId, tenantId],
     );
   }
 

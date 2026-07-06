@@ -58,6 +58,17 @@ export class StudentsController {
     return this.service.findMyPayments(u, t);
   }
 
+  // Phase 3 (browser E2E testing) discovery — HomePage.tsx has called
+  // GET /:id/applications with user.id (not students.id) since it was
+  // first built; that route is staff-only (student.view), so this has
+  // 403'd for every real student since day one. Same self-scoped
+  // pattern as findMe/findMyPayments above.
+  @Get('me/applications')
+  @ApiOperation({ summary: 'Get the logged-in student portal user\'s own application history' })
+  findMyApplications(@CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.findMyApplications(u, t);
+  }
+
   @Post()
   @RequirePermissions('student.create')
   create(@Body() dto: any, @CurrentTenant() t: string, @CurrentUser('id') u: string) {

@@ -31,6 +31,13 @@ describe('StudentsService.findMyPayments', () => {
     expect(result).toEqual([{ id: 'payment-1', amount: 500 }, { id: 'payment-2', amount: 500 }]);
     // Final query must be scoped to the resolved student-1, not any client input
     expect(query.mock.calls[2][1]).toEqual(['student-1', 'tenant-1']);
+
+    // Phase 3 (browser E2E testing) discovery — this ordered by
+    // p.paid_at, a column that doesn't exist on payments (the real
+    // column is payment_date) — every call has 500'd since T-219 built
+    // it; the "Complete Payment History" feature never actually worked.
+    expect(query.mock.calls[2][0]).toContain('ORDER BY p.payment_date DESC');
+    expect(query.mock.calls[2][0]).not.toContain('p.paid_at');
   });
 
   it('throws NotFoundException when no student profile is linked to this user', async () => {

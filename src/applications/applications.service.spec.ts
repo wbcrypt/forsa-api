@@ -162,6 +162,29 @@ describe('ApplicationsService.transitionStatus', () => {
       recipientEmail: 'amina@example.com',
     }));
   });
+
+  // Phase 3 (browser E2E testing) discovery — pipeline.service.ts calls
+  // transitionStatus with the literal string 'system' for automated,
+  // pipeline-driven transitions. application_status_history.changed_by
+  // is a UUID column — every automated transition threw "invalid input
+  // syntax for type uuid" and the whole pipeline run silently failed.
+  // Exact same bug class as the earlier recordedBy:'system'/
+  // score_events.recorded_by fix (K-13). Locks down that changedBy=null
+  // is accepted and passed straight through, not coerced to a string.
+  it('accepts a null changedBy for system/pipeline-driven transitions', async () => {
+    const underReview = { ...baseApplication, current_status: ApplicationStatus.UNDER_REVIEW };
+    query
+      .mockResolvedValueOnce([underReview])
+      .mockResolvedValueOnce(undefined) // UPDATE applications
+      .mockResolvedValueOnce(undefined) // INSERT application_status_history
+      .mockResolvedValueOnce(undefined); // audit
+
+    await service.transitionStatus('app-1', 'tenant-1', ApplicationStatus.ON_HOLD, null, 'Pipeline decision', 'run-1');
+
+    const historyInsertCall = query.mock.calls[2];
+    expect(historyInsertCall[0]).toContain('INSERT INTO application_status_history');
+    expect(historyInsertCall[1]).toContain(null);
+  });
 });
 
 // T-207 — the student portal's actual entry point into the Financing

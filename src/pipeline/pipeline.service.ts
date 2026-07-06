@@ -955,7 +955,7 @@ export class PipelineService {
     // Transition application to under_review for human action
     await this.applicationsService.transitionStatus(
       ctx.applicationId, ctx.tenantId, ApplicationStatus.UNDER_REVIEW,
-      'system', 'Awaiting human decision', ctx.pipelineRunId,
+      null, 'Awaiting human decision', ctx.pipelineRunId,
     );
 
     return {
@@ -1141,7 +1141,7 @@ export class PipelineService {
     if (targetStatus) {
       await this.applicationsService.transitionStatus(
         ctx.applicationId, ctx.tenantId, targetStatus,
-        'system', `Pipeline decision: ${decisionResult}`, ctx.pipelineRunId, financingTier,
+        null, `Pipeline decision: ${decisionResult}`, ctx.pipelineRunId, financingTier,
       );
     }
 

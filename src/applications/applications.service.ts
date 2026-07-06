@@ -176,6 +176,18 @@ export class ApplicationsService {
     return this.create({ ...dto, studentId: student.id }, tenantId, userId);
   }
 
+  // Phase 3 (browser E2E testing) discovery — forsa-university's
+  // DashboardPage.tsx/StudentsPage.tsx call GET /applications
+  // ?universityId=X directly (application.view, staff-only) — every
+  // real university-portal account 403'd on every page. Self-scoped:
+  // resolves the university via the JWT identity and forces it into the
+  // filters, ignoring anything else the client might pass for that
+  // field, mirroring the T-224 partner fix (getMyApplications) exactly.
+  async findAllForMyUniversity(userId: string, tenantId: string, pagination: PaginationDto, filters: any = {}) {
+    const university = await this.universitiesService.findMe(userId, tenantId);
+    return this.findAll(tenantId, pagination, { ...filters, universityId: university.id });
+  }
+
   async findAll(tenantId: string, pagination: PaginationDto, filters: any = {}) {
     const { page = 1, limit = 20 } = pagination;
     const offset = getSkip(page, limit);
@@ -287,7 +299,16 @@ export class ApplicationsService {
     id: string,
     tenantId: string,
     newStatus: ApplicationStatus,
-    changedBy: string,
+    // Phase 3 (browser E2E testing) discovery — pipeline.service.ts calls
+    // this with the literal string 'system' for automated, pipeline-driven
+    // transitions. application_status_history.changed_by is a UUID
+    // column — every automated transition threw "invalid input syntax for
+    // type uuid" and the whole pipeline run silently failed (caught,
+    // logged, run marked 'cancelled', reported to the user as a generic
+    // "unexpected error"). Exact same bug class as the earlier
+    // recordedBy:'system'/score_events.recorded_by fix (K-13) — widened
+    // the same way, null for system-triggered transitions.
+    changedBy: string | null,
     notes?: string,
     pipelineRunId?: string,
     financingTier?: 'silver' | 'gold',
