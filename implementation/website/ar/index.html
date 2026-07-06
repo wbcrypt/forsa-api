@@ -119,6 +119,17 @@
 
 .score{background:#fff;border-top:1px solid rgba(27,58,140,.06)}.score-sub{color:var(--muted);font-size:15px;max-width:560px;margin:14px auto 0;line-height:1.7}.score-timeline{display:flex;align-items:flex-start;justify-content:center;gap:14px;flex-wrap:wrap;margin:44px 0 40px}.score-node{display:flex;flex-direction:column;align-items:center;gap:12px;width:148px;text-align:center}.score-ic{width:62px;height:62px;border-radius:50%;background:var(--soft);border:1px solid rgba(0,196,200,.18);display:flex;align-items:center;justify-content:center;font-size:25px;box-shadow:0 10px 26px rgba(27,58,140,.08)}.score-label{font-size:13px;font-weight:800;color:var(--navy);line-height:1.35}.score-arrow{color:var(--cyan2);font-size:20px;opacity:.5;flex-shrink:0;margin-top:19px}.score-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.score-card{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,#fbfdff,#f6faff);padding:24px 22px;box-shadow:0 12px 32px rgba(27,58,140,.05)}.score-card h3{color:var(--navy);font-size:15px;font-weight:900;margin-bottom:8px}.score-card p{color:var(--muted);font-size:13px;line-height:1.65}@media(max-width:980px){.score-cards{grid-template-columns:1fr 1fr}}@media(max-width:640px){.score-timeline{flex-direction:column;align-items:center;gap:10px}.score-arrow{transform:rotate(90deg);margin:-4px 0}.score-cards{grid-template-columns:1fr}}
 
+/* Login page — reuses .portal card styling from the homepage's "Choose your
+   portal" section for visual consistency; just needs a 5-column variant and
+   a small "new here?" line. */
+.login-sections{padding-top:56px}
+.login-grid{grid-template-columns:repeat(5,1fr)}
+@media(max-width:1100px){.login-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.login-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.login-grid{grid-template-columns:1fr}}
+.login-new-here{text-align:center;margin-top:36px;color:var(--muted);font-size:14px}
+.login-new-here a{color:var(--cyan2);font-weight:800}
+
 
   </style>
 </head>
@@ -132,7 +143,7 @@
     <nav class="links">
       <a href="#how">كيف يعمل</a><a href="#tiers">ابدأ الآن</a><a href="#score">درجة FORSA</a><a href="#portals">البوابات</a><a href="../ar/about/index.html">عن فرصة</a><a href="../ar/faq/index.html">الأسئلة الشائعة</a>
       <div class="langs"><a href="../fr/index.html">FR</a><a href="../en/index.html">EN</a><a href="../ar/index.html" class="on">ع</a></div>
-      <a class="btn btn-ghost" href="https://student.forsa.tn/login">تسجيل الدخول</a>
+      <a class="btn btn-ghost" href="../ar/login/index.html">تسجيل الدخول</a>
       <a class="btn btn-main" href="https://student.forsa.tn/join">انضم مجاناً</a>
     </nav>
     <button class="nav-burger" aria-label="Menu" aria-expanded="false" onclick="var h=this.closest('.nav');var o=h.classList.toggle('nav-open');this.setAttribute('aria-expanded',o?'true':'false')">
@@ -184,7 +195,7 @@
   <div><h4>المنظومة</h4><a href="../ar/index.html#tiers">ابدأ الآن</a><a href="../ar/index.html#score">درجة FORSA</a><a href="../ar/index.html#how">كيف يعمل</a><a href="../ar/about/index.html">عن فرصة</a><a href="../ar/faq/index.html">الأسئلة الشائعة</a></div>
   <div><h4>البوابات</h4><a href="https://student.forsa.tn">بوابة الطالب</a><a href="https://guarantor.forsa.tn">بوابة الضامن</a><a href="https://university.forsa.tn">بوابة الجامعة</a><a href="https://partner.forsa.tn">بوابة الشريك</a></div>
   <div><h4>تواصل معنا</h4><a href="mailto:hello@forsa.tn">hello@forsa.tn</a><a href="mailto:students@forsa.tn">الطلاب</a><a href="mailto:universities@forsa.tn">الجامعات</a><a href="mailto:partners@forsa.tn">الشركاء</a></div>
-  <div><h4>قانوني</h4><a href="https://student.forsa.tn/login">تسجيل الدخول</a><a href="https://forsa.tn/privacy">سياسة الخصوصية</a><a href="https://forsa.tn/terms">شروط الاستخدام</a></div>
+  <div><h4>قانوني</h4><a href="../ar/login/index.html">تسجيل الدخول</a><a href="https://forsa.tn/privacy">سياسة الخصوصية</a><a href="https://forsa.tn/terms">شروط الاستخدام</a></div>
 </div><div class="legal">© 2026 FORSA Tunisia SARL. خطة تيسير المعاليم الجامعية من FORSA مشروطة بالأهلية والطاقة المتاحة والقرار النهائي للجنة المراجعة. FORSA منظومة تعليمية رقمية، وتعمل كموزّع لخدمات تعليمية مقدّمة من الجامعات والمؤسسات التعليمية الشريكة — وليست بنكاً أو جهة إقراض أو مؤسسة ائتمانية، وذلك في إطار القوانين والتراتيب الجاري بها العمل في الجمهورية التونسية.</div></div></footer>
 </body>
 </html>
