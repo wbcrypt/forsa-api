@@ -35,9 +35,13 @@ Keep clear space around the mark equal to at least the height of the graduation 
 - Don't place the transparent icon directly on a busy photo or low-contrast background — use the navy-square version instead.
 - Don't pair the icon with any wordmark styling other than the lowercase `f`**o**`rsa` treatment (lowercase, the "o" in cyan, everything else in navy — see Typography below).
 
-### A known limitation, and what to do about it
+### Known limitation: raster source (non-blocking)
 
-The only source available for this brand pass was a flattened raster composite (1536×1024px), not a vector master. Extracted crops top out at roughly 122–147px before upscaling, so **512×512 icons (Android/PWA) are visibly softer than a true vector source would produce**, even after sharpening. This is fine for now but isn't final-quality. **Recommendation:** commission or produce a true vector (SVG/AI/Figma) master of this exact mark, then regenerate every derived size from that instead of from the raster crop. Until then, treat everything in `brand-assets/` as the correct *design*, not necessarily the correct *resolution ceiling*.
+The current official logo is **raster-based**. The only source available for this brand pass was a flattened raster composite (1536×1024px), not a vector master. Extracted crops top out at roughly 122–147px before upscaling, so 512×512 icons (Android/PWA) are visibly softer than a true vector source would produce, even after sharpening.
+
+**This does not block launch.** The current implementation (`brand-assets/`) is the correct, approved *design* and is production-ready as-is at every size currently in use across the website, portals, and favicons.
+
+**Recommendation for a future branding update:** commission or produce a true vector master (**SVG / AI / EPS**) of this exact mark — same design, same colors, same proportions — and regenerate every derived size from that instead of from the raster crop. This is a quality upgrade to schedule when convenient, not a defect to fix before shipping.
 
 ---
 
@@ -172,7 +176,7 @@ Smaller components (badges, buttons) use full 999px rounding. Nothing in the sys
 
 **Never describe FORSA as:** a bank, a lender, a credit institution, a loan provider, or a finance company — in any of the three languages, including synonyms (French "financement", "crédit", "prêt"; Arabic "قرض", "تمويل" in the banking sense; English "financing", "loan", "credit"). The one approved self-description is: *a digital educational ecosystem, acting as a reseller/distributor of educational services provided by partner universities, within the laws and regulations in force in Tunisia.*
 
-Known open item: the backend's transactional email templates (`src/notifications/email-templates.ts`) currently use "financement" ("0% financing") throughout — a leftover from before this terminology was formalized. Flagged in the Brand Audit Report as needing a full content pass; only colors were touched there in this phase.
+The backend's transactional email templates (`src/notifications/email-templates.ts`) were audited and corrected in the Phase 2 cleanup pass: every instance of "financement" ("0% financing", "demande de financement", "contrat de financement", etc.) was replaced with the approved terms above (Membership Request / Tuition Facilitation Plan). See `PHASE2_BRAND_AUDIT_REPORT.md` for the full before/after list.
 
 ## 11. UI Examples
 

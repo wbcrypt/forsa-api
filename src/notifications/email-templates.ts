@@ -51,12 +51,12 @@ const emailWrapper = (content: string, footer?: string) => `
   <div class="wrapper">
     <div class="header">
       <div class="logo">FORSA<span>.</span></div>
-      <div class="tagline">Financement éducatif 0% — تمويل تعليمي</div>
+      <div class="tagline">Écosystème éducatif digital — 0% d'intérêts — منظومة تعليمية رقمية</div>
     </div>
     <div class="body">
       ${content}
       <p class="disclaimer">
-        Cet email vous a été envoyé par FORSA Tunisia en relation avec votre demande de financement.
+        Cet email vous a été envoyé par FORSA Tunisia en relation avec votre demande d'adhésion.
         Si vous avez des questions, contactez-nous à <a href="mailto:hello@forsa.tn">hello@forsa.tn</a>.
       </p>
     </div>
@@ -85,7 +85,7 @@ export const applicationReceivedEmail = (data: {
   html: emailWrapper(`
     <p class="greeting">Bonjour ${data.firstName},</p>
     <p class="text">
-      Nous avons bien reçu votre demande de financement FORSA. Votre dossier est maintenant en cours de traitement.
+      Nous avons bien reçu votre demande d'adhésion FORSA. Votre dossier est maintenant en cours de traitement.
     </p>
 
     <div class="highlight-box navy">
@@ -176,11 +176,11 @@ export const preApprovedEmail = (data: {
   amount: string
   meetingContact: string
 }) => ({
-  subject: `🎉 Pré-approuvé(e) — ${data.firstName}, FORSA finance vos études !`,
+  subject: `🎉 Pré-approuvé(e) — ${data.firstName}, FORSA facilite vos études !`,
   html: emailWrapper(`
     <p class="greeting">Excellente nouvelle, ${data.firstName} ! 🎉</p>
     <p class="text">
-      Votre demande de financement FORSA a été <strong>pré-approuvée</strong> pour un montant de <strong>${data.amount} TND</strong>.
+      Votre plan de facilitation des frais universitaires FORSA a été <strong>pré-approuvé</strong> pour un montant de <strong>${data.amount} TND</strong>.
     </p>
 
     <div class="highlight-box success">
@@ -203,7 +203,7 @@ export const preApprovedEmail = (data: {
 
     <p class="text"><strong>⚠️ Important — Réunion d'Activation obligatoire</strong></p>
     <p class="text">
-      Pour finaliser votre financement, vous devez participer à une <strong>Réunion d'Activation</strong> en personne avec l'équipe FORSA.
+      Pour finaliser votre plan de facilitation, vous devez participer à une <strong>Réunion d'Activation</strong> en personne avec l'équipe FORSA.
       <strong>Votre garant doit être présent à la même réunion.</strong>
     </p>
 
@@ -244,7 +244,7 @@ export const activationMeetingEmail = (data: {
     <p class="greeting">Bonjour ${data.firstName},</p>
     <p class="text">
       Votre Réunion d'Activation FORSA ${data.meetingDate ? `est confirmée pour le <strong>${data.meetingDate} à ${data.meetingTime}</strong>` : 'a été planifiée'}.
-      C'est la dernière étape avant l'activation de votre financement.
+      C'est la dernière étape avant l'activation de votre plan de facilitation.
     </p>
 
     ${data.meetingDate ? `
@@ -279,7 +279,7 @@ export const activationMeetingEmail = (data: {
     <p class="text"><strong>Lors de la réunion :</strong></p>
     <ul class="checklist">
       <li><span class="check">✓</span> Vérification des identités (étudiant et garant)</li>
-      <li><span class="check">✓</span> Signature du contrat de financement FORSA</li>
+      <li><span class="check">✓</span> Signature du contrat du plan de facilitation FORSA</li>
       <li><span class="check">✓</span> Signature des lettres de change</li>
       <li><span class="check">✓</span> Remise des copies de tous les documents</li>
       <li><span class="check">✓</span> Activation de votre compte FORSA</li>
@@ -454,8 +454,8 @@ export const bronzeMemberEmail = (data: {
     <p class="greeting">Bonjour ${data.firstName},</p>
     <p class="text">
       Votre dossier a été examiné avec attention par l'équipe FORSA.
-      Les places de financement direct pour cette session sont limitées et ont été attribuées aux candidats
-      répondant à nos critères actuels de financement.
+      Les places disponibles pour le plan de facilitation cette session sont limitées et ont été attribuées aux candidats
+      répondant à nos critères actuels d'éligibilité.
     </p>
     <p class="text">
       <strong>Vous rejoignez l'écosystème FORSA en tant que Membre Bronze.</strong>
@@ -479,7 +479,7 @@ export const bronzeMemberEmail = (data: {
       <li><span class="check">✓</span> Votre compte et profil FORSA — permanent</li>
       <li><span class="check">✓</span> Votre FORSA Score — visible et en progression</li>
       <li><span class="check">✓</span> Votre entretien IA enregistré dans votre dossier</li>
-      <li><span class="check">✓</span> Priorité de considération au prochain cycle de financement</li>
+      <li><span class="check">✓</span> Priorité de considération au prochain cycle du plan de facilitation</li>
       <li><span class="check">✓</span> Accès aux remises et avantages des partenaires universitaires</li>
       <li><span class="check">✓</span> Ressources et accompagnement pour votre préparation financière</li>
     </ul>
@@ -487,7 +487,7 @@ export const bronzeMemberEmail = (data: {
     <div class="highlight-box navy">
       <div class="highlight-label">La suite</div>
       <div style="font-size:14px;color:#374151;margin-top:6px;line-height:1.7;">
-        FORSA examine en priorité les membres Bronze à l'ouverture de nouvelles capacités de financement.
+        FORSA examine en priorité les membres Bronze à l'ouverture de nouvelles capacités du plan de facilitation.
         Votre historique avec nous — score, entretien, engagement — n'est jamais perdu.
         <strong>Gardez votre profil à jour.</strong>
       </div>
