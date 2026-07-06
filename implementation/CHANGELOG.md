@@ -1,5 +1,27 @@
 # FORSA — Changelog
 
+## 2026-07-06 (continued) — Phase 3: full browser E2E testing, all 6 portals
+- Stood up the complete local stack (docker-compose: Postgres/MinIO/
+  Redis/MailHog, backend, all 6 frontends) and ran the full student
+  journey plus a pass over every other portal with real Playwright
+  browser automation (Chromium).
+- Found and fixed 10+ real, previously-undetected bugs, including two
+  portal-wide outages (University Portal 403'd on every page; Guarantor
+  Portal's core "linked student" feature 500'd unconditionally), a
+  pipeline-blocking bug (missing programId meant every real financing
+  request failed Stage 1's completeness gate), and a login throttle that
+  silently ignored its own "relaxed for local dev" env config.
+- Also found and fixed a completely broken seed-demo.ts (7 distinct
+  schema-mismatch bugs meant it failed on the very first non-trivial
+  insert) and 2 local-dev-environment config bugs (DB_APP_PASSWORD one
+  character under the required minimum; CORS_ORIGINS missing 2 of the 6
+  frontend ports).
+- 3 new/extended backend tests locking down the most severe fixes.
+  116/116 backend tests passing, all 4 affected repos build clean.
+- Full findings, including the University Portal's dashboard fix,
+  documented in the Launch Readiness Report delivered alongside this
+  phase.
+
 ## 2026-07-06 (continued) — T-225 Notifications, closing the Phase 2 backlog
 - Audited the full event-driven-notification trigger list against what
   earlier milestones already wired incrementally — most of it was
