@@ -52,6 +52,67 @@ let PartnersService = PartnersService_1 = class PartnersService {
         ]);
         return (0, pagination_util_1.paginate)(data, parseInt(count.count), page, limit);
     }
+    async findMe(userId, tenantId) {
+        const [partner] = await this.dataSource.query(`SELECT p.*,
+              COUNT(DISTINCT pc.id) AS total_referrals,
+              COUNT(DISTINCT pc.id) FILTER (WHERE pc.status = 'paid') AS paid_commissions,
+              COALESCE(SUM(pc.partner_share) FILTER (WHERE pc.status = 'paid'), 0) AS total_earned
+       FROM partners p
+       LEFT JOIN partner_commissions pc ON pc.partner_id = p.id
+       WHERE p.user_id = $1 AND p.tenant_id = $2
+       GROUP BY p.id`, [userId, tenantId]);
+        if (!partner)
+            throw new common_1.NotFoundException('No partner account linked to this user');
+        return partner;
+    }
+    async getMyApplications(userId, tenantId, pagination) {
+        const partner = await this.findMe(userId, tenantId);
+        const { page = 1, limit = 20 } = pagination;
+        const offset = (0, pagination_util_1.getSkip)(page, limit);
+        const [data, [count]] = await Promise.all([
+            this.dataSource.query(`SELECT a.id, a.current_status, a.current_financing_level, a.tuition_amount,
+                a.currency, a.lead_date, a.academic_year,
+                s.first_name, s.last_name, s.email,
+                u.name AS university_name, p.name AS program_name
+         FROM applications a
+         JOIN students s ON s.id = a.student_id
+         JOIN universities u ON u.id = a.university_id
+         LEFT JOIN programs p ON p.id = a.program_id
+         WHERE a.tenant_id = $1 AND a.partner_id = $2
+         ORDER BY a.created_at DESC
+         LIMIT $3 OFFSET $4`, [tenantId, partner.id, limit, offset]),
+            this.dataSource.query(`SELECT COUNT(*) FROM applications WHERE tenant_id = $1 AND partner_id = $2`, [tenantId, partner.id]),
+        ]);
+        return (0, pagination_util_1.paginate)(data, parseInt(count.count, 10), page, limit);
+    }
+    async updateMe(userId, tenantId, dto) {
+        const partner = await this.findMe(userId, tenantId);
+        const [updated] = await this.dataSource.query(`UPDATE partners SET name = COALESCE($3, name), website = COALESCE($4, website), updated_at = NOW()
+       WHERE id = $1 AND tenant_id = $2
+       RETURNING *`, [partner.id, tenantId, dto.name, dto.website]);
+        return updated;
+    }
+    async getMyDashboard(userId, tenantId) {
+        const partner = await this.findMe(userId, tenantId);
+        return this.getPartnerDashboard(partner.id, tenantId);
+    }
+    async getMyCommissions(userId, tenantId, pagination) {
+        const partner = await this.findMe(userId, tenantId);
+        const { page = 1, limit = 20 } = pagination;
+        const offset = (0, pagination_util_1.getSkip)(page, limit);
+        const [data, [count]] = await Promise.all([
+            this.dataSource.query(`SELECT pc.*, s.first_name, s.last_name, u.name AS university_name
+         FROM partner_commissions pc
+         JOIN students s ON s.id = pc.student_id
+         JOIN applications a ON a.id = pc.application_id
+         JOIN universities u ON u.id = a.university_id
+         WHERE pc.tenant_id = $1 AND pc.partner_id = $2
+         ORDER BY pc.created_at DESC
+         LIMIT $3 OFFSET $4`, [tenantId, partner.id, limit, offset]),
+            this.dataSource.query(`SELECT COUNT(*) FROM partner_commissions WHERE tenant_id = $1 AND partner_id = $2`, [tenantId, partner.id]),
+        ]);
+        return (0, pagination_util_1.paginate)(data, parseInt(count.count, 10), page, limit);
+    }
     async findOne(id, tenantId) {
         const [partner] = await this.dataSource.query(`SELECT p.*,
               json_agg(DISTINCT pc.*) FILTER (WHERE pc.id IS NOT NULL) AS contacts,

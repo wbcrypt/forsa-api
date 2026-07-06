@@ -13,12 +13,13 @@ const applications_service_1 = require("./applications.service");
 const policy_module_1 = require("../policy/policy.module");
 const universities_module_1 = require("../universities/universities.module");
 const students_module_1 = require("../students/students.module");
+const notifications_module_1 = require("../notifications/notifications.module");
 let ApplicationsModule = class ApplicationsModule {
 };
 exports.ApplicationsModule = ApplicationsModule;
 exports.ApplicationsModule = ApplicationsModule = __decorate([
     (0, common_1.Module)({
-        imports: [policy_module_1.PolicyModule, universities_module_1.UniversitiesModule, students_module_1.StudentsModule],
+        imports: [policy_module_1.PolicyModule, universities_module_1.UniversitiesModule, students_module_1.StudentsModule, notifications_module_1.NotificationsModule],
         controllers: [applications_controller_1.ApplicationsController],
         providers: [applications_service_1.ApplicationsService],
         exports: [applications_service_1.ApplicationsService],

@@ -24,6 +24,15 @@ let StudentsController = class StudentsController {
     constructor(service) {
         this.service = service;
     }
+    findMe(u, t) {
+        return this.service.findMe(u, t);
+    }
+    findMyPayments(u, t) {
+        return this.service.findMyPayments(u, t);
+    }
+    findMyApplications(u, t) {
+        return this.service.findMyApplications(u, t);
+    }
     create(dto, t, u) {
         return this.service.create(dto, t, u);
     }
@@ -59,6 +68,33 @@ let StudentsController = class StudentsController {
     }
 };
 exports.StudentsController = StudentsController;
+__decorate([
+    (0, common_1.Get)('me'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get the logged-in student portal user\'s own student profile (T-101)' }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], StudentsController.prototype, "findMe", null);
+__decorate([
+    (0, common_1.Get)('me/payments'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get the logged-in student portal user\'s own complete payment history, across all applications (T-219)' }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], StudentsController.prototype, "findMyPayments", null);
+__decorate([
+    (0, common_1.Get)('me/applications'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get the logged-in student portal user\'s own application history' }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], StudentsController.prototype, "findMyApplications", null);
 __decorate([
     (0, common_1.Post)(),
     (0, decorators_1.RequirePermissions)('student.create'),

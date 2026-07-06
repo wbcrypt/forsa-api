@@ -156,6 +156,21 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
        ORDER BY el.created_at DESC
        LIMIT $2`, [tenantId, limit]);
     }
+    async getDisbursements(tenantId, limit = 100) {
+        return this.dataSource.query(`SELECT ud.id, ud.amount, ud.currency, ud.payment_reference,
+              ud.payment_method, ud.disbursed_at, ud.status,
+              un.name AS university_name,
+              s.first_name, s.last_name,
+              u.full_name AS recorded_by_name
+       FROM university_disbursements ud
+       JOIN universities un ON un.id = ud.university_id
+       JOIN applications a ON a.id = ud.application_id
+       JOIN students s ON s.id = a.student_id
+       LEFT JOIN users u ON u.id = ud.recorded_by
+       WHERE ud.tenant_id = $1
+       ORDER BY ud.disbursed_at DESC
+       LIMIT $2`, [tenantId, limit]);
+    }
 };
 exports.ExecutionService = ExecutionService;
 exports.ExecutionService = ExecutionService = ExecutionService_1 = __decorate([

@@ -107,6 +107,47 @@ export class DocumentsService {
     return { uploadUrl, documentId: document.id, s3Key, expiresAt };
   }
 
+  // Phase 3 (browser E2E testing) discovery — the student portal's
+  // payment-receipt upload called generateUploadUrl directly, gated
+  // behind the staff-only document.upload permission, 403ing for every
+  // real student. Self-scoped: never trusts a client-supplied
+  // entityType/entityId — forces entityType='student' and resolves the
+  // caller's own students.id server-side, so a student can only ever
+  // upload a document tagged to themselves.
+  async generateMyUploadUrl(callerUserId: string, tenantId: string, params: {
+    documentTypeCode: string;
+    fileName: string;
+    contentType: string;
+  }) {
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2`,
+      [callerUserId, tenantId],
+    );
+    if (!student) throw new NotFoundException('No student profile linked to this user');
+    return this.generateUploadUrl({
+      tenantId,
+      entityType: 'student',
+      entityId: student.id,
+      documentTypeCode: params.documentTypeCode,
+      fileName: params.fileName,
+      contentType: params.contentType,
+      uploadedBy: callerUserId,
+    });
+  }
+
+  // Companion to generateMyUploadUrl — verifies the document being
+  // confirmed was uploaded by this same caller before confirming it.
+  async confirmMyUpload(callerUserId: string, documentId: string, tenantId: string, fileSize: number, checksum?: string) {
+    const [doc] = await this.dataSource.query<any[]>(
+      `SELECT uploaded_by FROM documents WHERE id = $1 AND tenant_id = $2`,
+      [documentId, tenantId],
+    );
+    if (!doc || doc.uploaded_by !== callerUserId) {
+      throw new NotFoundException('Document not found or upload not pending');
+    }
+    return this.confirmUpload(documentId, tenantId, fileSize, checksum);
+  }
+
   /**
    * Confirm document upload complete (called after client completes upload)
    */
@@ -151,6 +192,31 @@ export class DocumentsService {
     }
 
     return { documentId, status: DocumentStatus.UPLOADED };
+  }
+
+  // Phase 3 (browser E2E testing) discovery — the university portal's
+  // Documents page and StudentDetailPage called generateDownloadUrl
+  // directly, gated behind the staff-only document.view permission,
+  // 403ing for every real university account. Verifies the document is
+  // actually attached (via application_documents) to an application at
+  // the caller's own university before generating a download link.
+  async generateDownloadUrlForMyUniversity(
+    documentId: string,
+    tenantId: string,
+    callerUserId: string,
+    ipAddress: string,
+  ) {
+    const [owned] = await this.dataSource.query<any[]>(
+      `SELECT 1
+       FROM application_documents ad
+       JOIN applications a ON a.id = ad.application_id
+       JOIN universities uni ON uni.id = a.university_id
+       WHERE ad.document_id = $1 AND a.tenant_id = $2 AND uni.user_id = $3
+       LIMIT 1`,
+      [documentId, tenantId, callerUserId],
+    );
+    if (!owned) throw new NotFoundException('Document not found');
+    return this.generateDownloadUrl(documentId, tenantId, callerUserId, ipAddress);
   }
 
   /**
@@ -282,6 +348,21 @@ export class DocumentsService {
        ORDER BY d.created_at DESC`,
       [entityType, entityId, tenantId],
     );
+  }
+
+  // Phase 3 (browser E2E testing) discovery — the university portal's
+  // Documents page and StudentDetailPage called getDocumentChecklist
+  // directly, gated behind the staff-only document.view permission,
+  // 403ing for every real university account.
+  async getDocumentChecklistForMyUniversity(applicationId: string, tenantId: string, callerUserId: string) {
+    const [owned] = await this.dataSource.query<any[]>(
+      `SELECT 1 FROM applications a
+       JOIN universities uni ON uni.id = a.university_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND uni.user_id = $3`,
+      [applicationId, tenantId, callerUserId],
+    );
+    if (!owned) throw new NotFoundException('Application not found');
+    return this.getDocumentChecklist(applicationId, tenantId);
   }
 
   async getDocumentChecklist(applicationId: string, tenantId: string) {

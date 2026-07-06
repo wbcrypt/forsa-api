@@ -33,6 +33,21 @@ let PartnersController = class PartnersController {
     getCommissions(t, p, f) {
         return this.service.getCommissions(t, f, p);
     }
+    getMe(u, t) {
+        return this.service.findMe(u, t);
+    }
+    getMyApplications(u, t, p) {
+        return this.service.getMyApplications(u, t, p);
+    }
+    getMyDashboard(u, t) {
+        return this.service.getMyDashboard(u, t);
+    }
+    getMyCommissions(u, t, p) {
+        return this.service.getMyCommissions(u, t, p);
+    }
+    updateMe(u, t, body) {
+        return this.service.updateMe(u, t, body);
+    }
     findOne(id, t) {
         return this.service.findOne(id, t);
     }
@@ -76,6 +91,50 @@ __decorate([
     __metadata("design:paramtypes", [String, pagination_util_1.PaginationDto, Object]),
     __metadata("design:returntype", void 0)
 ], PartnersController.prototype, "getCommissions", null);
+__decorate([
+    (0, common_1.Get)('me'),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], PartnersController.prototype, "getMe", null);
+__decorate([
+    (0, common_1.Get)('me/applications'),
+    (0, swagger_1.ApiOperation)({ summary: "List the logged-in partner's own referred applications (T-224 identity fix)" }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, pagination_util_1.PaginationDto]),
+    __metadata("design:returntype", void 0)
+], PartnersController.prototype, "getMyApplications", null);
+__decorate([
+    (0, common_1.Get)('me/dashboard'),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], PartnersController.prototype, "getMyDashboard", null);
+__decorate([
+    (0, common_1.Get)('me/commissions'),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, common_1.Query)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, pagination_util_1.PaginationDto]),
+    __metadata("design:returntype", void 0)
+], PartnersController.prototype, "getMyCommissions", null);
+__decorate([
+    (0, common_1.Patch)('me'),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:returntype", void 0)
+], PartnersController.prototype, "updateMe", null);
 __decorate([
     (0, common_1.Get)(':id'),
     (0, decorators_1.RequirePermissions)('partner.view'),

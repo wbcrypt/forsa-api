@@ -22,8 +22,11 @@ const mfa_service_1 = require("./services/mfa.service");
 const login_dto_1 = require("./dto/login.dto");
 const refresh_token_dto_1 = require("./dto/refresh-token.dto");
 const verify_mfa_dto_1 = require("./dto/verify-mfa.dto");
+const set_password_dto_1 = require("./dto/set-password.dto");
 const jwt_auth_guard_1 = require("./guards/jwt-auth.guard");
 const decorators_1 = require("../common/decorators");
+const LOGIN_THROTTLE_TTL_MS = parseInt(process.env.LOGIN_THROTTLE_TTL_SECONDS || '900', 10) * 1000;
+const LOGIN_THROTTLE_LIMIT = parseInt(process.env.LOGIN_THROTTLE_LIMIT || '5', 10);
 let AuthController = class AuthController {
     constructor(authService, mfaService, configService) {
         this.authService = authService;
@@ -66,6 +69,10 @@ let AuthController = class AuthController {
             expiresIn: tokens.expiresIn,
             tokenType: 'Bearer',
         };
+    }
+    async setPassword(dto) {
+        await this.authService.setPassword(dto.token, dto.newPassword);
+        return { message: 'Password set successfully. You can now log in.' };
     }
     async logout(user, response, ipAddress) {
         await this.authService.logout(user.sessionId, user.id, ipAddress);
@@ -122,7 +129,7 @@ __decorate([
     (0, decorators_1.Public)(),
     (0, common_1.Post)('login'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, throttler_1.Throttle)({ default: { ttl: 900000, limit: 5 } }),
+    (0, throttler_1.Throttle)({ default: { ttl: LOGIN_THROTTLE_TTL_MS, limit: LOGIN_THROTTLE_LIMIT } }),
     (0, swagger_1.ApiOperation)({ summary: 'Login with email and password' }),
     (0, swagger_1.ApiResponse)({ status: 200, description: 'Login successful or MFA required' }),
     (0, swagger_1.ApiResponse)({ status: 401, description: 'Invalid credentials' }),
@@ -161,6 +168,16 @@ __decorate([
     __metadata("design:paramtypes", [refresh_token_dto_1.RefreshTokenDto, Object, String]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "refresh", null);
+__decorate([
+    (0, decorators_1.Public)(),
+    (0, common_1.Post)('set-password'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Set password via a one-time membership-approval token (T-204)' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [set_password_dto_1.SetPasswordDto]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "setPassword", null);
 __decorate([
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
     (0, common_1.Post)('logout'),

@@ -102,6 +102,25 @@ export class ScoreService {
     return { eventId: event.id, newBalance: aggregateScore, newBand: band };
   }
 
+  // Phase 3 (browser E2E testing) discovery — StudentDetailPage called
+  // the staff-only GET /scores/students/:id directly, 403ing for every
+  // real university account. Verifies the student has at least one
+  // application at the caller's own university before returning the
+  // score — a university has no legitimate reason to see the score of a
+  // student it has no application relationship with.
+  async getScoreForMyUniversityStudent(userId: string, tenantId: string, studentId: string) {
+    const [owned] = await this.dataSource.query<any[]>(
+      `SELECT 1
+       FROM applications a
+       JOIN universities uni ON uni.id = a.university_id
+       WHERE a.student_id = $1 AND a.tenant_id = $2 AND uni.user_id = $3
+       LIMIT 1`,
+      [studentId, tenantId, userId],
+    );
+    if (!owned) throw new NotFoundException('Student not found');
+    return this.getScore(studentId, tenantId);
+  }
+
   // ================================================================
   // Get or initialize student score
   // ================================================================

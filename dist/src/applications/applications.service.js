@@ -19,8 +19,13 @@ const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const enums_1 = require("../common/enums");
 const pagination_util_1 = require("../common/utils/pagination.util");
+const notifications_service_1 = require("../notifications/notifications.service");
+const household_stability_util_1 = require("../ai/household-stability.util");
+const universities_service_1 = require("../universities/universities.service");
 const STATUS_TRANSITIONS = {
-    [enums_1.ApplicationStatus.NEW_LEAD]: [enums_1.ApplicationStatus.CONTACTED, enums_1.ApplicationStatus.WAITING_FOR_DOCUMENTS],
+    [enums_1.ApplicationStatus.NEW_LEAD]: [
+        enums_1.ApplicationStatus.CONTACTED, enums_1.ApplicationStatus.WAITING_FOR_DOCUMENTS, enums_1.ApplicationStatus.UNDER_REVIEW,
+    ],
     [enums_1.ApplicationStatus.CONTACTED]: [enums_1.ApplicationStatus.WAITING_FOR_DOCUMENTS, enums_1.ApplicationStatus.REJECTED],
     [enums_1.ApplicationStatus.WAITING_FOR_DOCUMENTS]: [enums_1.ApplicationStatus.DOCUMENTS_RECEIVED, enums_1.ApplicationStatus.ON_HOLD],
     [enums_1.ApplicationStatus.DOCUMENTS_RECEIVED]: [enums_1.ApplicationStatus.UNDER_REVIEW],
@@ -28,7 +33,11 @@ const STATUS_TRANSITIONS = {
         enums_1.ApplicationStatus.APPROVED_LEVEL1, enums_1.ApplicationStatus.APPROVED_LEVEL2,
         enums_1.ApplicationStatus.APPROVED_LEVEL3, enums_1.ApplicationStatus.REJECTED,
         enums_1.ApplicationStatus.ON_HOLD, enums_1.ApplicationStatus.WAITING_FOR_DOCUMENTS,
-        enums_1.ApplicationStatus.CAPITAL_QUEUE,
+        enums_1.ApplicationStatus.CAPITAL_QUEUE, enums_1.ApplicationStatus.MORE_INFO_REQUIRED,
+        enums_1.ApplicationStatus.FRAUD_FLAGGED,
+    ],
+    [enums_1.ApplicationStatus.MORE_INFO_REQUIRED]: [
+        enums_1.ApplicationStatus.UNDER_REVIEW, enums_1.ApplicationStatus.REJECTED,
     ],
     [enums_1.ApplicationStatus.APPROVED_LEVEL1]: [enums_1.ApplicationStatus.CONTRACT_SENT, enums_1.ApplicationStatus.ON_HOLD],
     [enums_1.ApplicationStatus.APPROVED_LEVEL2]: [enums_1.ApplicationStatus.CONTRACT_SENT, enums_1.ApplicationStatus.ON_HOLD],
@@ -39,36 +48,111 @@ const STATUS_TRANSITIONS = {
         enums_1.ApplicationStatus.WAITING_FOR_DOCUMENTS,
     ],
     [enums_1.ApplicationStatus.CAPITAL_QUEUE]: [enums_1.ApplicationStatus.UNDER_REVIEW, enums_1.ApplicationStatus.REJECTED],
+    [enums_1.ApplicationStatus.FRAUD_FLAGGED]: [],
     [enums_1.ApplicationStatus.CONTRACT_SENT]: [enums_1.ApplicationStatus.CONTRACT_SIGNED],
-    [enums_1.ApplicationStatus.CONTRACT_SIGNED]: [enums_1.ApplicationStatus.UNIVERSITY_PAID],
+    [enums_1.ApplicationStatus.CONTRACT_SIGNED]: [enums_1.ApplicationStatus.UNIVERSITY_CONFIRMED],
+    [enums_1.ApplicationStatus.UNIVERSITY_CONFIRMED]: [enums_1.ApplicationStatus.UNIVERSITY_PAID],
     [enums_1.ApplicationStatus.UNIVERSITY_PAID]: [enums_1.ApplicationStatus.ACTIVE_STUDENT],
     [enums_1.ApplicationStatus.ACTIVE_STUDENT]: [enums_1.ApplicationStatus.COMPLETED, enums_1.ApplicationStatus.WITHDRAWN],
     [enums_1.ApplicationStatus.APPEALING]: [enums_1.ApplicationStatus.UNDER_REVIEW, enums_1.ApplicationStatus.REJECTED],
 };
 let ApplicationsService = ApplicationsService_1 = class ApplicationsService {
-    constructor(dataSource) {
+    constructor(dataSource, notifications, universitiesService) {
         this.dataSource = dataSource;
+        this.notifications = notifications;
+        this.universitiesService = universitiesService;
         this.logger = new common_1.Logger(ApplicationsService_1.name);
     }
+    async notifyStudent(tenantId, studentId, templateCode, variables) {
+        const [student] = await this.dataSource.query(`SELECT first_name, last_name, email FROM students WHERE id = $1 AND tenant_id = $2`, [studentId, tenantId]);
+        if (!student?.email)
+            return;
+        await this.notifications.send({
+            tenantId,
+            recipientId: studentId,
+            recipientEmail: student.email,
+            channel: enums_1.NotificationChannel.EMAIL,
+            templateCode,
+            variables: { studentName: `${student.first_name} ${student.last_name}`.trim(), ...variables },
+            referenceType: 'application',
+        }).catch(err => this.logger.error(`Notification ${templateCode} failed`, err));
+    }
     async create(dto, tenantId, createdBy) {
+        let parsedAiReport = null;
+        if (dto.aiReport) {
+            try {
+                parsedAiReport = typeof dto.aiReport === 'string' ? JSON.parse(dto.aiReport) : dto.aiReport;
+            }
+            catch {
+                parsedAiReport = null;
+            }
+        }
+        const aiScoreOverall = parsedAiReport && parsedAiReport.demo_mode !== true
+            ? (0, household_stability_util_1.computeHouseholdStabilityScore)(parsedAiReport.scores)
+            : null;
+        const aiRecommendation = (0, household_stability_util_1.deriveRecommendation)(aiScoreOverall);
         const [application] = await this.dataSource.query(`INSERT INTO applications
         (tenant_id, student_id, university_id, program_id,
          referral_source_id, partner_id, campaign_id,
          tuition_amount, requested_support_amount, currency,
          academic_year, current_status, lead_date, is_renewal,
-         previous_application_id, assigned_to_user_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new_lead',CURRENT_DATE,$12,$13,$14,$15)
+         previous_application_id, assigned_to_user_id, created_by,
+         ai_score_overall, ai_recommendation, ai_report,
+         interview_language, interview_transcript)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new_lead',CURRENT_DATE,$12,$13,$14,$15,
+               $16,$17,$18,$19,$20)
        RETURNING *`, [
             tenantId, dto.studentId, dto.universityId, dto.programId,
             dto.referralSourceId, dto.partnerId, dto.campaignId,
             dto.tuitionAmount, dto.requestedSupportAmount, dto.currency || 'TND',
             dto.academicYear, dto.isRenewal || false,
             dto.previousApplicationId, dto.assignedToUserId, createdBy,
+            aiScoreOverall, aiRecommendation,
+            dto.aiReport ? (typeof dto.aiReport === 'string' ? dto.aiReport : JSON.stringify(dto.aiReport)) : null,
+            dto.interviewLanguage ?? null, dto.interviewTranscript ?? null,
         ]);
         await this.dataSource.query(`INSERT INTO application_status_history (application_id, to_status, changed_by, notes)
        VALUES ($1, 'new_lead', $2, 'Application created')`, [application.id, createdBy]);
         await this.audit(tenantId, createdBy, 'application.created', application.id, null, dto);
+        await this.notifyStudent(tenantId, application.student_id, 'application_created', {
+            applicationId: application.id,
+        });
         return application;
+    }
+    async createForSelf(userId, tenantId, dto) {
+        const [student] = await this.dataSource.query(`SELECT id, membership_status FROM students WHERE user_id = $1 AND tenant_id = $2`, [userId, tenantId]);
+        if (!student)
+            throw new common_1.NotFoundException('No student profile linked to this user');
+        if (!['bronze', 'silver', 'gold'].includes(student.membership_status)) {
+            throw new common_1.ForbiddenException(student.membership_status === 'blacklisted'
+                ? 'This account cannot submit financing requests.'
+                : 'Submit a Membership Request and wait for Bronze approval before requesting financing.');
+        }
+        return this.create({ ...dto, studentId: student.id }, tenantId, userId);
+    }
+    async findAllForMyUniversity(userId, tenantId, pagination, filters = {}) {
+        const university = await this.universitiesService.findMe(userId, tenantId);
+        return this.findAll(tenantId, pagination, { ...filters, universityId: university.id });
+    }
+    async findOneForMyUniversity(userId, tenantId, applicationId) {
+        const university = await this.universitiesService.findMe(userId, tenantId);
+        const application = await this.findOne(applicationId, tenantId);
+        if (application.university_id !== university.id) {
+            throw new common_1.NotFoundException('Application not found');
+        }
+        return application;
+    }
+    async getStatusHistoryForMyUniversity(userId, tenantId, applicationId) {
+        await this.findOneForMyUniversity(userId, tenantId, applicationId);
+        return this.getStatusHistory(applicationId, tenantId);
+    }
+    async getStatusHistoryForMe(userId, tenantId, applicationId) {
+        const [owned] = await this.dataSource.query(`SELECT a.id FROM applications a
+       JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND s.user_id = $3`, [applicationId, tenantId, userId]);
+        if (!owned)
+            throw new common_1.NotFoundException('Application not found');
+        return this.getStatusHistory(applicationId, tenantId);
     }
     async findAll(tenantId, pagination, filters = {}) {
         const { page = 1, limit = 20 } = pagination;
@@ -143,7 +227,15 @@ let ApplicationsService = ApplicationsService_1 = class ApplicationsService {
             throw new common_1.NotFoundException('Application not found');
         return application;
     }
-    async transitionStatus(id, tenantId, newStatus, changedBy, notes, pipelineRunId) {
+    async confirmEnrollment(applicationId, tenantId, universityUserId, notes) {
+        const university = await this.universitiesService.findMe(universityUserId, tenantId);
+        const application = await this.findOne(applicationId, tenantId);
+        if (application.university_id !== university.id) {
+            throw new common_1.ForbiddenException('This application does not belong to your university');
+        }
+        return this.transitionStatus(applicationId, tenantId, enums_1.ApplicationStatus.UNIVERSITY_CONFIRMED, universityUserId, notes);
+    }
+    async transitionStatus(id, tenantId, newStatus, changedBy, notes, pipelineRunId, financingTier) {
         const application = await this.findOne(id, tenantId);
         const currentStatus = application.current_status;
         const allowed = STATUS_TRANSITIONS[currentStatus] || [];
@@ -155,6 +247,29 @@ let ApplicationsService = ApplicationsService_1 = class ApplicationsService {
         (application_id, from_status, to_status, changed_by, pipeline_run_id, notes)
        VALUES ($1,$2,$3,$4,$5,$6)`, [id, currentStatus, newStatus, changedBy, pipelineRunId || null, notes || null]);
         await this.audit(tenantId, changedBy, 'application.status.changed', id, { status: currentStatus }, { status: newStatus, notes });
+        const approvedLevelByStatus = {
+            [enums_1.ApplicationStatus.APPROVED_LEVEL1]: 1,
+            [enums_1.ApplicationStatus.APPROVED_LEVEL2]: 2,
+            [enums_1.ApplicationStatus.APPROVED_LEVEL3]: 3,
+        };
+        if (newStatus in approvedLevelByStatus) {
+            await this.notifyStudent(tenantId, application.student_id, 'application_approved', {
+                programName: application.program_name || 'your program',
+                universityName: application.university_name,
+                approvedLevel: approvedLevelByStatus[newStatus],
+                tierSuffix: financingTier ? ` (${financingTier.charAt(0).toUpperCase() + financingTier.slice(1)} tier)` : '',
+            });
+        }
+        else if (newStatus === enums_1.ApplicationStatus.REJECTED) {
+            await this.notifyStudent(tenantId, application.student_id, 'application_rejected', {
+                rejectionReason: notes || 'Not specified',
+            });
+        }
+        else if (newStatus === enums_1.ApplicationStatus.CAPITAL_QUEUE) {
+            await this.notifyStudent(tenantId, application.student_id, 'waiting_list', {
+                programName: application.program_name || 'your program',
+            });
+        }
         return { id, previousStatus: currentStatus, newStatus };
     }
     async getPipelineHistory(id, tenantId) {
@@ -217,6 +332,8 @@ exports.ApplicationsService = ApplicationsService;
 exports.ApplicationsService = ApplicationsService = ApplicationsService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectDataSource)()),
-    __metadata("design:paramtypes", [typeorm_2.DataSource])
+    __metadata("design:paramtypes", [typeorm_2.DataSource,
+        notifications_service_1.NotificationsService,
+        universities_service_1.UniversitiesService])
 ], ApplicationsService);
 //# sourceMappingURL=applications.service.js.map

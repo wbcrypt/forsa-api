@@ -2,13 +2,15 @@ import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { ContractType, ContractStatus } from '../common/enums';
 import { PolicyService } from '../policy/policy.service';
+import { NotificationsService } from '../notifications/notifications.service';
 export declare class ContractsService {
     private readonly dataSource;
     private readonly configService;
     private readonly policyService;
+    private readonly notifications;
     private readonly logger;
     private readonly s3;
-    constructor(dataSource: DataSource, configService: ConfigService, policyService: PolicyService);
+    constructor(dataSource: DataSource, configService: ConfigService, policyService: PolicyService, notifications: NotificationsService);
     generateContract(params: {
         tenantId: string;
         applicationId: string;

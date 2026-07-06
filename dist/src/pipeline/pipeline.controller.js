@@ -29,8 +29,20 @@ let PipelineController = class PipelineController {
     getRun(id, t) {
         return this.service.getPipelineRun(id, t);
     }
+    findCapitalQueue(t) {
+        return this.service.findCapitalQueue(t);
+    }
+    findAllFraudRecords(t) {
+        return this.service.findAllFraudRecords(t);
+    }
     submitHumanDecision(id, body, t, u) {
-        return this.service.submitHumanDecision(id, t, u, body.decision, body.approvedAmount, body.notes);
+        return this.service.submitHumanDecision(id, t, u, body.decision, body.approvedAmount, body.notes, body.financingTier);
+    }
+    flagFraud(id, body, t, u) {
+        return this.service.flagFraud(id, t, u, body.reason, body.evidenceNotes);
+    }
+    overrideDecision(id, body, t, u) {
+        return this.service.overrideDecision(id, t, u, body.decision, body.notes, body.approvedAmount, body.financingTier);
     }
 };
 exports.PipelineController = PipelineController;
@@ -58,10 +70,28 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], PipelineController.prototype, "getRun", null);
 __decorate([
+    (0, common_1.Get)('capital-queue'),
+    (0, decorators_1.RequirePermissions)('pipeline.view'),
+    (0, swagger_1.ApiOperation)({ summary: 'List the active capital queue / Waiting List, ordered by priority' }),
+    __param(0, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], PipelineController.prototype, "findCapitalQueue", null);
+__decorate([
+    (0, common_1.Get)('fraud-records'),
+    (0, decorators_1.RequirePermissions)('fraud.flag'),
+    (0, swagger_1.ApiOperation)({ summary: 'List fraud records (Admin Dashboard Fraud Records)' }),
+    __param(0, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], PipelineController.prototype, "findAllFraudRecords", null);
+__decorate([
     (0, common_1.Post)('runs/:id/human-decision'),
     (0, decorators_1.RequirePermissions)('pipeline.review'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: 'Submit human review decision — continues pipeline from stage 9' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Submit human review decision — continues pipeline from stage 9 (T-213: full outcome set)' }),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, common_1.Body)()),
     __param(2, (0, decorators_1.CurrentTenant)()),
@@ -70,6 +100,32 @@ __decorate([
     __metadata("design:paramtypes", [String, Object, String, String]),
     __metadata("design:returntype", void 0)
 ], PipelineController.prototype, "submitHumanDecision", null);
+__decorate([
+    (0, common_1.Post)('runs/:id/fraud'),
+    (0, decorators_1.RequirePermissions)('fraud.flag'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Flag confirmed fraud — permanently blacklists the student (T-217)' }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __param(3, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], PipelineController.prototype, "flagFraud", null);
+__decorate([
+    (0, common_1.Post)('runs/:id/override'),
+    (0, decorators_1.RequirePermissions)('financing.override'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'CEO override — finalizes a decision regardless of pending multi-approver consensus (T-214)' }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __param(3, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], PipelineController.prototype, "overrideDecision", null);
 exports.PipelineController = PipelineController = __decorate([
     (0, swagger_1.ApiTags)('Financing Decision Pipeline'),
     (0, swagger_1.ApiBearerAuth)(),

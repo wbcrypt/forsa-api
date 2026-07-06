@@ -10,18 +10,20 @@ exports.PaymentsModule = void 0;
 const common_1 = require("@nestjs/common");
 const payments_controller_1 = require("./payments.controller");
 const payments_service_1 = require("./payments.service");
-const policy_module_1 = require("../policy/policy.module");
+const konnect_service_1 = require("./konnect.service");
+const ledger_service_1 = require("./ledger.service");
 const score_module_1 = require("../score/score.module");
+const policy_module_1 = require("../policy/policy.module");
 const notifications_module_1 = require("../notifications/notifications.module");
 let PaymentsModule = class PaymentsModule {
 };
 exports.PaymentsModule = PaymentsModule;
 exports.PaymentsModule = PaymentsModule = __decorate([
     (0, common_1.Module)({
-        imports: [policy_module_1.PolicyModule, score_module_1.ScoreModule, notifications_module_1.NotificationsModule],
+        imports: [score_module_1.ScoreModule, policy_module_1.PolicyModule, notifications_module_1.NotificationsModule],
         controllers: [payments_controller_1.PaymentsController],
-        providers: [payments_service_1.PaymentsService, { provide: 'KonnectService', useClass: require('./konnect.service').KonnectService }],
-        exports: [payments_service_1.PaymentsService],
+        providers: [payments_service_1.PaymentsService, konnect_service_1.KonnectService, ledger_service_1.LedgerService],
+        exports: [payments_service_1.PaymentsService, konnect_service_1.KonnectService, ledger_service_1.LedgerService],
     })
 ], PaymentsModule);
 //# sourceMappingURL=payments.module.js.map

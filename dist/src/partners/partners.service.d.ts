@@ -9,6 +9,14 @@ export declare class PartnersService {
     constructor(dataSource: DataSource, policyService: PolicyService);
     create(dto: any, tenantId: string, createdBy: string): Promise<any>;
     findAll(tenantId: string, pagination: PaginationDto, filters?: any): Promise<import("../common/utils/pagination.util").PaginatedResult<unknown>>;
+    findMe(userId: string, tenantId: string): Promise<any>;
+    getMyApplications(userId: string, tenantId: string, pagination: PaginationDto): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
+    updateMe(userId: string, tenantId: string, dto: {
+        name?: string;
+        website?: string;
+    }): Promise<any>;
+    getMyDashboard(userId: string, tenantId: string): Promise<any>;
+    getMyCommissions(userId: string, tenantId: string, pagination: PaginationDto): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
     findOne(id: string, tenantId: string): Promise<any>;
     createAgreement(partnerId: string, tenantId: string, dto: any, createdBy: string): Promise<any>;
     calculateCommission(partnerId: string, applicationId: string, tenantId: string): Promise<{

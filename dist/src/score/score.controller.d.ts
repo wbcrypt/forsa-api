@@ -4,6 +4,7 @@ export declare class ScoreController {
     private readonly service;
     constructor(service: ScoreService);
     getScore(id: string, t: string): Promise<any>;
+    getScoreForMyUniversityStudent(id: string, u: string, t: string): Promise<any>;
     getHistory(id: string, t: string): Promise<any>;
     recordEvent(studentId: string, body: {
         dimension: ScoreDimension;

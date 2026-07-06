@@ -30,11 +30,26 @@ let UniversitiesController = class UniversitiesController {
     findAll(t, p, f) {
         return this.service.findAll(t, p, f);
     }
+    findMe(u, t) {
+        return this.service.findMe(u, t);
+    }
+    getMyPerformance(u, t) {
+        return this.service.getMyPerformance(u, t);
+    }
+    findAllPublic(tenantId) {
+        return this.service.findAllPublic(tenantId);
+    }
+    findProgramsPublic(id, tenantId) {
+        return this.service.findProgramsPublic(id, tenantId);
+    }
     findOne(id, t) {
         return this.service.findOne(id, t);
     }
     update(id, dto, t, u) {
         return this.service.update(id, t, dto, u);
+    }
+    linkUser(id, body, t, u) {
+        return this.service.linkUser(id, body.userId, t, u);
     }
     getPerformance(id, t) {
         return this.service.getPerformance(id, t);
@@ -80,6 +95,42 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], UniversitiesController.prototype, "findAll", null);
 __decorate([
+    (0, common_1.Get)('me'),
+    (0, swagger_1.ApiOperation)({ summary: "Get the logged-in university portal user's own university (T-223 identity fix)" }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], UniversitiesController.prototype, "findMe", null);
+__decorate([
+    (0, common_1.Get)('me/performance'),
+    (0, swagger_1.ApiOperation)({ summary: "Get the logged-in university portal user's own performance stats" }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], UniversitiesController.prototype, "getMyPerformance", null);
+__decorate([
+    (0, decorators_1.Public)(),
+    (0, common_1.Get)('public'),
+    (0, swagger_1.ApiOperation)({ summary: 'Public minimal university list for the Membership Request form (T-203)' }),
+    __param(0, (0, common_1.Query)('tenantId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", void 0)
+], UniversitiesController.prototype, "findAllPublic", null);
+__decorate([
+    (0, common_1.Get)(':id/programs/public'),
+    (0, swagger_1.ApiOperation)({ summary: 'Public minimal program list for a university, for the Financing Request form' }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Query)('tenantId')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], UniversitiesController.prototype, "findProgramsPublic", null);
+__decorate([
     (0, common_1.Get)(':id'),
     (0, decorators_1.RequirePermissions)('university.view'),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
@@ -99,6 +150,17 @@ __decorate([
     __metadata("design:paramtypes", [String, Object, String, String]),
     __metadata("design:returntype", void 0)
 ], UniversitiesController.prototype, "update", null);
+__decorate([
+    (0, common_1.Patch)(':id/link-user'),
+    (0, decorators_1.RequirePermissions)('university.edit'),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __param(3, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], UniversitiesController.prototype, "linkUser", null);
 __decorate([
     (0, common_1.Get)(':id/performance'),
     (0, decorators_1.RequirePermissions)('university.view'),

@@ -379,6 +379,42 @@ export class PaymentsService {
     return this.getScheduleForApplication(applicationId, tenantId);
   }
 
+  // Phase 3 (browser E2E testing) discovery — the university portal's
+  // Payments page and StudentDetailPage called the same staff-only
+  // GET /payments/schedules/applications/:id route directly, 403ing for
+  // every real university account. Verifies the application belongs to
+  // the caller's own university before returning its schedule.
+  async findScheduleForMyUniversityApplication(userId: string, applicationId: string, tenantId: string) {
+    const [owned] = await this.dataSource.query<any[]>(
+      `SELECT a.id FROM applications a
+       JOIN universities uni ON uni.id = a.university_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND uni.user_id = $3`,
+      [applicationId, tenantId, userId],
+    );
+    if (!owned) throw new NotFoundException('Application not found');
+    return this.getScheduleForApplication(applicationId, tenantId);
+  }
+
+  // Phase 3 (browser E2E testing) discovery — resolves the calling
+  // student's real students.id and verifies they actually own the given
+  // installment. Used by the controller to get a trusted studentId
+  // before calling KonnectService.initiatePayment, which (like the
+  // parallel guarantor-on-behalf caller) expects ownership to already be
+  // verified rather than re-deriving it itself.
+  async verifyMyInstallmentOwnership(userId: string, installmentId: string, tenantId: string) {
+    const [row] = await this.dataSource.query<any[]>(
+      `SELECT s.id AS student_id
+       FROM installments i
+       JOIN payment_schedules ps ON ps.id = i.payment_schedule_id
+       JOIN applications a ON a.id = ps.application_id
+       JOIN students s ON s.id = a.student_id
+       WHERE i.id = $1 AND ps.tenant_id = $2 AND s.user_id = $3`,
+      [installmentId, tenantId, userId],
+    );
+    if (!row) throw new NotFoundException('Installment not found');
+    return row.student_id as string;
+  }
+
   async getInstallmentPayments(installmentId: string, tenantId: string) {
     return this.dataSource.query(
       `SELECT p.*, u.full_name AS received_by_name
@@ -538,7 +574,7 @@ export class PaymentsService {
   async submitReceipt(params: {
     tenantId: string;
     installmentId: string;
-    studentId: string;
+    callerUserId: string;
     paymentDate: string;
     amount: number;
     bankName?: string;
@@ -556,6 +592,23 @@ export class PaymentsService {
       [params.installmentId, params.tenantId],
     );
     if (!installment) throw new NotFoundException('Installment not found');
+
+    // Phase 3 (browser E2E testing) discovery — this route had no
+    // ownership check at all: any authenticated student could submit a
+    // receipt against any OTHER student's installment by guessing the
+    // UUID, since the (dead — never populated in the JWT) studentId
+    // param was never actually verified against anything. Resolve the
+    // caller's real student row server-side and reject if it doesn't
+    // own this installment, matching the pattern already established in
+    // findMyScheduleForApplication.
+    const [callerStudent] = await this.dataSource.query<any[]>(
+      `SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2`,
+      [params.callerUserId, params.tenantId],
+    );
+    if (!callerStudent || callerStudent.id !== installment.student_id) {
+      throw new NotFoundException('Installment not found');
+    }
+
     if (installment.status === 'paid' || installment.status === 'waived') {
       throw new BadRequestException(`Installment is already ${installment.status}`);
     }

@@ -28,4 +28,5 @@ export declare class ExecutionService {
     private processOutbox;
     private handleOutboxEvent;
     getExecutionHistory(tenantId: string, limit?: number): Promise<any>;
+    getDisbursements(tenantId: string, limit?: number): Promise<any>;
 }

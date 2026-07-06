@@ -11,7 +11,7 @@ import { Transform } from 'class-transformer';
  * (M3), reachable only after Bronze membership already exists.
  */
 export class CreateMembershipRequestDto {
-  @ApiProperty({ description: 'Tenant UUID — same pattern as RegisterStudentDto/login' })
+  @ApiProperty({ description: 'Tenant UUID — same pattern as login' })
   @IsUUID()
   tenantId: string;
 

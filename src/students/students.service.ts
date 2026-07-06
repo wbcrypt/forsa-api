@@ -1,14 +1,12 @@
 import {
-  Injectable, NotFoundException, BadRequestException, ConflictException, Logger,
+  Injectable, NotFoundException, BadRequestException, Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { encrypt, decrypt } from '../common/utils/encryption.util';
-import { hashPassword, validatePasswordComplexity } from '../common/utils/password.util';
 import { ConfigService } from '@nestjs/config';
-import { StudentStatus, ExceptionalEventType, SourceTrustLevel, UserStatus } from '../common/enums';
+import { StudentStatus, ExceptionalEventType, SourceTrustLevel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
-import { RegisterStudentDto } from './dto/register-student.dto';
 
 @Injectable()
 export class StudentsService {
@@ -52,76 +50,6 @@ export class StudentsService {
     });
 
     return student;
-  }
-
-  /**
-   * T-101 — public self-registration. Creates a `students` row AND a real
-   * `users` row (hashed password) in one transaction, then links them via
-   * `students.user_id`, so the student portal's register -> POST /auth/login
-   * flow actually works end-to-end. See DECISIONS.md D-001 for why this is
-   * intentionally a minimal, Phase-1-only shape rather than the full
-   * membership-request flow.
-   */
-  async registerSelf(dto: RegisterStudentDto) {
-    validatePasswordComplexity(dto.password);
-
-    const existing = await this.dataSource.query<any[]>(
-      `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
-      [dto.tenantId, dto.email],
-    );
-    if (existing.length) {
-      throw new ConflictException('An account with this email already exists');
-    }
-
-    const passwordHash = await hashPassword(dto.password);
-
-    return this.dataSource.transaction(async (manager) => {
-      const [student] = await manager.query<any[]>(
-        `INSERT INTO students
-          (tenant_id, first_name, last_name, date_of_birth, nationality,
-           email, phone_primary, city, status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'lead')
-         RETURNING id, tenant_id, first_name, last_name, email, status, created_at`,
-        [
-          dto.tenantId, dto.firstName, dto.lastName, dto.dateOfBirth || null,
-          dto.nationality || null, dto.email, dto.phonePrimary || null, dto.city || null,
-        ],
-      );
-
-      if (dto.academicLevel) {
-        await manager.query(
-          `INSERT INTO student_profiles (student_id, academic_level, preferred_language)
-           VALUES ($1, $2, 'fr')`,
-          [student.id, dto.academicLevel],
-        );
-      }
-
-      const [user] = await manager.query<any[]>(
-        `INSERT INTO users
-          (tenant_id, email, email_verified, password_hash, full_name, status,
-           must_change_password, portal_type, student_id_linked)
-         VALUES ($1,$2,false,$3,$4,$5,false,'student',$6)
-         RETURNING id, email`,
-        [
-          dto.tenantId, dto.email, passwordHash,
-          `${dto.firstName} ${dto.lastName}`.trim(),
-          UserStatus.PENDING_VERIFICATION, student.id,
-        ],
-      );
-
-      await manager.query(
-        `UPDATE students SET user_id = $2 WHERE id = $1`,
-        [student.id, user.id],
-      );
-
-      await manager.query(
-        `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, new_value, created_at)
-         VALUES ($1,$2,'student.self_registered','students','students',$3,$4,NOW())`,
-        [dto.tenantId, user.id, student.id, JSON.stringify({ email: dto.email })],
-      ).catch(() => {});
-
-      return { studentId: student.id, userId: user.id, email: user.email };
-    });
   }
 
   /**

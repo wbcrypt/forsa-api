@@ -21,6 +21,8 @@ const policy_module_1 = require("./policy/policy.module");
 const universities_module_1 = require("./universities/universities.module");
 const partners_module_1 = require("./partners/partners.module");
 const students_module_1 = require("./students/students.module");
+const membership_module_1 = require("./membership/membership.module");
+const digital_pass_module_1 = require("./digital-pass/digital-pass.module");
 const applications_module_1 = require("./applications/applications.module");
 const pipeline_module_1 = require("./pipeline/pipeline.module");
 const score_module_1 = require("./score/score.module");
@@ -55,6 +57,8 @@ exports.AppModule = AppModule = __decorate([
             universities_module_1.UniversitiesModule,
             partners_module_1.PartnersModule,
             students_module_1.StudentsModule,
+            membership_module_1.MembershipModule,
+            digital_pass_module_1.DigitalPassModule,
             applications_module_1.ApplicationsModule,
             pipeline_module_1.PipelineModule,
             score_module_1.ScoreModule,
@@ -70,6 +74,7 @@ exports.AppModule = AppModule = __decorate([
         ],
         providers: [
             { provide: core_1.APP_INTERCEPTOR, useClass: tenant_interceptor_1.TenantInterceptor },
+            { provide: core_1.APP_GUARD, useClass: throttler_1.ThrottlerGuard },
         ],
     })
 ], AppModule);

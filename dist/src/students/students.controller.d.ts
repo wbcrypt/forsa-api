@@ -3,6 +3,9 @@ import { PaginationDto } from '../common/utils/pagination.util';
 export declare class StudentsController {
     private readonly service;
     constructor(service: StudentsService);
+    findMe(u: string, t: string): Promise<any>;
+    findMyPayments(u: string, t: string): Promise<any>;
+    findMyApplications(u: string, t: string): Promise<any>;
     create(dto: any, t: string, u: string): Promise<any>;
     findAll(t: string, p: PaginationDto, f: any): Promise<import("../common/utils/pagination.util").PaginatedResult<unknown>>;
     findOne(id: string, t: string): Promise<any>;

@@ -49,6 +49,13 @@ export class KonnectService {
   async initiatePayment(params: {
     tenantId: string
     installmentId: string
+    // Trusted — the caller (PaymentsService for a direct student request,
+    // or GuarantorsService#initiateKonnectOnBehalf for a guarantor paying
+    // on a linked student's behalf) is responsible for resolving this to
+    // a real students.id AND verifying the caller actually owns/is linked
+    // to that installment before calling in here. This method itself has
+    // no way to tell those two legitimate caller shapes apart, so it
+    // trusts the id it's given rather than re-deriving ownership itself.
     studentId: string
     studentEmail: string
     studentName: string
@@ -60,6 +67,7 @@ export class KonnectService {
       throw new BadRequestException('Konnect is not configured. Contact FORSA support.')
     }
 
+    const studentId = params.studentId
     const amountMillimes = Math.round(params.amount * 1000) // Konnect uses millimes
 
     try {
@@ -104,7 +112,7 @@ export class KonnectService {
          ) VALUES ($1, $2, $3, $4, 'TND', 'konnect', $5, CURRENT_DATE, 'konnect_pending', $6)
          ON CONFLICT DO NOTHING`,
         [
-          params.tenantId, params.installmentId, params.studentId,
+          params.tenantId, params.installmentId, studentId,
           params.amount, params.paymentReference,
           `Konnect payment initiated. Konnect ref: ${paymentRef}`,
         ],

@@ -389,6 +389,69 @@ describe('PipelineService — stage gates', () => {
       expect(result.outputs.requiredApprovers).toBe(1);
     });
   });
+
+  // Business decision (2026-07-06) — self-submitted Financing Requests
+  // must enter the automated pipeline without a manual staff CRM step.
+  // Every self-submitted application starts at NEW_LEAD; before this fix,
+  // Stage 8 either never transitioned status at all (auto-approve path)
+  // or tried to transition straight to UNDER_REVIEW from a status that
+  // didn't permit it (human-review path) — either way, the very first
+  // "Run Pipeline" click on a fresh self-submitted application failed
+  // with "Invalid status transition."
+  describe('stage8HumanDecision', () => {
+    let transitionStatus: jest.Mock;
+    let stage8Service: PipelineService;
+
+    beforeEach(() => {
+      transitionStatus = jest.fn().mockResolvedValue(undefined);
+      stage8Service = new PipelineService(
+        { query } as unknown as DataSource,
+        policyService as unknown as PolicyService,
+        {} as unknown as ScoreService,
+        { transitionStatus } as unknown as ApplicationsService,
+      );
+    });
+
+    const traceWithApprovalMode = (approvalMode: string, requiredApprovers = 0) => [
+      { stage: 7, outputs: { approvalMode, requiredApprovers } },
+    ];
+
+    it('auto-approve path: transitions a fresh NEW_LEAD application to UNDER_REVIEW before passing', async () => {
+      const ctx = { applicationId: 'app-1', tenantId: 'tenant-1', pipelineRunId: 'run-1', application: { current_status: 'new_lead' } };
+      const result = await (stage8Service as any).stage8HumanDecision(ctx, traceWithApprovalMode('auto'));
+
+      expect(result.status).toBe('passed');
+      expect(transitionStatus).toHaveBeenCalledWith(
+        'app-1', 'tenant-1', 'under_review', null, expect.any(String), 'run-1',
+      );
+    });
+
+    it('auto-approve path: does not re-transition an application already at UNDER_REVIEW', async () => {
+      const ctx = { applicationId: 'app-1', tenantId: 'tenant-1', pipelineRunId: 'run-1', application: { current_status: 'under_review' } };
+      await (stage8Service as any).stage8HumanDecision(ctx, traceWithApprovalMode('auto'));
+
+      expect(transitionStatus).not.toHaveBeenCalled();
+    });
+
+    it('human-review path: transitions a fresh NEW_LEAD application to UNDER_REVIEW', async () => {
+      query.mockResolvedValueOnce([{ id: 'approval-set-1' }]); // INSERT multi_approval_sets
+      const ctx = { applicationId: 'app-1', tenantId: 'tenant-1', pipelineRunId: 'run-1', application: { current_status: 'new_lead' } };
+      const result = await (stage8Service as any).stage8HumanDecision(ctx, traceWithApprovalMode('dual', 2));
+
+      expect(result.status).toBe('needs_review');
+      expect(transitionStatus).toHaveBeenCalledWith(
+        'app-1', 'tenant-1', 'under_review', null, expect.any(String), 'run-1',
+      );
+    });
+
+    it('human-review path: does not re-transition an application already at UNDER_REVIEW', async () => {
+      query.mockResolvedValueOnce([{ id: 'approval-set-1' }]);
+      const ctx = { applicationId: 'app-1', tenantId: 'tenant-1', pipelineRunId: 'run-1', application: { current_status: 'under_review' } };
+      await (stage8Service as any).stage8HumanDecision(ctx, traceWithApprovalMode('dual', 2));
+
+      expect(transitionStatus).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // T-214/K-12 — this is the actual launch-blocker fix: Stage 7 computes how

@@ -56,10 +56,16 @@ const config_1 = require("@nestjs/config");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const axios_1 = __importDefault(require("axios"));
+const date_fns_1 = require("date-fns");
+const ledger_service_1 = require("./ledger.service");
+const score_service_1 = require("../score/score.service");
+const enums_1 = require("../common/enums");
 let KonnectService = KonnectService_1 = class KonnectService {
-    constructor(config, dataSource) {
+    constructor(config, dataSource, ledger, scoreService) {
         this.config = config;
         this.dataSource = dataSource;
+        this.ledger = ledger;
+        this.scoreService = scoreService;
         this.logger = new common_1.Logger(KonnectService_1.name);
         this.apiKey = this.config.get('konnect.apiKey') || '';
         this.walletId = this.config.get('konnect.walletId') || '';
@@ -75,6 +81,7 @@ let KonnectService = KonnectService_1 = class KonnectService {
         if (!this.isConfigured) {
             throw new common_1.BadRequestException('Konnect is not configured. Contact FORSA support.');
         }
+        const studentId = params.studentId;
         const amountMillimes = Math.round(params.amount * 1000);
         try {
             const response = await axios_1.default.post(`${this.baseUrl}/payments/init-payment`, {
@@ -109,7 +116,7 @@ let KonnectService = KonnectService_1 = class KonnectService {
            payment_method, reference_number, payment_date, status, notes
          ) VALUES ($1, $2, $3, $4, 'TND', 'konnect', $5, CURRENT_DATE, 'konnect_pending', $6)
          ON CONFLICT DO NOTHING`, [
-                params.tenantId, params.installmentId, params.studentId,
+                params.tenantId, params.installmentId, studentId,
                 params.amount, params.paymentReference,
                 `Konnect payment initiated. Konnect ref: ${paymentRef}`,
             ]);
@@ -188,13 +195,27 @@ let KonnectService = KonnectService_1 = class KonnectService {
         await this.dataSource.query(`UPDATE installments
        SET status = 'paid', amount_paid = amount, paid_at = NOW()
        WHERE id = $1`, [payment.installment_id]);
-        await this.dataSource.query(`INSERT INTO financial_ledger (
-         tenant_id, entry_type, debit_account, credit_account,
-         amount, currency, reference_type, reference_id, description, created_at
-       ) VALUES ($1, 'payment', 'bank', 'student_receivable', $2, 'TND', 'payment', $3, $4, NOW())`, [
-            payment.sched_tenant, payment.amount, payment.id,
-            `Konnect auto-payment for installment #${payment.sequence_number}`,
-        ]);
+        await this.ledger.recordEntries(payment.sched_tenant, payment.application_id, payment.id, {
+            debitAccount: 'bank',
+            creditAccount: 'student_receivable',
+            amount: payment.amount,
+            currency: 'TND',
+            description: `Konnect auto-payment for installment #${payment.sequence_number}`,
+        });
+        const isLate = payment.grace_due_date && (0, date_fns_1.isPast)(new Date(payment.grace_due_date));
+        await this.scoreService.recordEvent({
+            tenantId: payment.sched_tenant,
+            studentId: payment.student_id,
+            dimension: enums_1.ScoreDimension.PAYMENT_RELIABILITY,
+            eventCode: isLate ? 'PAYMENT_LATE' : 'PAYMENT_ON_TIME',
+            points: isLate ? -20 : 15,
+            sourceType: enums_1.SourceTrustLevel.SYSTEM_VERIFIED,
+            sourceId: 'konnect',
+            description: `Installment #${payment.sequence_number} ${isLate ? 'paid late' : 'paid on time'} — Konnect auto-verified`,
+            referenceId: payment.id,
+            referenceType: 'payment',
+            recordedBy: null,
+        });
         this.logger.log(`✅ Konnect payment auto-verified: ${order_id} — installment #${payment.sequence_number}`);
         return { received: true, verified: true, installmentId: payment.installment_id };
     }
@@ -204,6 +225,8 @@ exports.KonnectService = KonnectService = KonnectService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(1, (0, typeorm_1.InjectDataSource)()),
     __metadata("design:paramtypes", [config_1.ConfigService,
-        typeorm_2.DataSource])
+        typeorm_2.DataSource,
+        ledger_service_1.LedgerService,
+        score_service_1.ScoreService])
 ], KonnectService);
 //# sourceMappingURL=konnect.service.js.map

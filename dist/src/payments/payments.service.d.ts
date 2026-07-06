@@ -2,13 +2,18 @@ import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { LedgerService } from './ledger.service';
 export declare class PaymentsService {
     private readonly dataSource;
     private readonly policyService;
     private readonly scoreService;
     private readonly configService;
+    private readonly notifications;
+    private readonly ledger;
     private readonly logger;
-    constructor(dataSource: DataSource, policyService: PolicyService, scoreService: ScoreService, configService: ConfigService);
+    constructor(dataSource: DataSource, policyService: PolicyService, scoreService: ScoreService, configService: ConfigService, notifications: NotificationsService, ledger: LedgerService);
+    private notifyStudent;
     generateSchedule(params: {
         tenantId: string;
         applicationId: string;
@@ -36,19 +41,23 @@ export declare class PaymentsService {
     }>;
     getSchedule(scheduleId: string, tenantId: string): Promise<any>;
     getScheduleForApplication(applicationId: string, tenantId: string): Promise<any>;
+    findMyScheduleForApplication(userId: string, applicationId: string, tenantId: string): Promise<any>;
+    findScheduleForMyUniversityApplication(userId: string, applicationId: string, tenantId: string): Promise<any>;
+    verifyMyInstallmentOwnership(userId: string, installmentId: string, tenantId: string): Promise<string>;
     getInstallmentPayments(installmentId: string, tenantId: string): Promise<any>;
     updateInstallmentStatuses(): Promise<void>;
-    private recordLedgerEntries;
     private audit;
+    private verifyReceiptDocument;
     submitReceipt(params: {
         tenantId: string;
         installmentId: string;
-        studentId: string;
+        callerUserId: string;
         paymentDate: string;
         amount: number;
         bankName?: string;
         referenceNumber?: string;
         receiptFilename?: string;
+        receiptDocumentId?: string;
         notes?: string;
     }): Promise<{
         paymentId: any;

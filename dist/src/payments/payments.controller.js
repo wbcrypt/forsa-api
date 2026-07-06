@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.PaymentsController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
+const throttler_1 = require("@nestjs/throttler");
 const payments_service_1 = require("./payments.service");
 const konnect_service_1 = require("./konnect.service");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
@@ -31,6 +32,12 @@ let PaymentsController = class PaymentsController {
     getScheduleForApplication(id, t) {
         return this.service.getScheduleForApplication(id, t);
     }
+    getMyScheduleForApplication(id, t, u) {
+        return this.service.findMyScheduleForApplication(u, id, t);
+    }
+    getScheduleForMyUniversityApplication(id, t, u) {
+        return this.service.findScheduleForMyUniversityApplication(u, id, t);
+    }
     getSchedule(id, t) {
         return this.service.getSchedule(id, t);
     }
@@ -43,11 +50,11 @@ let PaymentsController = class PaymentsController {
     reversePayment(id, body, t, u) {
         return this.service.reversePayment(id, t, body.reason, u);
     }
-    submitReceipt(body, t, u, studentId) {
+    submitReceipt(body, t, u) {
         return this.service.submitReceipt({
             ...body,
             tenantId: t,
-            studentId: studentId || u,
+            callerUserId: u,
         });
     }
     listReceipts(status, search, page, limit, t) {
@@ -65,11 +72,12 @@ let PaymentsController = class PaymentsController {
         }
         return this.service.verifyPayment(id, t, u, body.notes);
     }
-    initiateKonnect(body, t, u, email, name) {
+    async initiateKonnect(body, t, u, email, name) {
+        const studentId = await this.service.verifyMyInstallmentOwnership(u, body.installmentId, t);
         return this.konnect.initiatePayment({
             tenantId: t,
             installmentId: body.installmentId,
-            studentId: u,
+            studentId,
             studentEmail: email,
             studentName: name || email,
             amount: body.amount,
@@ -102,6 +110,26 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], PaymentsController.prototype, "getScheduleForApplication", null);
+__decorate([
+    (0, common_1.Get)('schedules/me/applications/:applicationId'),
+    (0, swagger_1.ApiOperation)({ summary: "Get the logged-in student's own payment schedule for one of their applications" }),
+    __param(0, (0, common_1.Param)('applicationId', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], PaymentsController.prototype, "getMyScheduleForApplication", null);
+__decorate([
+    (0, common_1.Get)('schedules/university-mine/applications/:applicationId'),
+    (0, swagger_1.ApiOperation)({ summary: "Get a payment schedule for one of the logged-in university portal user's own applications" }),
+    __param(0, (0, common_1.Param)('applicationId', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], PaymentsController.prototype, "getScheduleForMyUniversityApplication", null);
 __decorate([
     (0, common_1.Get)('schedules/:id'),
     (0, decorators_1.RequirePermissions)('payment.view'),
@@ -148,15 +176,13 @@ __decorate([
 ], PaymentsController.prototype, "reversePayment", null);
 __decorate([
     (0, common_1.Post)('receipts'),
-    (0, decorators_1.RequirePermissions)('payment.record'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: 'Student submits payment receipt for admin verification' }),
     __param(0, (0, common_1.Body)()),
     __param(1, (0, decorators_1.CurrentTenant)()),
     __param(2, (0, decorators_1.CurrentUser)('id')),
-    __param(3, (0, decorators_1.CurrentUser)('studentId')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, String, String, String]),
+    __metadata("design:paramtypes", [Object, String, String]),
     __metadata("design:returntype", void 0)
 ], PaymentsController.prototype, "submitReceipt", null);
 __decorate([
@@ -187,7 +213,6 @@ __decorate([
 ], PaymentsController.prototype, "verifyPayment", null);
 __decorate([
     (0, common_1.Post)('konnect/initiate'),
-    (0, decorators_1.RequirePermissions)('payment.record'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: 'Initiate a Konnect online payment for an installment' }),
     __param(0, (0, common_1.Body)()),
@@ -197,9 +222,11 @@ __decorate([
     __param(4, (0, decorators_1.CurrentUser)('fullName')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object, String, String, String, String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], PaymentsController.prototype, "initiateKonnect", null);
 __decorate([
+    (0, decorators_1.Public)(),
+    (0, throttler_1.SkipThrottle)(),
     (0, common_1.Post)('konnect-webhook'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: 'Konnect payment webhook — called by Konnect on payment completion' }),

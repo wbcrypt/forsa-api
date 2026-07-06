@@ -26,11 +26,20 @@ let DocumentsController = class DocumentsController {
     generateUploadUrl(body, t, u) {
         return this.service.generateUploadUrl({ ...body, tenantId: t, uploadedBy: u });
     }
+    generateMyUploadUrl(body, t, u) {
+        return this.service.generateMyUploadUrl(u, t, body);
+    }
     confirmUpload(id, body, t) {
         return this.service.confirmUpload(id, t, body.fileSize, body.checksum);
     }
+    confirmMyUpload(id, body, t, u) {
+        return this.service.confirmMyUpload(u, id, t, body.fileSize, body.checksum);
+    }
     getDownloadUrl(id, t, u, ip) {
         return this.service.generateDownloadUrl(id, t, u, ip);
+    }
+    getDownloadUrlForMyUniversity(id, t, u, ip) {
+        return this.service.generateDownloadUrlForMyUniversity(id, t, u, ip);
     }
     reviewDocument(id, body, t, u) {
         return this.service.reviewDocument(id, t, body.action, u, body.notes, body.rejectionReason);
@@ -40,6 +49,9 @@ let DocumentsController = class DocumentsController {
     }
     getChecklist(applicationId, t) {
         return this.service.getDocumentChecklist(applicationId, t);
+    }
+    getChecklistForMyUniversity(applicationId, t, u) {
+        return this.service.getDocumentChecklistForMyUniversity(applicationId, t, u);
     }
 };
 exports.DocumentsController = DocumentsController;
@@ -55,6 +67,16 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], DocumentsController.prototype, "generateUploadUrl", null);
 __decorate([
+    (0, common_1.Post)('me/upload-url'),
+    (0, swagger_1.ApiOperation)({ summary: "Generate a pre-signed S3 upload URL for the logged-in student's own document" }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", void 0)
+], DocumentsController.prototype, "generateMyUploadUrl", null);
+__decorate([
     (0, common_1.Post)(':id/confirm-upload'),
     (0, decorators_1.RequirePermissions)('document.upload'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
@@ -67,6 +89,18 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], DocumentsController.prototype, "confirmUpload", null);
 __decorate([
+    (0, common_1.Post)('me/:id/confirm-upload'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: "Confirm the logged-in student's own upload complete" }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __param(3, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, String, String]),
+    __metadata("design:returntype", void 0)
+], DocumentsController.prototype, "confirmMyUpload", null);
+__decorate([
     (0, common_1.Get)(':id/download-url'),
     (0, decorators_1.RequirePermissions)('document.view'),
     (0, swagger_1.ApiOperation)({ summary: 'Generate a short-lived pre-signed download URL' }),
@@ -78,6 +112,17 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String, String]),
     __metadata("design:returntype", void 0)
 ], DocumentsController.prototype, "getDownloadUrl", null);
+__decorate([
+    (0, common_1.Get)('university-mine/:id/download-url'),
+    (0, swagger_1.ApiOperation)({ summary: "Generate a download URL for one of the logged-in university portal user's own students' documents" }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, decorators_1.CurrentUser)('id')),
+    __param(3, (0, decorators_1.ClientIp)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String, String]),
+    __metadata("design:returntype", void 0)
+], DocumentsController.prototype, "getDownloadUrlForMyUniversity", null);
 __decorate([
     (0, common_1.Patch)(':id/review'),
     (0, decorators_1.RequirePermissions)('document.review'),
@@ -112,6 +157,16 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], DocumentsController.prototype, "getChecklist", null);
+__decorate([
+    (0, common_1.Get)('university-mine/checklist/applications/:applicationId'),
+    (0, swagger_1.ApiOperation)({ summary: "Get a document checklist for one of the logged-in university portal user's own applications" }),
+    __param(0, (0, common_1.Param)('applicationId', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], DocumentsController.prototype, "getChecklistForMyUniversity", null);
 exports.DocumentsController = DocumentsController = __decorate([
     (0, swagger_1.ApiTags)('Documents'),
     (0, swagger_1.ApiBearerAuth)(),

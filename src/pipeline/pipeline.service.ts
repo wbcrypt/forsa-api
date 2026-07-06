@@ -933,6 +933,20 @@ export class PipelineService {
     const requiredApprovers = stage7?.outputs.requiredApprovers || 0;
 
     if (approvalMode === 'auto') {
+      // Business decision (2026-07-06) — a self-submitted application
+      // sitting at NEW_LEAD (or any other pre-review status) must still
+      // pass through UNDER_REVIEW on its way to an auto-approved
+      // decision, exactly as a human-reviewed one does — Stage 10's own
+      // transition to the final decision status is only ever legal from
+      // UNDER_REVIEW. Skipped when already there (a manually-advanced
+      // CRM application re-running the pipeline) to avoid a no-op
+      // transition.
+      if (ctx.application?.current_status !== ApplicationStatus.UNDER_REVIEW) {
+        await this.applicationsService.transitionStatus(
+          ctx.applicationId, ctx.tenantId, ApplicationStatus.UNDER_REVIEW,
+          null, 'Entered automated review (auto-approve eligible)', ctx.pipelineRunId,
+        );
+      }
       return {
         status: 'passed',
         outputs: { humanDecisionRequired: false, approvalMode: 'auto' },
@@ -952,11 +966,15 @@ export class PipelineService {
       [ctx.pipelineRunId, ctx.applicationId, ctx.tenantId, requiredApprovers, sequencing],
     );
 
-    // Transition application to under_review for human action
-    await this.applicationsService.transitionStatus(
-      ctx.applicationId, ctx.tenantId, ApplicationStatus.UNDER_REVIEW,
-      null, 'Awaiting human decision', ctx.pipelineRunId,
-    );
+    // Transition application to under_review for human action — skipped
+    // when already there (e.g. a second pipeline run on an application
+    // still awaiting its original decision) to avoid a no-op transition.
+    if (ctx.application?.current_status !== ApplicationStatus.UNDER_REVIEW) {
+      await this.applicationsService.transitionStatus(
+        ctx.applicationId, ctx.tenantId, ApplicationStatus.UNDER_REVIEW,
+        null, 'Awaiting human decision', ctx.pipelineRunId,
+      );
+    }
 
     return {
       status: 'needs_review',

@@ -57,8 +57,21 @@ async function main() {
       continue;
     }
 
-    const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+    let sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
     console.log(`  ▶ Applying ${file}...`);
+
+    // Business decision (2026-07-06) — the least-privilege DB roles this
+    // app runs as (forsa_app/forsa_readonly) had no CREATE ROLE anywhere
+    // in this repo at all; a genuinely fresh deployment following only
+    // docker-compose + migrate + seed would fail to authenticate as
+    // forsa_app entirely. Migrations are plain .sql files executed
+    // verbatim (no templating) — passwords can't live in a git-tracked
+    // file, so this is the one narrow substitution point a migration can
+    // use to pull its role passwords from the same env vars the app
+    // itself already requires (DB_APP_PASSWORD/DB_READONLY_PASSWORD).
+    sql = sql
+      .replace(/__DB_APP_PASSWORD__/g, (process.env.DB_APP_PASSWORD || '').replace(/'/g, "''"))
+      .replace(/__DB_READONLY_PASSWORD__/g, (process.env.DB_READONLY_PASSWORD || '').replace(/'/g, "''"));
 
     try {
       await ds.query(sql);

@@ -128,7 +128,7 @@ const STUDENTS = [
         universityIdx: 0,
         program: 'Master en Intelligence Artificielle',
         tuition: 6200,
-        status: 'pre_approved',
+        status: 'approved_level2',
         aiScore: 91,
         recommendation: 'Gold Candidate',
         paymentsPaid: 0,
@@ -143,7 +143,7 @@ const STUDENTS = [
         universityIdx: 3,
         program: 'Médecine',
         tuition: 7500,
-        status: 'internal_review',
+        status: 'under_review',
         aiScore: 72,
         recommendation: 'Silver Candidate',
         paymentsPaid: 0,
@@ -173,7 +173,7 @@ const STUDENTS = [
         universityIdx: 1,
         program: 'Génie Civil',
         tuition: 4200,
-        status: 'contracts_signed',
+        status: 'contract_signed',
         aiScore: 80,
         recommendation: 'Gold Candidate',
         paymentsPaid: 0,
@@ -188,7 +188,7 @@ const STUDENTS = [
         universityIdx: 0,
         program: 'Licence en Gestion',
         tuition: 2500,
-        status: 'applied',
+        status: 'new_lead',
         aiScore: null,
         recommendation: null,
         paymentsPaid: 0,
@@ -252,14 +252,14 @@ async function seedDemo() {
     for (const uni of UNIVERSITIES) {
         const existing = await ds.query(`SELECT id FROM universities WHERE id = $1`, [uni.id]);
         if (existing.length === 0) {
-            await ds.query(`INSERT INTO universities (id, tenant_id, name, code, city, country_code, status, created_at, updated_at)
+            await ds.query(`INSERT INTO universities (id, tenant_id, name, short_name, city, country_code, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, 'TN', 'active', NOW(), NOW())
          ON CONFLICT (id) DO NOTHING`, [uni.id, TENANT_ID, uni.name, uni.code, uni.city]);
             console.log(`✅ University: ${uni.name}`);
             for (const program of uni.programs) {
-                await ds.query(`INSERT INTO programs (tenant_id, university_id, name, status, created_at, updated_at)
-           VALUES ($1, $2, $3, 'active', NOW(), NOW())
-           ON CONFLICT DO NOTHING`, [TENANT_ID, uni.id, program]);
+                await ds.query(`INSERT INTO programs (university_id, name, status, created_at)
+           VALUES ($1, $2, 'active', NOW())
+           ON CONFLICT DO NOTHING`, [uni.id, program]);
             }
             seededCount++;
         }
@@ -267,12 +267,26 @@ async function seedDemo() {
             console.log(`⏭  University already exists: ${uni.name}`);
         }
     }
-    const partnerExists = await ds.query(`SELECT id FROM partners WHERE email = 'partner@forsa.tn' AND tenant_id = $1 LIMIT 1`, [TENANT_ID]);
-    if (partnerExists.length === 0) {
-        await ds.query(`INSERT INTO partners (tenant_id, name, type, status, email, country_code, is_founding_partner, created_at, updated_at)
-       VALUES ($1, 'EduLead Tunisia', 'platform', 'active', 'partner@forsa.tn', 'TN', true, NOW(), NOW())
-       ON CONFLICT DO NOTHING`, [TENANT_ID]);
-        console.log(`✅ Partner: EduLead Tunisia`);
+    const partnerUserExists = await ds.query(`SELECT id FROM users WHERE email = 'partner@forsa.tn' AND tenant_id = $1 LIMIT 1`, [TENANT_ID]);
+    if (partnerUserExists.length === 0) {
+        const partnerPasswordHash = await argon2.hash('Partner2026!');
+        const [partnerUser] = await ds.query(`INSERT INTO users (tenant_id, email, password_hash, full_name, status, must_change_password, created_at, updated_at)
+       VALUES ($1, 'partner@forsa.tn', $2, 'EduLead Tunisia', 'active', false, NOW(), NOW())
+       RETURNING id`, [TENANT_ID, partnerPasswordHash]);
+        await ds.query(`INSERT INTO partners (tenant_id, name, type, status, country_code, user_id, created_at, updated_at)
+       VALUES ($1, 'EduLead Tunisia', 'platform', 'active', 'TN', $2, NOW(), NOW())
+       ON CONFLICT DO NOTHING`, [TENANT_ID, partnerUser.id]);
+        console.log(`✅ Partner: EduLead Tunisia (login: partner@forsa.tn / Partner2026!)`);
+        seededCount++;
+    }
+    const universityUserExists = await ds.query(`SELECT id FROM users WHERE email = 'university@forsa.tn' AND tenant_id = $1 LIMIT 1`, [TENANT_ID]);
+    if (universityUserExists.length === 0) {
+        const universityPasswordHash = await argon2.hash('University2026!');
+        const [universityUser] = await ds.query(`INSERT INTO users (tenant_id, email, password_hash, full_name, status, must_change_password, created_at, updated_at)
+       VALUES ($1, 'university@forsa.tn', $2, 'Université de Tunis El Manar Admissions', 'active', false, NOW(), NOW())
+       RETURNING id`, [TENANT_ID, universityPasswordHash]);
+        await ds.query(`UPDATE universities SET user_id = $2 WHERE id = $1 AND tenant_id = $3`, [UNIVERSITIES[0].id, universityUser.id, TENANT_ID]);
+        console.log(`✅ University login linked: ${UNIVERSITIES[0].name} (login: university@forsa.tn / University2026!)`);
         seededCount++;
     }
     for (const s of STUDENTS) {
@@ -288,41 +302,49 @@ async function seedDemo() {
          VALUES ($1, $2, $3, $4, 'active', false, NOW(), NOW())
          ON CONFLICT (email, tenant_id) DO UPDATE SET full_name = EXCLUDED.full_name
          RETURNING id`, [TENANT_ID, s.email, passwordHash, `${s.firstName} ${s.lastName}`]);
-            const [newStudent] = await ds.query(`INSERT INTO students (tenant_id, user_id, first_name, last_name, email, phone, city, nationality, academic_level, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'TN', 'university', 'active', NOW(), NOW())
+            const [newStudent] = await ds.query(`INSERT INTO students (tenant_id, user_id, first_name, last_name, email, phone_primary, city, nationality, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'TN', 'active', NOW(), NOW())
          RETURNING id`, [TENANT_ID, newUser?.id, s.firstName, s.lastName, s.email, s.phone, s.city]);
             studentId = newStudent.id;
             const uni = UNIVERSITIES[s.universityIdx];
             const aiReport = s.aiScore ? generateAiReport(s) : null;
             const langs = ['fr', 'ar', 'en'];
             const interviewLang = langs[Math.floor(Math.random() * 3)];
+            const [program] = await ds.query(`SELECT id FROM programs WHERE university_id = $1 AND name = $2 LIMIT 1`, [uni.id, s.program]);
             const [newApp] = await ds.query(`INSERT INTO applications (
-          tenant_id, student_id, university_id, program_name,
+          tenant_id, student_id, university_id, program_id,
           tuition_amount, requested_support_amount, currency,
           academic_year, is_renewal, current_status,
           ai_score_overall, ai_recommendation, ai_report, interview_language,
           lead_date, created_at, updated_at
          ) VALUES ($1, $2, $3, $4, $5, $5, 'TND', '2026-2027', false, $6, $7, $8, $9, $10, NOW() - INTERVAL '${Math.floor(Math.random() * 30)} days', NOW(), NOW())
          RETURNING id`, [
-                TENANT_ID, studentId, uni.id, s.program,
+                TENANT_ID, studentId, uni.id, program?.id,
                 s.tuition, s.status,
                 s.aiScore, s.recommendation,
                 aiReport ? JSON.stringify(aiReport) : null,
                 interviewLang,
             ]);
             if (s.totalPayments > 0 && newApp) {
-                const [schedule] = await ds.query(`INSERT INTO payment_schedules (tenant_id, student_id, application_id, total_amount, currency, installment_count, start_date, payment_model, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 'TND', $5, NOW(), 'concurrent', 'active', NOW(), NOW())
-           RETURNING id`, [TENANT_ID, studentId, newApp.id, s.tuition, s.totalPayments]);
+                const [schedule] = await ds.query(`INSERT INTO payment_schedules (tenant_id, application_id, total_amount, currency, installment_count, payment_model, generated_by, created_at)
+           VALUES ($1, $2, $3, 'TND', $4, 'concurrent', $5, NOW())
+           RETURNING id`, [TENANT_ID, newApp.id, s.tuition, s.totalPayments, adminId]);
                 if (schedule) {
                     for (let i = 1; i <= s.totalPayments; i++) {
                         const isPaid = i <= s.paymentsPaid;
-                        const [inst] = await ds.query(`INSERT INTO installments (tenant_id, schedule_id, sequence_number, due_date, amount, currency, status, created_at, updated_at)
-               VALUES ($1, $2, $3, NOW() + INTERVAL '${i * 30} days', $4, 'TND', $5, NOW(), NOW())
-               RETURNING id`, [TENANT_ID, schedule.id, i, (s.tuition / s.totalPayments).toFixed(2), isPaid ? 'paid' : 'pending']);
+                        const [inst] = await ds.query(`INSERT INTO installments (tenant_id, payment_schedule_id, sequence_number, due_date, grace_due_date, amount, currency, status, amount_paid, paid_at, created_at)
+               VALUES ($1, $2, $3, NOW() + INTERVAL '${i * 30} days', NOW() + INTERVAL '${i * 30 + 7} days', $4, 'TND', $5, $6, $7, NOW())
+               RETURNING id`, [
+                            TENANT_ID, schedule.id, i, (s.tuition / s.totalPayments).toFixed(2), isPaid ? 'paid' : 'pending',
+                            isPaid ? (s.tuition / s.totalPayments).toFixed(2) : 0,
+                            isPaid ? new Date(Date.now() - (s.paymentsPaid - i + 1) * 30 * 24 * 60 * 60 * 1000) : null,
+                        ]);
                         if (isPaid && inst) {
-                            await ds.query(`INSERT INTO payments (tenant_id, installment_id, student_id, amount, currency, paid_at, payment_method, status, recorded_by, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, 'TND', NOW() - INTERVAL '${(s.paymentsPaid - i + 1) * 30} days', 'bank_transfer', 'paid', $5, NOW(), NOW())`, [TENANT_ID, inst.id, studentId, (s.tuition / s.totalPayments).toFixed(2), adminId]);
+                            await ds.query(`INSERT INTO payments (tenant_id, installment_id, student_id, amount, currency, payment_date, payment_method, status, received_by, created_at)
+                 VALUES ($1, $2, $3, $4, 'TND', $5, 'bank_transfer', 'confirmed', $6, NOW())`, [
+                                TENANT_ID, inst.id, studentId, (s.tuition / s.totalPayments).toFixed(2),
+                                new Date(Date.now() - (s.paymentsPaid - i + 1) * 30 * 24 * 60 * 60 * 1000), adminId,
+                            ]);
                         }
                     }
                 }
@@ -333,7 +355,7 @@ async function seedDemo() {
     }
     console.log(`\n✅ Demo seed complete! ${seededCount} records created.\n`);
     console.log('Demo accounts:');
-    console.log('  Admin:      admin@forsa.tn          / Forsa2026pass');
+    console.log(`  Admin:      admin@forsa.tn          / (see BOOTSTRAP_ADMIN_PASSWORD in .env)`);
     console.log('  Student:    student@forsa.tn         / Demo2026!');
     console.log('  University: university@forsa.tn      / University2026!');
     console.log('  Partner:    partner@forsa.tn         / Partner2026!');

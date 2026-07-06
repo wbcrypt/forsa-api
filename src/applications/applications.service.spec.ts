@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ApplicationsService } from './applications.service';
 import { ApplicationStatus } from '../common/enums';
@@ -72,6 +72,28 @@ describe('ApplicationsService.transitionStatus', () => {
     // Only the findOne SELECT should have run — no UPDATE/INSERT for a
     // rejected transition.
     expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  // Business decision (2026-07-06) — self-submitted Financing Requests
+  // must enter the automated pipeline without a manual staff CRM step.
+  // Before this fix, NEW_LEAD only permitted CONTACTED/
+  // WAITING_FOR_DOCUMENTS — every self-submitted application (which
+  // always starts at NEW_LEAD) failed its very first "Run Pipeline"
+  // click with "Invalid status transition: new_lead -> under_review".
+  it('allows a fresh NEW_LEAD application to transition directly to UNDER_REVIEW (pipeline auto-entry)', async () => {
+    query
+      .mockResolvedValueOnce([baseApplication]) // findOne
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined);
+
+    const result = await service.transitionStatus(
+      'app-1', 'tenant-1', ApplicationStatus.UNDER_REVIEW, null, 'Entered automated review',
+    );
+
+    expect(result).toEqual({
+      id: 'app-1', previousStatus: ApplicationStatus.NEW_LEAD, newStatus: ApplicationStatus.UNDER_REVIEW,
+    });
   });
 
   it('rejects a transition into one of the enum\'s dead V2-vocabulary values', async () => {
@@ -371,5 +393,87 @@ describe('ApplicationsService.confirmEnrollment', () => {
     const updateCall = query.mock.calls[2];
     expect(updateCall[0]).toContain('UPDATE applications SET current_status');
     expect(updateCall[1]).toContain('university_confirmed');
+  });
+});
+
+// Phase 3 (browser E2E testing) discovery — StudentDetailPage called the
+// staff-only GET /applications/:id and /:id/status-history directly,
+// 403ing for every real university account (a separate bug from the
+// findAllForMyUniversity/confirmEnrollment fixes above — this is single
+// application *detail*, not the list, and not a write).
+describe('ApplicationsService.findOneForMyUniversity / getStatusHistoryForMyUniversity', () => {
+  let service: ApplicationsService;
+  let query: jest.Mock;
+  let universitiesService: jest.Mocked<Pick<UniversitiesService, 'findMe'>>;
+
+  beforeEach(() => {
+    query = jest.fn();
+    universitiesService = { findMe: jest.fn() };
+    service = new ApplicationsService(
+      { query } as unknown as DataSource,
+      {} as unknown as NotificationsService,
+      universitiesService as unknown as UniversitiesService,
+    );
+  });
+
+  it('rejects an application belonging to a different university', async () => {
+    universitiesService.findMe.mockResolvedValueOnce({ id: 'uni-1' });
+    query.mockResolvedValueOnce([{ id: 'app-1', university_id: 'uni-2' }]); // findOne
+
+    await expect(
+      service.findOneForMyUniversity('uni-user-1', 'tenant-1', 'app-1'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('returns the application detail for the calling university\'s own application', async () => {
+    universitiesService.findMe.mockResolvedValueOnce({ id: 'uni-1' });
+    query.mockResolvedValueOnce([{ id: 'app-1', university_id: 'uni-1' }]);
+
+    const result = await service.findOneForMyUniversity('uni-user-1', 'tenant-1', 'app-1');
+    expect(result).toEqual({ id: 'app-1', university_id: 'uni-1' });
+  });
+
+  it('rejects status history for an application belonging to a different university', async () => {
+    universitiesService.findMe.mockResolvedValueOnce({ id: 'uni-1' });
+    query.mockResolvedValueOnce([{ id: 'app-1', university_id: 'uni-2' }]);
+
+    await expect(
+      service.getStatusHistoryForMyUniversity('uni-user-1', 'tenant-1', 'app-1'),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+// Phase 3 (browser E2E testing) discovery — ApplicationPage called the
+// staff-only GET /applications/:id/status-history directly, 403ing for
+// every real student.
+describe('ApplicationsService.getStatusHistoryForMe', () => {
+  let service: ApplicationsService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new ApplicationsService(
+      { query } as unknown as DataSource,
+      {} as unknown as NotificationsService,
+      {} as unknown as UniversitiesService,
+    );
+  });
+
+  it('rejects when the caller does not own the application', async () => {
+    query.mockResolvedValueOnce([]); // ownership check finds nothing
+
+    await expect(
+      service.getStatusHistoryForMe('user-1', 'tenant-1', 'app-1'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('returns status history for the calling student\'s own application', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'app-1' }]) // ownership check
+      .mockResolvedValueOnce([{ id: 'app-1' }]) // findOne (inside getStatusHistory)
+      .mockResolvedValueOnce([{ id: 'hist-1', new_status: 'contacted' }]); // status history rows
+
+    const result = await service.getStatusHistoryForMe('user-1', 'tenant-1', 'app-1');
+    expect(result).toEqual([{ id: 'hist-1', new_status: 'contacted' }]);
   });
 });

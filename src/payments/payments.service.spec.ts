@@ -1,4 +1,5 @@
 import { DataSource } from 'typeorm';
+import { NotFoundException } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
@@ -126,14 +127,15 @@ describe('PaymentsService.submitReceipt — receiptDocumentId verification', () 
   });
 
   const submitParams = {
-    tenantId: 'tenant-1', installmentId: 'inst-1', studentId: 'student-1',
+    tenantId: 'tenant-1', installmentId: 'inst-1', callerUserId: 'user-1',
     paymentDate: '2026-07-01', amount: 500, receiptDocumentId: 'doc-1',
   };
 
   it('rejects a receiptDocumentId that does not resolve to a completed upload for this student', async () => {
     query
-      .mockResolvedValueOnce([installmentRow]) // fetch installment
-      .mockResolvedValueOnce([]);              // verifyReceiptDocument finds nothing
+      .mockResolvedValueOnce([installmentRow])       // fetch installment
+      .mockResolvedValueOnce([{ id: 'student-1' }])  // ownership check: caller owns installment
+      .mockResolvedValueOnce([]);                    // verifyReceiptDocument finds nothing
 
     await expect(service.submitReceipt(submitParams))
       .rejects.toThrow('receiptDocumentId does not reference a completed upload for this student');
@@ -141,9 +143,10 @@ describe('PaymentsService.submitReceipt — receiptDocumentId verification', () 
 
   it('accepts and persists a receiptDocumentId that does belong to this student', async () => {
     query
-      .mockResolvedValueOnce([installmentRow])   // fetch installment
-      .mockResolvedValueOnce([{ id: 'doc-1' }])   // verifyReceiptDocument finds it
-      .mockResolvedValueOnce([])                  // no existing pending receipt
+      .mockResolvedValueOnce([installmentRow])       // fetch installment
+      .mockResolvedValueOnce([{ id: 'student-1' }])  // ownership check: caller owns installment
+      .mockResolvedValueOnce([{ id: 'doc-1' }])       // verifyReceiptDocument finds it
+      .mockResolvedValueOnce([])                      // no existing pending receipt
       .mockResolvedValueOnce([{ id: 'payment-1' }]); // INSERT payments RETURNING id
 
     const result = await service.submitReceipt(submitParams);
@@ -156,6 +159,7 @@ describe('PaymentsService.submitReceipt — receiptDocumentId verification', () 
   it('proceeds normally when no receiptDocumentId is supplied (filename-only, legacy path)', async () => {
     query
       .mockResolvedValueOnce([installmentRow])
+      .mockResolvedValueOnce([{ id: 'student-1' }]) // ownership check: caller owns installment
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'payment-1' }]);
 
@@ -163,8 +167,95 @@ describe('PaymentsService.submitReceipt — receiptDocumentId verification', () 
     const result = await service.submitReceipt(withoutDoc);
 
     expect(result).toEqual({ paymentId: 'payment-1', status: 'receipt_uploaded' });
-    // Only 3 queries: installment fetch, existing-receipt check, INSERT —
-    // no verifyReceiptDocument query when nothing was supplied.
-    expect(query).toHaveBeenCalledTimes(3);
+    // 4 queries: installment fetch, ownership check, existing-receipt
+    // check, INSERT — no verifyReceiptDocument query when nothing was
+    // supplied.
+    expect(query).toHaveBeenCalledTimes(4);
+  });
+
+  // Phase 3 (browser E2E testing) discovery — this route previously had
+  // no ownership check at all: any authenticated student could submit a
+  // receipt against any OTHER student's installment. Locks down the fix.
+  it('rejects when the caller does not own the installment', async () => {
+    query
+      .mockResolvedValueOnce([installmentRow]) // fetch installment (belongs to student-1)
+      .mockResolvedValueOnce([]);              // ownership check: caller has no matching student row
+
+    await expect(
+      service.submitReceipt({ ...submitParams, callerUserId: 'someone-elses-user-id' }),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+// Phase 3 (browser E2E testing) discovery — the Konnect "pay online" route
+// had no ownership check at all before this fix (and inserted the wrong id
+// type — auth user id, not students.id — into payments.student_id).
+// verifyMyInstallmentOwnership is the fix: the controller calls this first
+// to get a trusted, verified studentId before ever calling KonnectService.
+describe('PaymentsService.verifyMyInstallmentOwnership', () => {
+  let service: PaymentsService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new PaymentsService(
+      { query } as unknown as DataSource,
+      {} as unknown as PolicyService,
+      {} as unknown as ScoreService,
+      {} as unknown as ConfigService,
+      {} as unknown as NotificationsService,
+      {} as unknown as LedgerService,
+    );
+  });
+
+  it('returns the students.id when the caller owns the installment', async () => {
+    query.mockResolvedValueOnce([{ student_id: 'student-1' }]);
+    const result = await service.verifyMyInstallmentOwnership('user-1', 'inst-1', 'tenant-1');
+    expect(result).toBe('student-1');
+  });
+
+  it('rejects when the caller does not own the installment (or it does not exist)', async () => {
+    query.mockResolvedValueOnce([]);
+    await expect(
+      service.verifyMyInstallmentOwnership('user-1', 'inst-1', 'tenant-1'),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+// Phase 3 (browser E2E testing) discovery — the university portal's
+// Payments page and StudentDetailPage called the staff-only
+// GET /payments/schedules/applications/:id directly, 403ing for every
+// real university account.
+describe('PaymentsService.findScheduleForMyUniversityApplication', () => {
+  let service: PaymentsService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new PaymentsService(
+      { query } as unknown as DataSource,
+      {} as unknown as PolicyService,
+      {} as unknown as ScoreService,
+      {} as unknown as ConfigService,
+      {} as unknown as NotificationsService,
+      {} as unknown as LedgerService,
+    );
+  });
+
+  it('rejects when the application does not belong to the caller\'s university', async () => {
+    query.mockResolvedValueOnce([]); // ownership check finds nothing
+
+    await expect(
+      service.findScheduleForMyUniversityApplication('uni-user-1', 'app-1', 'tenant-1'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('returns the schedule for the caller\'s own university application', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'app-1' }])       // ownership check
+      .mockResolvedValueOnce([{ id: 'sched-1' }]);    // getScheduleForApplication
+
+    const result = await service.findScheduleForMyUniversityApplication('uni-user-1', 'app-1', 'tenant-1');
+    expect(result).toEqual({ id: 'sched-1' });
   });
 });

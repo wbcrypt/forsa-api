@@ -7,6 +7,7 @@ export declare class StudentsService {
     private readonly logger;
     constructor(dataSource: DataSource, configService: ConfigService);
     create(dto: any, tenantId: string, createdBy: string): Promise<any>;
+    findMe(userId: string, tenantId: string): Promise<any>;
     findAll(tenantId: string, pagination: PaginationDto, filters?: any): Promise<import("../common/utils/pagination.util").PaginatedResult<unknown>>;
     findOne(id: string, tenantId: string, includePii?: boolean): Promise<any>;
     update(id: string, tenantId: string, dto: any, updatedBy: string): Promise<any>;
@@ -19,5 +20,7 @@ export declare class StudentsService {
     getExceptionalEvents(studentId: string, tenantId: string): Promise<any>;
     getApplicationHistory(studentId: string, tenantId: string): Promise<any>;
     getPaymentHistory(studentId: string, tenantId: string): Promise<any>;
+    findMyPayments(userId: string, tenantId: string): Promise<any>;
+    findMyApplications(userId: string, tenantId: string): Promise<any>;
     private audit;
 }

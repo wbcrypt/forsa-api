@@ -48,6 +48,24 @@ export class ApplicationsController {
     return this.service.findAllForMyUniversity(u, t, p, f);
   }
 
+  @Get('university-mine/:id')
+  @ApiOperation({ summary: "Get one of the logged-in university portal user's own application's detail" })
+  findOneForMyUniversity(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.findOneForMyUniversity(u, t, id);
+  }
+
+  @Get('university-mine/:id/status-history')
+  @ApiOperation({ summary: "Get one of the logged-in university portal user's own application's status history" })
+  getStatusHistoryForMyUniversity(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.getStatusHistoryForMyUniversity(u, t, id);
+  }
+
+  @Get('me/:id/status-history')
+  @ApiOperation({ summary: "Get the logged-in student's own application's status history" })
+  getStatusHistoryForMe(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.getStatusHistoryForMe(u, t, id);
+  }
+
   @Get()
   @RequirePermissions('application.view')
   @ApiOperation({ summary: 'List applications with filters' })

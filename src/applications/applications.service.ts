@@ -11,7 +11,18 @@ import { UniversitiesService } from '../universities/universities.service';
 
 // Valid status transitions (state machine)
 const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
-  [ApplicationStatus.NEW_LEAD]: [ApplicationStatus.CONTACTED, ApplicationStatus.WAITING_FOR_DOCUMENTS],
+  // Business decision (2026-07-06) — self-submitted Financing Requests
+  // must enter the automated pipeline without a manual staff CRM step.
+  // Every self-submitted application starts at NEW_LEAD (its AI Interview
+  // already stands in for the "contacted"/"waiting for documents" CRM
+  // stages, which don't apply to a self-service submission) and Stage 8
+  // of the pipeline now always transitions straight to UNDER_REVIEW —
+  // this is the one addition that makes that legal. Everything
+  // downstream of UNDER_REVIEW (approval, rejection, waiting list, etc.)
+  // already had the transitions it needs.
+  [ApplicationStatus.NEW_LEAD]: [
+    ApplicationStatus.CONTACTED, ApplicationStatus.WAITING_FOR_DOCUMENTS, ApplicationStatus.UNDER_REVIEW,
+  ],
   [ApplicationStatus.CONTACTED]: [ApplicationStatus.WAITING_FOR_DOCUMENTS, ApplicationStatus.REJECTED],
   [ApplicationStatus.WAITING_FOR_DOCUMENTS]: [ApplicationStatus.DOCUMENTS_RECEIVED, ApplicationStatus.ON_HOLD],
   [ApplicationStatus.DOCUMENTS_RECEIVED]: [ApplicationStatus.UNDER_REVIEW],
@@ -186,6 +197,38 @@ export class ApplicationsService {
   async findAllForMyUniversity(userId: string, tenantId: string, pagination: PaginationDto, filters: any = {}) {
     const university = await this.universitiesService.findMe(userId, tenantId);
     return this.findAll(tenantId, pagination, { ...filters, universityId: university.id });
+  }
+
+  // Phase 3 (browser E2E testing) discovery — StudentDetailPage called
+  // the staff-only GET /applications/:id directly, 403ing for every real
+  // university account. Verifies the application actually belongs to
+  // the caller's own university before returning it.
+  async findOneForMyUniversity(userId: string, tenantId: string, applicationId: string) {
+    const university = await this.universitiesService.findMe(userId, tenantId);
+    const application = await this.findOne(applicationId, tenantId);
+    if (application.university_id !== university.id) {
+      throw new NotFoundException('Application not found');
+    }
+    return application;
+  }
+
+  async getStatusHistoryForMyUniversity(userId: string, tenantId: string, applicationId: string) {
+    await this.findOneForMyUniversity(userId, tenantId, applicationId);
+    return this.getStatusHistory(applicationId, tenantId);
+  }
+
+  // Phase 3 (browser E2E testing) discovery — ApplicationPage called the
+  // staff-only GET /applications/:id/status-history directly, 403ing for
+  // every real student.
+  async getStatusHistoryForMe(userId: string, tenantId: string, applicationId: string) {
+    const [owned] = await this.dataSource.query<any[]>(
+      `SELECT a.id FROM applications a
+       JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND s.user_id = $3`,
+      [applicationId, tenantId, userId],
+    );
+    if (!owned) throw new NotFoundException('Application not found');
+    return this.getStatusHistory(applicationId, tenantId);
   }
 
   async findAll(tenantId: string, pagination: PaginationDto, filters: any = {}) {

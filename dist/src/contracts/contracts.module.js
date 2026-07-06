@@ -12,12 +12,13 @@ const contracts_controller_1 = require("./contracts.controller");
 const contracts_service_1 = require("./contracts.service");
 const documents_module_1 = require("../documents/documents.module");
 const policy_module_1 = require("../policy/policy.module");
+const notifications_module_1 = require("../notifications/notifications.module");
 let ContractsModule = class ContractsModule {
 };
 exports.ContractsModule = ContractsModule;
 exports.ContractsModule = ContractsModule = __decorate([
     (0, common_1.Module)({
-        imports: [documents_module_1.DocumentsModule, policy_module_1.PolicyModule],
+        imports: [documents_module_1.DocumentsModule, policy_module_1.PolicyModule, notifications_module_1.NotificationsModule],
         controllers: [contracts_controller_1.ContractsController],
         providers: [contracts_service_1.ContractsService],
         exports: [contracts_service_1.ContractsService],

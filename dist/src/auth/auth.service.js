@@ -59,6 +59,7 @@ const user_entity_1 = require("../users/entities/user.entity");
 const user_session_entity_1 = require("../users/entities/user-session.entity");
 const enums_1 = require("../common/enums");
 const encryption_util_1 = require("../common/utils/encryption.util");
+const password_util_1 = require("../common/utils/password.util");
 const security_event_service_1 = require("./services/security-event.service");
 const mfa_service_1 = require("./services/mfa.service");
 let AuthService = AuthService_1 = class AuthService {
@@ -187,6 +188,23 @@ let AuthService = AuthService_1 = class AuthService {
             refreshToken,
             expiresIn: 900,
         };
+    }
+    async setPassword(rawToken, newPassword) {
+        (0, password_util_1.validatePasswordComplexity)(newPassword);
+        const tokenHash = (0, encryption_util_1.hashToken)(rawToken);
+        const [tokenRow] = await this.dataSource.query(`SELECT id, user_id, tenant_id FROM password_setup_tokens
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()`, [tokenHash]);
+        if (!tokenRow) {
+            throw new common_1.BadRequestException('This set-password link is invalid or has expired');
+        }
+        const passwordHash = await (0, password_util_1.hashPassword)(newPassword);
+        await this.dataSource.transaction(async (manager) => {
+            await manager.query(`UPDATE users
+         SET password_hash = $2, must_change_password = false,
+             status = $3, email_verified = true, password_changed_at = NOW()
+         WHERE id = $1`, [tokenRow.user_id, passwordHash, enums_1.UserStatus.ACTIVE]);
+            await manager.query(`UPDATE password_setup_tokens SET used_at = NOW() WHERE id = $1`, [tokenRow.id]);
+        });
     }
     async logout(sessionId, userId, ipAddress) {
         await this.dataSource.query(`UPDATE user_sessions

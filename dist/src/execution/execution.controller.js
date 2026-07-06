@@ -36,6 +36,9 @@ let ExecutionController = class ExecutionController {
     getHistory(t, limit) {
         return this.service.getExecutionHistory(t, limit || 50);
     }
+    getDisbursements(t, limit) {
+        return this.service.getDisbursements(t, limit || 100);
+    }
 };
 exports.ExecutionController = ExecutionController;
 __decorate([
@@ -60,6 +63,16 @@ __decorate([
     __metadata("design:paramtypes", [String, Number]),
     __metadata("design:returntype", void 0)
 ], ExecutionController.prototype, "getHistory", null);
+__decorate([
+    (0, common_1.Get)('disbursements'),
+    (0, decorators_1.RequirePermissions)('execution.view'),
+    (0, swagger_1.ApiOperation)({ summary: 'View university disbursement history' }),
+    __param(0, (0, decorators_1.CurrentTenant)()),
+    __param(1, (0, common_1.Query)('limit')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Number]),
+    __metadata("design:returntype", void 0)
+], ExecutionController.prototype, "getDisbursements", null);
 exports.ExecutionController = ExecutionController = __decorate([
     (0, swagger_1.ApiTags)('Decision Execution Engine'),
     (0, swagger_1.ApiBearerAuth)(),

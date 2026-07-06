@@ -68,6 +68,8 @@ const PERMISSIONS = [
     ['student.create', 'students', 'create', 'Create students', false],
     ['student.edit', 'students', 'edit', 'Edit student details', false],
     ['student.view_pii', 'students', 'view_pii', 'View student PII', true],
+    ['membership.view', 'membership', 'view', 'View membership requests', false],
+    ['membership.approve', 'membership', 'approve', 'Approve/reject membership requests, issuing Bronze membership', true],
     ['application.view', 'applications', 'view', 'View applications', false],
     ['application.create', 'applications', 'create', 'Create applications', false],
     ['application.edit', 'applications', 'edit', 'Edit applications', false],
@@ -76,6 +78,8 @@ const PERMISSIONS = [
     ['pipeline.run', 'pipeline', 'run', 'Start pipeline runs', true],
     ['pipeline.view', 'pipeline', 'view', 'View pipeline runs and traces', false],
     ['pipeline.review', 'pipeline', 'review', 'Submit human decisions', true],
+    ['fraud.flag', 'pipeline', 'fraud_flag', 'Flag confirmed fraud — permanently blacklists the student', true],
+    ['financing.override', 'pipeline', 'override', 'CEO override — finalize a decision bypassing multi-approver consensus', true],
     ['score.view', 'score', 'view', 'View FORSA scores', false],
     ['score.record', 'score', 'record', 'Record score events', true],
     ['score.correct', 'score', 'correct', 'Create corrective events', true],
@@ -117,6 +121,7 @@ const DOCUMENT_TYPES = [
     ['employment_contract', 'Employment Contract', 'financial', 'Guarantor employment contract', false],
     ['guarantor_id', 'Guarantor National ID', 'identity', 'Guarantor identification', true],
     ['residency_proof', 'Residency Proof', 'identity', 'Proof of address', false],
+    ['payment_receipt', 'Payment Receipt', 'financial', 'Bank transfer or cash deposit receipt uploaded by a student or guarantor (T-111)', false],
     ['birth_certificate', 'Birth Certificate', 'identity', 'Student birth certificate', false],
     ['medical_certificate', 'Medical Certificate', 'health', 'For medical withdrawals only', false],
 ];
@@ -142,7 +147,7 @@ const NOTIFICATION_TEMPLATES = [
     ['document_requested', 'email', 'Documents Required', 'Action Required: Documents for {{programName}}',
         '<p>Dear {{studentName}},</p><p>Please upload the following documents: {{missingDocuments}}</p>', true],
     ['application_approved', 'email', 'Application Approved', '🎉 Your Application is Approved',
-        '<p>Dear {{studentName}},</p><p>Congratulations! Your application for {{programName}} at {{universityName}} has been approved at Level {{approvedLevel}}.</p>', true],
+        '<p>Dear {{studentName}},</p><p>Congratulations! Your application for {{programName}} at {{universityName}} has been approved at Level {{approvedLevel}}{{tierSuffix}}.</p>', true],
     ['application_rejected', 'email', 'Application Update', 'Update on Your Application',
         '<p>Dear {{studentName}},</p><p>We regret to inform you that your application could not be approved at this time. Reason: {{rejectionReason}}</p>', true],
     ['payment_due_soon', 'email', 'Payment Reminder', 'Payment Due in {{daysUntilDue}} Days',
@@ -153,6 +158,14 @@ const NOTIFICATION_TEMPLATES = [
         '<p>Dear {{studentName}},</p><p>Your payment of {{amount}} {{currency}} has been received. Reference: {{paymentReference}}</p>', true],
     ['contract_ready', 'email', 'Contract Ready for Signature', 'Please Sign Your Financing Contract',
         '<p>Dear {{studentName}},</p><p>Your financing contract is ready for your signature.</p>', true],
+    ['membership_approved', 'email', 'Membership Approved — Set Your Password', '🎉 Welcome to FORSA — Set Your Password',
+        '<p>Dear {{studentName}},</p><p>Your FORSA membership request has been approved! You are now a Bronze member.</p><p>Your FORSA ID: <strong>{{forsaId}}</strong></p><p>Set your password to access your account: <a href="{{setPasswordUrl}}">{{setPasswordUrl}}</a></p><p>This link expires in 48 hours.</p>', true],
+    ['membership_submitted', 'email', 'Membership Request Received', 'We’ve received your FORSA membership request',
+        '<p>Dear {{firstName}},</p><p>Thank you for submitting a FORSA membership request. Our team will review it shortly, and you’ll receive another email once a decision is made.</p>', true],
+    ['digital_pass_ready', 'email', 'Your Digital Student Pass is Ready', '🎫 Your FORSA Digital Student Pass is ready',
+        '<p>Dear {{studentName}},</p><p>Your FORSA Digital Student Pass is ready. You can view your QR pass anytime from your student dashboard.</p>', true],
+    ['waiting_list', 'email', 'Placed on the FORSA Waiting List', 'You’ve been placed on the FORSA Waiting List',
+        '<p>Dear {{studentName}},</p><p>Your application for {{programName}} has not been rejected — you’ve been placed on FORSA’s Waiting List while capital becomes available. We will notify you as soon as your application can move forward.</p>', true],
 ];
 async function main() {
     await ds.initialize();
@@ -181,6 +194,14 @@ async function main() {
        ON CONFLICT (code, channel) DO NOTHING`, [code, channel, name, subject, body, active]);
     }
     console.log(`✓ ${NOTIFICATION_TEMPLATES.length} notification templates`);
+    const syncedRows = await ds.query(`INSERT INTO role_permissions (role_id, permission_id, granted_by, granted_at)
+     SELECT r.id, p.id, '00000000-0000-0000-0000-000000000000', NOW()
+     FROM roles r
+     CROSS JOIN permissions p
+     WHERE r.is_system_role = true
+     ON CONFLICT (role_id, permission_id) DO NOTHING
+     RETURNING 1`);
+    console.log(`✓ synced ${syncedRows.length} missing permission grant(s) onto full-access system roles`);
     await ds.destroy();
     console.log('\nReference data seed complete.');
 }

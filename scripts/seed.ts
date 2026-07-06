@@ -222,6 +222,30 @@ async function main() {
   }
   console.log(`✓ ${NOTIFICATION_TEMPLATES.length} notification templates`);
 
+  // Business decision (2026-07-06) — full-access system roles (SUPER_ADMIN
+  // today; any future role flagged is_system_role) previously only got
+  // their permission set once, at the moment scripts/seed-admin.ts first
+  // created the role. Every permission this script adds afterward —
+  // which happens with nearly every feature — was invisible to any
+  // pre-existing admin account until someone manually re-granted it (a
+  // real bug found during Phase 3 browser testing: a pre-existing admin
+  // 403'd on the Membership Queue). This re-run is idempotent (ON
+  // CONFLICT DO NOTHING) and applies across every tenant, so re-running
+  // this script — which should happen on every deploy, same as
+  // migrations — keeps every full-access system role's permissions
+  // current automatically, with no manual re-grant step ever needed
+  // again.
+  const syncedRows = await ds.query(
+    `INSERT INTO role_permissions (role_id, permission_id, granted_by, granted_at)
+     SELECT r.id, p.id, '00000000-0000-0000-0000-000000000000', NOW()
+     FROM roles r
+     CROSS JOIN permissions p
+     WHERE r.is_system_role = true
+     ON CONFLICT (role_id, permission_id) DO NOTHING
+     RETURNING 1`,
+  );
+  console.log(`✓ synced ${syncedRows.length} missing permission grant(s) onto full-access system roles`);
+
   await ds.destroy();
   console.log('\nReference data seed complete.');
 }

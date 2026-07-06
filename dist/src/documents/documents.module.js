@@ -11,12 +11,13 @@ const common_1 = require("@nestjs/common");
 const documents_controller_1 = require("./documents.controller");
 const documents_service_1 = require("./documents.service");
 const policy_module_1 = require("../policy/policy.module");
+const notifications_module_1 = require("../notifications/notifications.module");
 let DocumentsModule = class DocumentsModule {
 };
 exports.DocumentsModule = DocumentsModule;
 exports.DocumentsModule = DocumentsModule = __decorate([
     (0, common_1.Module)({
-        imports: [policy_module_1.PolicyModule],
+        imports: [policy_module_1.PolicyModule, notifications_module_1.NotificationsModule],
         controllers: [documents_controller_1.DocumentsController],
         providers: [documents_service_1.DocumentsService],
         exports: [documents_service_1.DocumentsService],

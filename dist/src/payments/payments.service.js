@@ -23,18 +23,36 @@ const typeorm_2 = require("typeorm");
 const schedule_1 = require("@nestjs/schedule");
 const config_1 = require("@nestjs/config");
 const date_fns_1 = require("date-fns");
-const uuid_1 = require("uuid");
 const decimal_js_1 = __importDefault(require("decimal.js"));
 const policy_service_1 = require("../policy/policy.service");
 const score_service_1 = require("../score/score.service");
 const enums_1 = require("../common/enums");
+const notifications_service_1 = require("../notifications/notifications.service");
+const ledger_service_1 = require("./ledger.service");
 let PaymentsService = PaymentsService_1 = class PaymentsService {
-    constructor(dataSource, policyService, scoreService, configService) {
+    constructor(dataSource, policyService, scoreService, configService, notifications, ledger) {
         this.dataSource = dataSource;
         this.policyService = policyService;
         this.scoreService = scoreService;
         this.configService = configService;
+        this.notifications = notifications;
+        this.ledger = ledger;
         this.logger = new common_1.Logger(PaymentsService_1.name);
+    }
+    async notifyStudent(tenantId, studentId, templateCode, variables, referenceId) {
+        const [student] = await this.dataSource.query(`SELECT first_name, last_name, email FROM students WHERE id = $1 AND tenant_id = $2`, [studentId, tenantId]);
+        if (!student?.email)
+            return;
+        await this.notifications.send({
+            tenantId,
+            recipientId: studentId,
+            recipientEmail: student.email,
+            channel: enums_1.NotificationChannel.EMAIL,
+            templateCode,
+            variables: { studentName: `${student.first_name} ${student.last_name}`.trim(), ...variables },
+            referenceId,
+            referenceType: 'payment',
+        }).catch(err => this.logger.error(`Notification ${templateCode} failed`, err));
     }
     async generateSchedule(params) {
         const [application] = await this.dataSource.query(`SELECT a.*, ua.payment_model, ua.id AS agreement_id,
@@ -150,7 +168,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
         await this.dataSource.query(`UPDATE installments
        SET amount_paid = $2, status = $3, paid_at = CASE WHEN $3 = 'paid' THEN NOW() ELSE paid_at END
        WHERE id = $1`, [params.installmentId, newPaid.toNumber(), newStatus]);
-        await this.recordLedgerEntries(params.tenantId, installment.application_id, payment.id, {
+        await this.ledger.recordEntries(params.tenantId, installment.application_id, payment.id, {
             debitAccount: 'bank', creditAccount: 'student_receivable',
             amount: paymentAmount.toNumber(), currency: params.currency,
             description: `Payment for installment ${installment.sequence_number}`,
@@ -173,6 +191,11 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
             });
         }
         await this.audit(params.tenantId, params.receivedBy, 'payment.recorded', payment.id, null, { amount: params.amount, installmentId: params.installmentId });
+        if (newStatus === 'paid') {
+            await this.notifyStudent(params.tenantId, installment.student_id, 'payment_confirmed', {
+                amount: paymentAmount.toNumber(), currency: params.currency, paymentReference: params.referenceNumber,
+            }, payment.id);
+        }
         return { paymentId: payment.id, newInstallmentStatus: newStatus, amountPaid: newPaid.toNumber() };
     }
     async reversePayment(paymentId, tenantId, reason, reversedBy) {
@@ -188,7 +211,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
        SET amount_paid = GREATEST(0, amount_paid - $2),
            status = 'pending', paid_at = NULL
        WHERE id = $1`, [payment.installment_id, payment.amount]);
-        await this.recordLedgerEntries(tenantId, null, payment.id, {
+        await this.ledger.recordEntries(tenantId, null, payment.id, {
             debitAccount: 'student_receivable', creditAccount: 'bank',
             amount: parseFloat(payment.amount), currency: payment.currency,
             description: `Reversal of payment ${paymentId}: ${reason}`,
@@ -221,6 +244,33 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
        GROUP BY ps.id`, [applicationId, tenantId]);
         return schedule || null;
     }
+    async findMyScheduleForApplication(userId, applicationId, tenantId) {
+        const [owned] = await this.dataSource.query(`SELECT a.id FROM applications a
+       JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND s.user_id = $3`, [applicationId, tenantId, userId]);
+        if (!owned)
+            throw new common_1.NotFoundException('Application not found');
+        return this.getScheduleForApplication(applicationId, tenantId);
+    }
+    async findScheduleForMyUniversityApplication(userId, applicationId, tenantId) {
+        const [owned] = await this.dataSource.query(`SELECT a.id FROM applications a
+       JOIN universities uni ON uni.id = a.university_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND uni.user_id = $3`, [applicationId, tenantId, userId]);
+        if (!owned)
+            throw new common_1.NotFoundException('Application not found');
+        return this.getScheduleForApplication(applicationId, tenantId);
+    }
+    async verifyMyInstallmentOwnership(userId, installmentId, tenantId) {
+        const [row] = await this.dataSource.query(`SELECT s.id AS student_id
+       FROM installments i
+       JOIN payment_schedules ps ON ps.id = i.payment_schedule_id
+       JOIN applications a ON a.id = ps.application_id
+       JOIN students s ON s.id = a.student_id
+       WHERE i.id = $1 AND ps.tenant_id = $2 AND s.user_id = $3`, [installmentId, tenantId, userId]);
+        if (!row)
+            throw new common_1.NotFoundException('Installment not found');
+        return row.student_id;
+    }
     async getInstallmentPayments(installmentId, tenantId) {
         return this.dataSource.query(`SELECT p.*, u.full_name AS received_by_name
        FROM payments p
@@ -232,11 +282,23 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
     }
     async updateInstallmentStatuses() {
         this.logger.log('Running daily installment status update');
-        await this.dataSource.query(`UPDATE installments
+        const dueSoonInstallments = await this.dataSource.query(`UPDATE installments
        SET status = 'due_soon'
        WHERE status = 'pending'
          AND due_date <= CURRENT_DATE + INTERVAL '7 days'
-         AND due_date > CURRENT_DATE`);
+         AND due_date > CURRENT_DATE
+       RETURNING id, payment_schedule_id, amount, due_date`);
+        for (const inst of dueSoonInstallments) {
+            const [ps] = await this.dataSource.query(`SELECT ps.tenant_id, a.student_id FROM payment_schedules ps
+         JOIN applications a ON a.id = ps.application_id
+         WHERE ps.id = $1`, [inst.payment_schedule_id]);
+            if (ps) {
+                const daysUntilDue = Math.max(0, Math.ceil((new Date(inst.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                await this.notifyStudent(ps.tenant_id, ps.student_id, 'payment_due_soon', {
+                    amount: inst.amount, currency: 'TND', dueDate: (0, date_fns_1.format)(new Date(inst.due_date), 'yyyy-MM-dd'), daysUntilDue,
+                }, inst.id);
+            }
+        }
         await this.dataSource.query(`UPDATE installments
        SET status = 'due_today'
        WHERE status IN ('pending','due_soon')
@@ -246,7 +308,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
        WHERE status IN ('pending','due_soon','due_today','partial')
          AND grace_due_date < CURRENT_DATE
          AND amount_paid < amount
-       RETURNING id, payment_schedule_id`);
+       RETURNING id, payment_schedule_id, amount, due_date`);
         for (const inst of lateInstallments) {
             const [ps] = await this.dataSource.query(`SELECT ps.tenant_id, a.student_id FROM payment_schedules ps
          JOIN applications a ON a.id = ps.application_id
@@ -263,8 +325,11 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
                     description: 'Payment overdue — grace period passed',
                     referenceId: inst.id,
                     referenceType: 'installment',
-                    recordedBy: 'system',
+                    recordedBy: null,
                 }).catch(err => this.logger.error('Score event failed for overdue installment', err));
+                await this.notifyStudent(ps.tenant_id, ps.student_id, 'payment_overdue', {
+                    amount: inst.amount, currency: 'TND', dueDate: (0, date_fns_1.format)(new Date(inst.due_date), 'yyyy-MM-dd'),
+                }, inst.id);
             }
         }
         await this.dataSource.query(`UPDATE installments
@@ -272,23 +337,21 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
        WHERE status = 'late'
          AND grace_due_date < CURRENT_DATE - INTERVAL '30 days'`);
     }
-    async recordLedgerEntries(tenantId, applicationId, referenceId, entry) {
-        const batchId = (0, uuid_1.v4)();
-        await this.dataSource.query(`INSERT INTO financial_ledger
-        (tenant_id, application_id, entry_type, account, amount, currency,
-         reference_id, reference_type, description, batch_id)
-       VALUES ($1,$2,'debit',$3,$4,$5,$6,'payment',$7,$8)`, [tenantId, applicationId, entry.debitAccount, entry.amount, entry.currency,
-            referenceId, entry.description, batchId]);
-        await this.dataSource.query(`INSERT INTO financial_ledger
-        (tenant_id, application_id, entry_type, account, amount, currency,
-         reference_id, reference_type, description, batch_id)
-       VALUES ($1,$2,'credit',$3,$4,$5,$6,'payment',$7,$8)`, [tenantId, applicationId, entry.creditAccount, entry.amount, entry.currency,
-            referenceId, entry.description, batchId]);
-    }
     async audit(tenantId, userId, action, targetId, prev, next) {
         await this.dataSource.query(`INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, previous_value, new_value, created_at)
        VALUES ($1,$2,$3,'payments','payments',$4,$5,$6,NOW())`, [tenantId, userId, action, targetId,
             prev ? JSON.stringify(prev) : null, next ? JSON.stringify(next) : null]).catch(err => this.logger.error('Audit log failed', err));
+    }
+    async verifyReceiptDocument(receiptDocumentId, tenantId, studentId) {
+        if (!receiptDocumentId)
+            return null;
+        const [doc] = await this.dataSource.query(`SELECT id FROM documents
+       WHERE id = $1 AND tenant_id = $2 AND entity_type = 'student' AND entity_id = $3
+         AND status = 'uploaded'`, [receiptDocumentId, tenantId, studentId]);
+        if (!doc) {
+            throw new common_1.BadRequestException('receiptDocumentId does not reference a completed upload for this student');
+        }
+        return doc.id;
     }
     async submitReceipt(params) {
         const [installment] = await this.dataSource.query(`SELECT i.*, ps.application_id, ps.tenant_id, a.student_id
@@ -298,19 +361,24 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
        WHERE i.id = $1 AND ps.tenant_id = $2`, [params.installmentId, params.tenantId]);
         if (!installment)
             throw new common_1.NotFoundException('Installment not found');
+        const [callerStudent] = await this.dataSource.query(`SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2`, [params.callerUserId, params.tenantId]);
+        if (!callerStudent || callerStudent.id !== installment.student_id) {
+            throw new common_1.NotFoundException('Installment not found');
+        }
         if (installment.status === 'paid' || installment.status === 'waived') {
             throw new common_1.BadRequestException(`Installment is already ${installment.status}`);
         }
+        const receiptDocumentId = await this.verifyReceiptDocument(params.receiptDocumentId, params.tenantId, installment.student_id);
         const [existing] = await this.dataSource.query(`SELECT id FROM payments
        WHERE installment_id = $1 AND tenant_id = $2
          AND status IN ('receipt_uploaded','pending_verification')
        LIMIT 1`, [params.installmentId, params.tenantId]);
         if (existing) {
             await this.dataSource.query(`UPDATE payments
-         SET receipt_filename = $2, bank_name = $3, student_bank_ref = $4,
-             student_amount = $5, payment_date = $6, notes = $7,
+         SET receipt_filename = $2, receipt_document_id = $3, bank_name = $4,
+             student_bank_ref = $5, student_amount = $6, payment_date = $7, notes = $8,
              receipt_uploaded_at = NOW(), status = 'receipt_uploaded'
-         WHERE id = $1`, [existing.id, params.receiptFilename, params.bankName,
+         WHERE id = $1`, [existing.id, params.receiptFilename, receiptDocumentId, params.bankName,
                 params.referenceNumber, params.amount,
                 params.paymentDate, params.notes]);
             return { paymentId: existing.id, status: 'receipt_uploaded' };
@@ -319,14 +387,14 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
         (tenant_id, installment_id, student_id, amount, currency,
          payment_method, reference_number, payment_date, status,
          bank_name, student_bank_ref, student_amount,
-         receipt_filename, receipt_uploaded_at, notes)
+         receipt_filename, receipt_document_id, receipt_uploaded_at, notes)
        VALUES ($1,$2,$3,$4,'TND','bank_transfer',$5,$6,'receipt_uploaded',
-               $7,$5,$4,$8,NOW(),$9)
+               $7,$5,$4,$8,$9,NOW(),$10)
        RETURNING id`, [
             params.tenantId, params.installmentId, installment.student_id,
             params.amount, params.referenceNumber,
             (0, date_fns_1.format)(new Date(params.paymentDate), 'yyyy-MM-dd'),
-            params.bankName, params.receiptFilename, params.notes,
+            params.bankName, params.receiptFilename, receiptDocumentId, params.notes,
         ]);
         this.logger.log(`Receipt submitted for installment ${params.installmentId} — awaiting admin verification`);
         return { paymentId: payment.id, status: 'receipt_uploaded' };
@@ -357,7 +425,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
         const rows = await this.dataSource.query(`SELECT
          p.id, p.status, p.amount, p.currency, p.payment_date,
          p.bank_name, p.student_bank_ref AS reference_number,
-         p.student_amount, p.receipt_filename,
+         p.student_amount, p.receipt_filename, p.receipt_document_id,
          p.receipt_uploaded_at, p.verified_at, p.verification_notes,
          p.rejection_reason, p.notes,
          p.payment_method,
@@ -379,7 +447,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
          CASE p.status WHEN 'receipt_uploaded' THEN 0 WHEN 'pending_verification' THEN 1 ELSE 2 END,
          p.receipt_uploaded_at DESC NULLS LAST,
          p.created_at DESC
-       LIMIT $${limitIdx - 1} OFFSET $${offsetIdx - 1}`, queryParams);
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`, queryParams);
         const countParams = [params.tenantId];
         let cIdx = 2;
         let cStatusClause = `AND p.status IN ('receipt_uploaded','pending_verification','verified','rejected')`;
@@ -440,7 +508,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
            status = $3,
            paid_at = CASE WHEN $3 = 'paid' THEN NOW() ELSE paid_at END
        WHERE id = $1`, [payment.installment_id, newPaid.toNumber(), newInstallmentStatus]);
-        await this.recordLedgerEntries(tenantId, payment.application_id, paymentId, {
+        await this.ledger.recordEntries(tenantId, payment.application_id, paymentId, {
             debitAccount: 'bank',
             creditAccount: 'student_receivable',
             amount: verifiedAmount.toNumber(),
@@ -464,6 +532,11 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
             });
         }
         await this.audit(tenantId, verifiedBy, 'payment.verified', paymentId, { status: payment.status }, { status: 'verified', notes, newInstallmentStatus });
+        if (newInstallmentStatus === 'paid') {
+            await this.notifyStudent(tenantId, payment.student_id, 'payment_confirmed', {
+                amount: verifiedAmount.toNumber(), currency: payment.currency || 'TND', paymentReference: payment.reference_number || paymentId,
+            }, paymentId);
+        }
         this.logger.log(`Payment ${paymentId} verified by ${verifiedBy} — installment now ${newInstallmentStatus}`);
         return {
             paymentId,
@@ -519,6 +592,8 @@ exports.PaymentsService = PaymentsService = PaymentsService_1 = __decorate([
     __metadata("design:paramtypes", [typeorm_2.DataSource,
         policy_service_1.PolicyService,
         score_service_1.ScoreService,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        notifications_service_1.NotificationsService,
+        ledger_service_1.LedgerService])
 ], PaymentsService);
 //# sourceMappingURL=payments.service.js.map

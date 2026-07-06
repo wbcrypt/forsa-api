@@ -2,7 +2,7 @@ import { DataSource } from 'typeorm';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
 import { ApplicationsService } from '../applications/applications.service';
-import { DecisionResult, PipelineRunStatus } from '../common/enums';
+import { ApplicationStatus, DecisionResult, PipelineRunStatus } from '../common/enums';
 export interface PipelineRunResult {
     pipelineRunId: string;
     applicationId: string;
@@ -43,7 +43,21 @@ export declare class PipelineService {
     private stage8HumanDecision;
     private stage9DecisionGeneration;
     private stage10DecisionExecution;
-    submitHumanDecision(pipelineRunId: string, tenantId: string, reviewerId: string, decision: 'approved' | 'rejected' | 'on_hold' | 'needs_more_documents', approvedAmount?: number, notes?: string): Promise<PipelineRunResult>;
+    submitHumanDecision(pipelineRunId: string, tenantId: string, reviewerId: string, decision: 'approved' | 'rejected' | 'on_hold' | 'needs_more_documents' | 'waiting_list', approvedAmount?: number, notes?: string, financingTier?: 'silver' | 'gold'): Promise<PipelineRunResult | {
+        status: string;
+        requiredApprovers: any;
+        approvedSoFar: number;
+        message: string;
+    }>;
+    findCapitalQueue(tenantId: string): Promise<any>;
+    findAllFraudRecords(tenantId: string): Promise<any>;
+    flagFraud(pipelineRunId: string, tenantId: string, flaggedBy: string, reason: string, evidenceNotes?: string): Promise<{
+        studentId: any;
+        membershipStatus: string;
+        applicationStatus: ApplicationStatus;
+    }>;
+    overrideDecision(pipelineRunId: string, tenantId: string, ceoUserId: string, decision: 'approved' | 'rejected', notes: string, approvedAmount?: number, financingTier?: 'silver' | 'gold'): Promise<PipelineRunResult>;
+    private renewalPriorityBoost;
     private computeDcs;
     private buildExplanation;
     private stageName;

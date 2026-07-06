@@ -6,6 +6,8 @@ export declare class PaymentsController {
     constructor(service: PaymentsService, konnect: KonnectService);
     generateSchedule(body: any, t: string, u: string): Promise<any>;
     getScheduleForApplication(id: string, t: string): Promise<any>;
+    getMyScheduleForApplication(id: string, t: string, u: string): Promise<any>;
+    getScheduleForMyUniversityApplication(id: string, t: string, u: string): Promise<any>;
     getSchedule(id: string, t: string): Promise<any>;
     recordPayment(body: any, t: string, u: string): Promise<{
         paymentId: any;
@@ -26,8 +28,9 @@ export declare class PaymentsController {
         bankName?: string;
         referenceNumber?: string;
         receiptFilename?: string;
+        receiptDocumentId?: string;
         notes?: string;
-    }, t: string, u: string, studentId: string): Promise<{
+    }, t: string, u: string): Promise<{
         paymentId: any;
         status: string;
     }>;

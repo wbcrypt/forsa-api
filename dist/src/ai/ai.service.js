@@ -21,7 +21,7 @@ let AiService = AiService_1 = class AiService {
     constructor(config) {
         this.config = config;
         this.logger = new common_1.Logger(AiService_1.name);
-        this.model = 'claude-sonnet-4-6';
+        this.model = 'claude-opus-4-8';
         this.apiKey = this.config.get('ai.anthropicApiKey');
     }
     get hasApiKey() {

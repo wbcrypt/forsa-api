@@ -26,6 +26,9 @@ let ScoreController = class ScoreController {
     getScore(id, t) {
         return this.service.getScore(id, t);
     }
+    getScoreForMyUniversityStudent(id, u, t) {
+        return this.service.getScoreForMyUniversityStudent(u, t, id);
+    }
     getHistory(id, t) {
         return this.service.getScoreHistory(id, t);
     }
@@ -50,6 +53,16 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], ScoreController.prototype, "getScore", null);
+__decorate([
+    (0, common_1.Get)('university-mine/students/:studentId'),
+    (0, swagger_1.ApiOperation)({ summary: "Get a FORSA score for one of the logged-in university portal user's own students" }),
+    __param(0, (0, common_1.Param)('studentId', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentUser)('id')),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], ScoreController.prototype, "getScoreForMyUniversityStudent", null);
 __decorate([
     (0, common_1.Get)('students/:studentId/history'),
     (0, decorators_1.RequirePermissions)('score.view'),

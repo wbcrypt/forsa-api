@@ -11,12 +11,13 @@ const common_1 = require("@nestjs/common");
 const guarantors_controller_1 = require("./guarantors.controller");
 const guarantors_service_1 = require("./guarantors.service");
 const payments_module_1 = require("../payments/payments.module");
+const documents_module_1 = require("../documents/documents.module");
 let GuarantorsModule = class GuarantorsModule {
 };
 exports.GuarantorsModule = GuarantorsModule;
 exports.GuarantorsModule = GuarantorsModule = __decorate([
     (0, common_1.Module)({
-        imports: [payments_module_1.PaymentsModule],
+        imports: [payments_module_1.PaymentsModule, documents_module_1.DocumentsModule],
         controllers: [guarantors_controller_1.GuarantorsController],
         providers: [guarantors_service_1.GuarantorsService],
         exports: [guarantors_service_1.GuarantorsService],

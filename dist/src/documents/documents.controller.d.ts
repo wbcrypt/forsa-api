@@ -8,6 +8,16 @@ export declare class DocumentsController {
         s3Key: string;
         expiresAt: Date;
     }>;
+    generateMyUploadUrl(body: {
+        documentTypeCode: string;
+        fileName: string;
+        contentType: string;
+    }, t: string, u: string): Promise<{
+        uploadUrl: string;
+        documentId: string;
+        s3Key: string;
+        expiresAt: Date;
+    }>;
     confirmUpload(id: string, body: {
         fileSize: number;
         checksum?: string;
@@ -15,7 +25,18 @@ export declare class DocumentsController {
         documentId: string;
         status: import("../common/enums").DocumentStatus;
     }>;
+    confirmMyUpload(id: string, body: {
+        fileSize: number;
+        checksum?: string;
+    }, t: string, u: string): Promise<{
+        documentId: string;
+        status: import("../common/enums").DocumentStatus;
+    }>;
     getDownloadUrl(id: string, t: string, u: string, ip: string): Promise<{
+        downloadUrl: string;
+        expiresAt: Date;
+    }>;
+    getDownloadUrlForMyUniversity(id: string, t: string, u: string, ip: string): Promise<{
         downloadUrl: string;
         expiresAt: Date;
     }>;
@@ -29,6 +50,15 @@ export declare class DocumentsController {
     }>;
     getForEntity(entityType: string, entityId: string, t: string): Promise<any>;
     getChecklist(applicationId: string, t: string): Promise<{
+        documentTypeCode: string;
+        required: boolean;
+        uploaded: boolean;
+        status: any;
+        fileName: any;
+        uploadedAt: any;
+        reviewedAt: any;
+    }[]>;
+    getChecklistForMyUniversity(applicationId: string, t: string, u: string): Promise<{
         documentTypeCode: string;
         required: boolean;
         uploaded: boolean;

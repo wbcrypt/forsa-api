@@ -59,6 +59,16 @@ let ScoreService = ScoreService_1 = class ScoreService {
         const { aggregateScore, band } = await this.recomputeAggregate(params.studentId, params.tenantId);
         return { eventId: event.id, newBalance: aggregateScore, newBand: band };
     }
+    async getScoreForMyUniversityStudent(userId, tenantId, studentId) {
+        const [owned] = await this.dataSource.query(`SELECT 1
+       FROM applications a
+       JOIN universities uni ON uni.id = a.university_id
+       WHERE a.student_id = $1 AND a.tenant_id = $2 AND uni.user_id = $3
+       LIMIT 1`, [studentId, tenantId, userId]);
+        if (!owned)
+            throw new common_1.NotFoundException('Student not found');
+        return this.getScore(studentId, tenantId);
+    }
     async getScore(studentId, tenantId) {
         const [score] = await this.dataSource.query(`SELECT fs.*, json_object_agg(srb.dimension, srb.running_balance) AS dimension_balances
        FROM forsa_scores fs

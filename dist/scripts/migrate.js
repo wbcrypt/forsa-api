@@ -70,8 +70,11 @@ async function main() {
             console.log(`  ↷ ${file} (already applied)`);
             continue;
         }
-        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+        let sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
         console.log(`  ▶ Applying ${file}...`);
+        sql = sql
+            .replace(/__DB_APP_PASSWORD__/g, (process.env.DB_APP_PASSWORD || '').replace(/'/g, "''"))
+            .replace(/__DB_READONLY_PASSWORD__/g, (process.env.DB_READONLY_PASSWORD || '').replace(/'/g, "''"));
         try {
             await ds.query(sql);
             await ds.query('INSERT INTO _migrations (filename) VALUES ($1)', [file]);

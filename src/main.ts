@@ -1,3 +1,19 @@
+// Phase 3.5 (final engineering pass) discovery — must be the very first
+// import in this file. auth.controller.ts reads process.env at MODULE
+// LOAD time (a static @Throttle() decorator can't read an injected
+// ConfigService — see the comment there) to compute the login throttle's
+// ttl/limit. AppModule's import chain (AppModule -> AuthModule ->
+// AuthController) is resolved and executed BEFORE AppModule's own
+// @Module({ imports: [ConfigModule.forRoot(...)] }) decorator ever runs
+// — meaning ConfigModule had not yet loaded .env into process.env by the
+// time auth.controller.ts's module-level const was evaluated. The
+// throttle silently fell back to its hardcoded default (900s/5) in every
+// environment, regardless of LOGIN_THROTTLE_TTL_SECONDS/
+// LOGIN_THROTTLE_LIMIT — the exact bug the T-110-era fix was meant to
+// close. `dotenv/config`'s side effect runs as soon as this import
+// statement resolves, before the `./app.module` import below is even
+// reached, so process.env is populated in time.
+import 'dotenv/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, ClassSerializerInterceptor, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';

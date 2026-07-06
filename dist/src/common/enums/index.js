@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.StudentStatus = exports.SecurityEventType = exports.ApprovalSequencing = exports.PipelineRunStatus = exports.MfaMethod = exports.NotificationChannel = exports.ExceptionalEventType = exports.CommissionStatus = exports.PartnerType = exports.UniversityStatus = exports.PolicyStatus = exports.PolicyScopeType = exports.ExecutionStatus = exports.ContractStatus = exports.ContractType = exports.DocumentStatus = exports.SourceTrustLevel = exports.ScoreBand = exports.ScoreSeverity = exports.ScoreDimension = exports.PaymentStatus = exports.InstallmentStatus = exports.PaymentModelType = exports.DecisionResult = exports.FinancingLevel = exports.ApplicationStatus = exports.TenantStatus = exports.UserStatus = void 0;
+exports.MembershipRequestStatus = exports.MembershipStatus = exports.StudentStatus = exports.SecurityEventType = exports.ApprovalSequencing = exports.PipelineRunStatus = exports.MfaMethod = exports.NotificationChannel = exports.ExceptionalEventType = exports.CommissionStatus = exports.PartnerType = exports.UniversityStatus = exports.PolicyStatus = exports.PolicyScopeType = exports.ExecutionStatus = exports.ContractStatus = exports.ContractType = exports.DocumentStatus = exports.SourceTrustLevel = exports.ScoreBand = exports.ScoreSeverity = exports.ScoreDimension = exports.PaymentStatus = exports.InstallmentStatus = exports.PaymentModelType = exports.DecisionResult = exports.FinancingLevel = exports.ApplicationStatus = exports.TenantStatus = exports.UserStatus = void 0;
 var UserStatus;
 (function (UserStatus) {
     UserStatus["ACTIVE"] = "active";
@@ -17,25 +17,22 @@ var TenantStatus;
 var ApplicationStatus;
 (function (ApplicationStatus) {
     ApplicationStatus["NEW_LEAD"] = "new_lead";
-    ApplicationStatus["APPLIED"] = "applied";
     ApplicationStatus["AI_INTERVIEW_COMPLETED"] = "ai_interview_completed";
-    ApplicationStatus["INTERNAL_REVIEW"] = "internal_review";
-    ApplicationStatus["PRE_APPROVED"] = "pre_approved";
-    ApplicationStatus["DOCUMENT_VERIFICATION"] = "document_verification";
-    ApplicationStatus["CONTRACTS_SIGNED"] = "contracts_signed";
-    ApplicationStatus["UNIVERSITY_PAYMENT"] = "university_payment";
     ApplicationStatus["CONTACTED"] = "contacted";
     ApplicationStatus["WAITING_FOR_DOCUMENTS"] = "waiting_for_documents";
     ApplicationStatus["DOCUMENTS_RECEIVED"] = "documents_received";
     ApplicationStatus["UNDER_REVIEW"] = "under_review";
+    ApplicationStatus["MORE_INFO_REQUIRED"] = "more_info_required";
     ApplicationStatus["APPROVED_LEVEL1"] = "approved_level1";
     ApplicationStatus["APPROVED_LEVEL2"] = "approved_level2";
     ApplicationStatus["APPROVED_LEVEL3"] = "approved_level3";
     ApplicationStatus["REJECTED"] = "rejected";
     ApplicationStatus["ON_HOLD"] = "on_hold";
     ApplicationStatus["CAPITAL_QUEUE"] = "capital_queue";
+    ApplicationStatus["FRAUD_FLAGGED"] = "fraud_flagged";
     ApplicationStatus["CONTRACT_SENT"] = "contract_sent";
     ApplicationStatus["CONTRACT_SIGNED"] = "contract_signed";
+    ApplicationStatus["UNIVERSITY_CONFIRMED"] = "university_confirmed";
     ApplicationStatus["UNIVERSITY_PAID"] = "university_paid";
     ApplicationStatus["ACTIVE_STUDENT"] = "active_student";
     ApplicationStatus["COMPLETED"] = "completed";
@@ -60,6 +57,7 @@ var DecisionResult;
     DecisionResult["NEEDS_GUARANTOR_REVIEW"] = "needs_guarantor_review";
     DecisionResult["NEEDS_UNIVERSITY_CONFIRMATION"] = "needs_university_confirmation";
     DecisionResult["CAPITAL_QUEUE"] = "capital_queue";
+    DecisionResult["FRAUD"] = "fraud";
 })(DecisionResult || (exports.DecisionResult = DecisionResult = {}));
 var PaymentModelType;
 (function (PaymentModelType) {
@@ -280,4 +278,17 @@ var StudentStatus;
     StudentStatus["DECEASED"] = "deceased";
     StudentStatus["SUSPENDED"] = "suspended";
 })(StudentStatus || (exports.StudentStatus = StudentStatus = {}));
+var MembershipStatus;
+(function (MembershipStatus) {
+    MembershipStatus["BRONZE"] = "bronze";
+    MembershipStatus["SILVER"] = "silver";
+    MembershipStatus["GOLD"] = "gold";
+    MembershipStatus["BLACKLISTED"] = "blacklisted";
+})(MembershipStatus || (exports.MembershipStatus = MembershipStatus = {}));
+var MembershipRequestStatus;
+(function (MembershipRequestStatus) {
+    MembershipRequestStatus["PENDING"] = "pending";
+    MembershipRequestStatus["APPROVED"] = "approved";
+    MembershipRequestStatus["REJECTED"] = "rejected";
+})(MembershipRequestStatus || (exports.MembershipRequestStatus = MembershipRequestStatus = {}));
 //# sourceMappingURL=index.js.map

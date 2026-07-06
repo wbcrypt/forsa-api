@@ -51,6 +51,19 @@ export class PaymentsController {
     return this.service.findMyScheduleForApplication(u, id, t);
   }
 
+  // Phase 3 (browser E2E testing) discovery — the university portal's
+  // Payments page and StudentDetailPage called the staff-only route
+  // below directly, 403ing for every real university account.
+  @Get('schedules/university-mine/applications/:applicationId')
+  @ApiOperation({ summary: "Get a payment schedule for one of the logged-in university portal user's own applications" })
+  getScheduleForMyUniversityApplication(
+    @Param('applicationId', ParseUUIDPipe) id: string,
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.findScheduleForMyUniversityApplication(u, id, t);
+  }
+
   @Get('schedules/:id')
   @RequirePermissions('payment.view')
   getSchedule(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() t: string) {
@@ -90,8 +103,15 @@ export class PaymentsController {
 
   // ─── Receipt Verification Routes (V1 Manual Flow) ──────────────────────────
 
+  // Phase 3 (browser E2E testing) discovery — gated behind the
+  // staff-only payment.record permission despite being the actual
+  // student-facing "submit my bank receipt" mechanism (per its own
+  // @ApiOperation summary below): 403'd for every real student. No
+  // @RequirePermissions() here now — self-scoped instead, with
+  // ownership verified server-side in the service (see the K-note
+  // there on the studentId param this replaces, which was never even
+  // populated in the JWT).
   @Post('receipts')
-  @RequirePermissions('payment.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Student submits payment receipt for admin verification' })
   submitReceipt(
@@ -107,12 +127,11 @@ export class PaymentsController {
     },
     @CurrentTenant() t: string,
     @CurrentUser('id') u: string,
-    @CurrentUser('studentId') studentId: string,
   ) {
     return this.service.submitReceipt({
       ...body,
       tenantId: t,
-      studentId: studentId || u,
+      callerUserId: u,
     });
   }
 
@@ -154,11 +173,15 @@ export class PaymentsController {
 
   // ─── Konnect Online Payment Routes ────────────────────────────────────────
 
+  // Phase 3 (browser E2E testing) discovery — same class of bug as
+  // submitReceipt above: gated behind the staff-only payment.record
+  // permission despite being the actual "pay by Konnect" button every
+  // real student needs — 403'd unconditionally. Self-scoped instead,
+  // with ownership verified server-side in KonnectService.
   @Post('konnect/initiate')
-  @RequirePermissions('payment.record')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Initiate a Konnect online payment for an installment' })
-  initiateKonnect(
+  async initiateKonnect(
     @Body() body: {
       installmentId: string;
       paymentReference: string;
@@ -169,10 +192,11 @@ export class PaymentsController {
     @CurrentUser('email') email: string,
     @CurrentUser('fullName') name: string,
   ) {
+    const studentId = await this.service.verifyMyInstallmentOwnership(u, body.installmentId, t);
     return this.konnect.initiatePayment({
       tenantId: t,
       installmentId: body.installmentId,
-      studentId: u,
+      studentId,
       studentEmail: email,
       studentName: name || email,
       amount: body.amount,

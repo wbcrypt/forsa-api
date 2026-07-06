@@ -1,9 +1,17 @@
 import { DataSource } from 'typeorm';
 import { KonnectService } from '../payments/konnect.service';
+import { DocumentsService } from '../documents/documents.service';
+import { RegisterGuarantorDto } from './dto/register-guarantor.dto';
 export declare class GuarantorsService {
     private readonly db;
     private readonly konnect;
-    constructor(db: DataSource, konnect: KonnectService);
+    private readonly documents;
+    constructor(db: DataSource, konnect: KonnectService, documents: DocumentsService);
+    registerSelf(dto: RegisterGuarantorDto): Promise<{
+        guarantorId: any;
+        userId: any;
+        email: any;
+    }>;
     private findLinkedStudent;
     getLinkedStudent(userId: string, tenantId: string): Promise<{
         student: {
@@ -29,6 +37,17 @@ export declare class GuarantorsService {
         installments: any[];
         application: any;
     }>;
+    getReceiptUploadUrl(userId: string, tenantId: string, fileName: string, contentType: string): Promise<{
+        uploadUrl: string;
+        documentId: string;
+        s3Key: string;
+        expiresAt: Date;
+    }>;
+    confirmReceiptUpload(userId: string, tenantId: string, documentId: string, fileSize: number, checksum?: string): Promise<{
+        documentId: string;
+        status: import("../common/enums").DocumentStatus;
+    }>;
+    private verifyReceiptDocument;
     submitReceiptOnBehalf(userId: string, tenantId: string, body: {
         installmentId: string;
         paymentDate: string;
@@ -36,6 +55,7 @@ export declare class GuarantorsService {
         bankName?: string;
         referenceNumber?: string;
         receiptFilename?: string;
+        receiptDocumentId?: string;
         notes?: string;
     }): Promise<{
         success: boolean;

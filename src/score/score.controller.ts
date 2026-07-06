@@ -22,6 +22,16 @@ export class ScoreController {
     return this.service.getScore(id, t);
   }
 
+  @Get('university-mine/students/:studentId')
+  @ApiOperation({ summary: "Get a FORSA score for one of the logged-in university portal user's own students" })
+  getScoreForMyUniversityStudent(
+    @Param('studentId', ParseUUIDPipe) id: string,
+    @CurrentUser('id') u: string,
+    @CurrentTenant() t: string,
+  ) {
+    return this.service.getScoreForMyUniversityStudent(u, t, id);
+  }
+
   @Get('students/:studentId/history')
   @RequirePermissions('score.view')
   @ApiOperation({ summary: 'Get full immutable score event history' })

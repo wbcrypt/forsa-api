@@ -17,7 +17,7 @@ export declare class ScoreService {
         description: string;
         referenceId?: string;
         referenceType?: string;
-        recordedBy: string;
+        recordedBy: string | null;
         policyVersionId?: string;
         severity?: ScoreSeverity;
     }): Promise<{
@@ -25,6 +25,7 @@ export declare class ScoreService {
         newBalance: number;
         newBand: ScoreBand;
     }>;
+    getScoreForMyUniversityStudent(userId: string, tenantId: string, studentId: string): Promise<any>;
     getScore(studentId: string, tenantId: string): Promise<any>;
     createCorrectiveEvent(params: {
         tenantId: string;

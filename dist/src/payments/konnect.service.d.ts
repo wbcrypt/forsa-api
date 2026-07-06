@@ -1,8 +1,12 @@
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { LedgerService } from './ledger.service';
+import { ScoreService } from '../score/score.service';
 export declare class KonnectService {
     private readonly config;
     private readonly dataSource;
+    private readonly ledger;
+    private readonly scoreService;
     private readonly logger;
     private readonly apiKey;
     private readonly walletId;
@@ -10,7 +14,7 @@ export declare class KonnectService {
     private readonly webhookSecret;
     private readonly appName;
     private readonly returnUrl;
-    constructor(config: ConfigService, dataSource: DataSource);
+    constructor(config: ConfigService, dataSource: DataSource, ledger: LedgerService, scoreService: ScoreService);
     get isConfigured(): boolean;
     initiatePayment(params: {
         tenantId: string;

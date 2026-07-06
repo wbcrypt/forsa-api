@@ -13,4 +13,5 @@ export declare class ExecutionController {
         idempotent?: boolean;
     }>;
     getHistory(t: string, limit: number): Promise<any>;
+    getDisbursements(t: string, limit: number): Promise<any>;
 }

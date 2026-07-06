@@ -49,6 +49,16 @@ let StudentsService = StudentsService_1 = class StudentsService {
         });
         return student;
     }
+    async findMe(userId, tenantId) {
+        const [student] = await this.dataSource.query(`SELECT s.*, fs.aggregate_score, fs.score_band
+       FROM students s
+       LEFT JOIN forsa_scores fs ON fs.student_id = s.id
+       WHERE s.user_id = $1 AND s.tenant_id = $2`, [userId, tenantId]);
+        if (!student)
+            throw new common_1.NotFoundException('No student profile linked to this user');
+        delete student.national_id_reference;
+        return student;
+    }
     async findAll(tenantId, pagination, filters = {}) {
         const { page = 1, limit = 20 } = pagination;
         const offset = (0, pagination_util_1.getSkip)(page, limit);
@@ -211,7 +221,19 @@ let StudentsService = StudentsService_1 = class StudentsService {
        JOIN installments i ON i.id = p.installment_id
        JOIN payment_schedules ps ON ps.id = i.payment_schedule_id
        WHERE p.student_id = $1 AND p.tenant_id = $2
-       ORDER BY p.paid_at DESC`, [studentId, tenantId]);
+       ORDER BY p.payment_date DESC`, [studentId, tenantId]);
+    }
+    async findMyPayments(userId, tenantId) {
+        const [student] = await this.dataSource.query(`SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2`, [userId, tenantId]);
+        if (!student)
+            throw new common_1.NotFoundException('No student profile linked to this user');
+        return this.getPaymentHistory(student.id, tenantId);
+    }
+    async findMyApplications(userId, tenantId) {
+        const [student] = await this.dataSource.query(`SELECT id FROM students WHERE user_id = $1 AND tenant_id = $2`, [userId, tenantId]);
+        if (!student)
+            throw new common_1.NotFoundException('No student profile linked to this user');
+        return this.getApplicationHistory(student.id, tenantId);
     }
     async audit(tenantId, userId, action, targetId, prev, next) {
         await this.dataSource.query(`INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, previous_value, new_value, created_at)

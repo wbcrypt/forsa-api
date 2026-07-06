@@ -22,11 +22,13 @@ const enums_1 = require("../common/enums");
 const policy_service_1 = require("../policy/policy.service");
 const client_s3_1 = require("@aws-sdk/client-s3");
 const s3_request_presigner_1 = require("@aws-sdk/s3-request-presigner");
+const notifications_service_1 = require("../notifications/notifications.service");
 let ContractsService = ContractsService_1 = class ContractsService {
-    constructor(dataSource, configService, policyService) {
+    constructor(dataSource, configService, policyService, notifications) {
         this.dataSource = dataSource;
         this.configService = configService;
         this.policyService = policyService;
+        this.notifications = notifications;
         this.logger = new common_1.Logger(ContractsService_1.name);
         this.s3 = new client_s3_1.S3Client({
             endpoint: configService.get('s3.endpoint'),
@@ -102,6 +104,21 @@ let ContractsService = ContractsService_1 = class ContractsService {
         await this.dataSource.query(`UPDATE contracts SET status = 'sent_for_signature', sent_for_signature_at = NOW()
        WHERE id = $1`, [contractId]);
         await this.audit(tenantId, sentBy, 'contract.sent_for_signature', contractId, null, {});
+        const [student] = await this.dataSource.query(`SELECT s.id, s.first_name, s.last_name, s.email
+       FROM applications a JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2`, [contract.application_id, tenantId]);
+        if (student?.email) {
+            await this.notifications.send({
+                tenantId,
+                recipientId: student.id,
+                recipientEmail: student.email,
+                channel: enums_1.NotificationChannel.EMAIL,
+                templateCode: 'contract_ready',
+                variables: { studentName: `${student.first_name} ${student.last_name}`.trim() },
+                referenceId: contractId,
+                referenceType: 'contract',
+            }).catch(err => this.logger.error('Notification contract_ready failed', err));
+        }
         return { contractId, status: enums_1.ContractStatus.SENT_FOR_SIGNATURE };
     }
     async recordSignature(params) {
@@ -159,6 +176,7 @@ exports.ContractsService = ContractsService = ContractsService_1 = __decorate([
     __param(0, (0, typeorm_1.InjectDataSource)()),
     __metadata("design:paramtypes", [typeorm_2.DataSource,
         config_1.ConfigService,
-        policy_service_1.PolicyService])
+        policy_service_1.PolicyService,
+        notifications_service_1.NotificationsService])
 ], ContractsService);
 //# sourceMappingURL=contracts.service.js.map

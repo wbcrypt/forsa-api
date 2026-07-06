@@ -41,6 +41,31 @@ let UniversitiesService = UniversitiesService_1 = class UniversitiesService {
         await this.auditLog(tenantId, createdBy, 'university.created', university.id, null, dto);
         return university;
     }
+    async findAllPublic(tenantId) {
+        if (!tenantId)
+            throw new common_1.BadRequestException('tenantId is required');
+        return this.dataSource.query(`SELECT id, name, city FROM universities
+       WHERE tenant_id = $1 AND status = $2
+       ORDER BY name ASC`, [tenantId, enums_1.UniversityStatus.ACTIVE]);
+    }
+    async linkUser(id, userId, tenantId, updatedBy) {
+        const [university] = await this.dataSource.query(`SELECT id FROM universities WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+        if (!university)
+            throw new common_1.NotFoundException('University not found');
+        const [user] = await this.dataSource.query(`SELECT id FROM users WHERE id = $1 AND tenant_id = $2`, [userId, tenantId]);
+        if (!user)
+            throw new common_1.NotFoundException('User not found');
+        await this.dataSource.query(`UPDATE universities SET user_id = $2 WHERE id = $1`, [id, userId]);
+        await this.dataSource.query(`UPDATE users SET university_id_linked = $2 WHERE id = $1`, [userId, id]);
+        await this.auditLog(tenantId, updatedBy, 'university.user_linked', id, null, { userId });
+        return { id, userId };
+    }
+    async findMe(userId, tenantId) {
+        const [university] = await this.dataSource.query(`SELECT * FROM universities WHERE user_id = $1 AND tenant_id = $2`, [userId, tenantId]);
+        if (!university)
+            throw new common_1.NotFoundException('No university linked to this user');
+        return university;
+    }
     async findAll(tenantId, pagination, filters) {
         const { page = 1, limit = 20 } = pagination;
         const offset = (0, pagination_util_1.getSkip)(page, limit);
@@ -203,6 +228,10 @@ let UniversitiesService = UniversitiesService_1 = class UniversitiesService {
        WHERE u.id = $1 AND u.tenant_id = $2`, [universityId, tenantId]);
         return stats;
     }
+    async getMyPerformance(userId, tenantId) {
+        const university = await this.findMe(userId, tenantId);
+        return this.getPerformance(university.id, tenantId);
+    }
     async createProgram(universityId, tenantId, dto) {
         await this.findOne(universityId, tenantId);
         const [program] = await this.dataSource.query(`INSERT INTO programs
@@ -219,6 +248,14 @@ let UniversitiesService = UniversitiesService_1 = class UniversitiesService {
     async findPrograms(universityId, tenantId) {
         await this.findOne(universityId, tenantId);
         return this.dataSource.query(`SELECT * FROM programs WHERE university_id = $1 AND status = 'active' ORDER BY name`, [universityId]);
+    }
+    async findProgramsPublic(universityId, tenantId) {
+        if (!tenantId)
+            throw new common_1.BadRequestException('tenantId is required');
+        return this.dataSource.query(`SELECT p.id, p.name FROM programs p
+       JOIN universities u ON u.id = p.university_id
+       WHERE p.university_id = $1 AND u.tenant_id = $2 AND p.status = 'active'
+       ORDER BY p.name`, [universityId, tenantId]);
     }
     async initiateBusinessContinuity(universityId, tenantId, dto, initiatedBy) {
         const affectedStudents = await this.dataSource.query(dto.level === 'institution'

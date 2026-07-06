@@ -5,6 +5,7 @@ import { MfaService } from './services/mfa.service';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { VerifyMfaDto } from './dto/verify-mfa.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 export declare class AuthController {
     private readonly authService;
     private readonly mfaService;
@@ -38,6 +39,9 @@ export declare class AuthController {
         refreshToken: string;
         expiresIn: number;
         tokenType: string;
+    }>;
+    setPassword(dto: SetPasswordDto): Promise<{
+        message: string;
     }>;
     logout(user: any, response: Response, ipAddress: string): Promise<{
         message: string;

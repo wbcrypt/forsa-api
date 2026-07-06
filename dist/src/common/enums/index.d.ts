@@ -11,25 +11,22 @@ export declare enum TenantStatus {
 }
 export declare enum ApplicationStatus {
     NEW_LEAD = "new_lead",
-    APPLIED = "applied",
     AI_INTERVIEW_COMPLETED = "ai_interview_completed",
-    INTERNAL_REVIEW = "internal_review",
-    PRE_APPROVED = "pre_approved",
-    DOCUMENT_VERIFICATION = "document_verification",
-    CONTRACTS_SIGNED = "contracts_signed",
-    UNIVERSITY_PAYMENT = "university_payment",
     CONTACTED = "contacted",
     WAITING_FOR_DOCUMENTS = "waiting_for_documents",
     DOCUMENTS_RECEIVED = "documents_received",
     UNDER_REVIEW = "under_review",
+    MORE_INFO_REQUIRED = "more_info_required",
     APPROVED_LEVEL1 = "approved_level1",
     APPROVED_LEVEL2 = "approved_level2",
     APPROVED_LEVEL3 = "approved_level3",
     REJECTED = "rejected",
     ON_HOLD = "on_hold",
     CAPITAL_QUEUE = "capital_queue",
+    FRAUD_FLAGGED = "fraud_flagged",
     CONTRACT_SENT = "contract_sent",
     CONTRACT_SIGNED = "contract_signed",
+    UNIVERSITY_CONFIRMED = "university_confirmed",
     UNIVERSITY_PAID = "university_paid",
     ACTIVE_STUDENT = "active_student",
     COMPLETED = "completed",
@@ -51,7 +48,8 @@ export declare enum DecisionResult {
     NEEDS_MANUAL_REVIEW = "needs_manual_review",
     NEEDS_GUARANTOR_REVIEW = "needs_guarantor_review",
     NEEDS_UNIVERSITY_CONFIRMATION = "needs_university_confirmation",
-    CAPITAL_QUEUE = "capital_queue"
+    CAPITAL_QUEUE = "capital_queue",
+    FRAUD = "fraud"
 }
 export declare enum PaymentModelType {
     ADVANCE = "advance",
@@ -248,4 +246,15 @@ export declare enum StudentStatus {
     DEFAULTED = "defaulted",
     DECEASED = "deceased",
     SUSPENDED = "suspended"
+}
+export declare enum MembershipStatus {
+    BRONZE = "bronze",
+    SILVER = "silver",
+    GOLD = "gold",
+    BLACKLISTED = "blacklisted"
+}
+export declare enum MembershipRequestStatus {
+    PENDING = "pending",
+    APPROVED = "approved",
+    REJECTED = "rejected"
 }
