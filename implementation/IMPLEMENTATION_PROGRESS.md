@@ -7,6 +7,85 @@ this file has the narrative.
 
 ---
 
+## Session — 2026-07-06 (Final website alignment pass)
+
+**Goal**: audit the official FORSA homepage (a standalone file,
+`forsa-homepage-header-fixed (2).html`, living outside any of this
+engagement's git repositories — in the user's local Downloads folder) and
+bring its content in line with the final Membership-first platform and the
+approved language policy, without redesigning it. Explicit mandate:
+preserve layout, visual identity, branding, colors, typography, and UX;
+improve only where necessary.
+
+**What was found**: the page's *design* needed no changes, but its
+*content* had drifted from both the platform and the language policy in
+several concrete ways:
+1. French used "Argent"/"Or" as membership tier names throughout, but the
+   approved policy requires "Silver"/"Gold" kept as English loanwords in
+   French (Arabic correctly already translates them —
+   "فضي"/"ذهبي"). The progression badges' own letters ("S"/"G") had quietly
+   been inconsistent with the French labels the whole time — a clue this
+   had never been caught before.
+2. "Educational support"/"soutien éducatif"/"دعم تعليمي" was used
+   throughout instead of the approved "Tuition Facilitation Plan"
+   terminology, across pricing cards, the FORSA Score section, the
+   membership footnote, and the footer legal disclaimer.
+3. The footer's legal disclaimer said only "not a credit institution" —
+   narrower than the full required disclaimer ("not a bank, lender, or
+   credit institution"). Now states the full sentence explicitly, in all
+   three languages — arguably the single most important fix in this pass.
+4. All 7 "Join"/"Register" CTAs linked to `/register` — a route this
+   engagement's own Phase 3.5 pass intentionally removed (it now only
+   redirects to `/join`). Fixed to link directly to `/join`.
+5. **The "How It Works" 4 steps didn't match the real student journey.**
+   They described "Create your account" → "AI Interview" → "Human Review"
+   → "Activation Meeting" — but the actual platform has visitors submit a
+   free Membership Request first (no account, no documents), only creating
+   an account *after* Bronze approval (which also issues a FORSA ID and
+   FORSA Digital Pass — neither previously mentioned anywhere on the
+   page), with the AI Interview happening later as part of applying for a
+   Silver/Gold Tuition Facilitation Plan. Rewrote all 4 steps within the
+   exact same 4-card layout to match reality, which also naturally
+   introduced FORSA ID and Digital Pass without adding a new section.
+
+**Technical fixes**: the nav links vanished below 900px with no
+replacement — added a real, working hamburger menu (the language switcher
+had to move into the mobile dropdown, since the header row has no room for
+the logo, language switcher, Join button, and a hamburger all at once at
+phone widths). Added missing SEO/social meta tags (canonical URL, og:url,
+Twitter Card), page-wide `:focus-visible` keyboard-focus styles (none
+existed before), and `prefers-reduced-motion` handling.
+
+**Verification**: no build step exists for a standalone HTML file, so
+verification was: JS syntax validated via `node --check`, CSS
+brace-balance and HTML tag-balance checked programmatically, and — most
+importantly — real browser testing (Playwright/Chromium) at both desktop
+(1440px) and mobile (390px) viewports, covering language switching
+(FR/EN/AR including RTL), the mobile menu's open/close/link-click
+behavior, every CTA's link target, and visual screenshots of every major
+section in all three languages, confirming the visual design is
+byte-for-byte unchanged from the original.
+
+**Delivered**: `WEBSITE_AUDIT_REPORT.md` (full section-by-section review
+and recommendations) and `WEBSITE_CHANGELOG.md` (terse change list).
+
+**Note on scope**: the HTML file itself lives outside any git repository
+this engagement manages (a loose file in the user's Downloads folder) — it
+was edited in place per the task's instructions, but there is no repo to
+commit it *to*. Only this session's own documentation
+(`WEBSITE_AUDIT_REPORT.md`, `WEBSITE_CHANGELOG.md`, and this entry) is
+committed, to `forsa-os`, consistent with where every other report from
+this engagement lives.
+
+**Still open**: the recommendations in `WEBSITE_AUDIT_REPORT.md` §
+"Recommendations for future improvement" (a real FAQ section, verifying
+external `forsa.tn/*` links are live, an `og:image` once a hosted asset
+exists, a formal automated accessibility audit, and the still-outstanding
+Terms of Service/Privacy Policy content tracked as T-226) — none are
+launch-blocking, all are explicitly deferred rather than silently skipped.
+
+---
+
 ## Session — 2026-07-06 (Legal language & terminology audit)
 
 **Goal**: audit and align all user-facing wording across all 7 repositories

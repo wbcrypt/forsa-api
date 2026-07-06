@@ -1,5 +1,35 @@
 # FORSA — Changelog
 
+## 2026-07-06 (continued) — Final website alignment pass
+- Audited `forsa-homepage-header-fixed (2).html` (the official homepage)
+  against the final Membership-first platform and the approved language
+  policy — layout, visual identity, branding, and UX preserved throughout;
+  every change is content/terminology/technical, not a redesign.
+- Found and fixed: French membership tiers used "Argent"/"Or" instead of
+  the approved "Silver"/"Gold" (kept as English loanwords in French);
+  "educational support" used throughout instead of the approved "Tuition
+  Facilitation Plan"; the footer's legal disclaimer only disclaimed "credit
+  institution" status, not the full required "bank, lender, or credit
+  institution"; all 7 "Join" CTAs linked to the now-redirect-only
+  `/register` instead of `/join`.
+- Rewrote the "How It Works" 4 steps (same layout) to match the real
+  student journey — the previous version described account-creation-first
+  and an AI Interview as part of becoming Bronze, neither of which matches
+  the actual platform (Membership Request → Bronze approval issues FORSA
+  ID + Digital Pass → AI Interview happens later, when applying for
+  Silver/Gold facilitation → review committee decision). This naturally
+  introduced FORSA ID and Digital Pass, previously absent from the page.
+- Fixed a genuine mobile-navigation gap (nav links vanished below 900px
+  with no replacement) with a functional hamburger menu; added missing SEO
+  meta tags, `:focus-visible` accessibility styles, and
+  `prefers-reduced-motion` handling.
+- Verified via real browser testing (Playwright/Chromium): language
+  switching (FR/EN/AR + RTL), mobile menu behavior, all CTA link targets,
+  and visual screenshots across hero/membership/how-it-works/trust-strip/
+  guarantor/footer in all 3 languages — layout and visual identity
+  confirmed unchanged.
+- Delivered `WEBSITE_AUDIT_REPORT.md` and `WEBSITE_CHANGELOG.md`.
+
 ## 2026-07-06 (continued) — Legal language & terminology audit
 - Swept all 7 repositories for the approved FORSA language policy's
   explicitly prohibited terms (loan/borrower/lender/debt/credit/interest
