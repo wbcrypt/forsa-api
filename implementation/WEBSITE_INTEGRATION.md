@@ -15,20 +15,24 @@ Source content: `forsa-about-ar-v3.html` and `forsa-faq-ar-final.html`
 | Home  | `fr/index.html` (+ root `index.html` alias) | `en/index.html` | `ar/index.html` |
 | About | `fr/about/index.html` (+ root `about/index.html` alias) | `en/about/index.html` | `ar/about/index.html` |
 | FAQ   | `fr/faq/index.html` (+ root `faq/index.html` alias) | `en/faq/index.html` | `ar/faq/index.html` |
+| Login | `fr/login/index.html` (+ root `login/index.html` alias) | `en/login/index.html` | `ar/login/index.html` |
 
-12 files total. Nav labels: FR "À propos"/"FAQ", EN "About"/"FAQ",
-AR "عن فرصة"/"الأسئلة الشائعة".
+16 files total. Nav labels: FR "À propos"/"FAQ", EN "About"/"FAQ",
+AR "عن فرصة"/"الأسئلة الشائعة". Login page added in Phase 3 (see
+`PHASE3_NAVIGATION_AUDIT.md`) — a portal chooser, not a form: the "Log in"
+nav/footer link used to point straight at `student.forsa.tn/login`
+regardless of who clicked it.
 
 ## Routes
 
-The requested routes (`/`, `/about`, `/faq`, `/fr`, `/fr/about`, ...,
-`/en/*`, `/ar/*`) are implemented as a **folder-per-route, `index.html`
-per folder** structure — the standard way to get clean URLs from static
-files on any host that resolves `/about/` → `about/index.html` (Apache,
-Nginx, Netlify, Vercel static, GitHub Pages, S3+CloudFront, etc. all do
-this by default). No routing config exists in this repo since there is no
-static file server wired up yet — point one at this directory and the
-12 requested routes resolve exactly as specified.
+The requested routes (`/`, `/about`, `/faq`, `/login`, `/fr`, `/fr/about`,
+..., `/en/*`, `/ar/*`) are implemented as a **folder-per-route,
+`index.html` per folder** structure — the standard way to get clean URLs
+from static files on any host that resolves `/about/` → `about/index.html`
+(Apache, Nginx, Netlify, Vercel static, GitHub Pages, S3+CloudFront, etc.
+all do this by default). No routing config exists in this repo since
+there is no static file server wired up yet — point one at this
+directory and the 16 requested routes resolve exactly as specified.
 
 `/`, `/about`, `/faq` are literal copies of the `/fr/*` pages (French is
 the default/root language). They are separate files, not a redirect, so
