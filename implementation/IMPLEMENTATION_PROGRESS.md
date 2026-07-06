@@ -7,6 +7,109 @@ this file has the narrative.
 
 ---
 
+## Session — 2026-07-06 (Phase 3.5 — final engineering pass, feature freeze gate)
+
+**Goal**: resolve the two items Phase 3 deliberately left for a business
+decision, implement all four approved decisions, then re-verify the entire
+system end-to-end via real browser sessions (not just unit tests) before
+declaring feature freeze. Explicit mandate: leave no known Critical or
+High-severity issue; do not add features, redesign workflows, or expand the
+business model.
+
+**The four business decisions — all implemented and verified live**:
+1. `/register` now redirects to `/join` — the T-101 direct-password
+   registration route (backend endpoint, DTO, frontend page) is removed
+   entirely rather than left dormant, since it created accounts
+   permanently stuck as non-members.
+2. Self-submitted Financing Requests now enter the automated pipeline
+   without manual staff status advancement — `NEW_LEAD → UNDER_REVIEW` is
+   now legal, and Stage 8 always routes through `UNDER_REVIEW` on both the
+   auto-approve and human-review paths. Verified live: a fresh
+   self-submitted application reached `APPROVED_LEVEL2` across all 10
+   pipeline stages with zero manual intervention.
+3. The DB grant fix is now a permanent migration
+   (`012_db_roles_and_grants.sql`) — it also creates the `forsa_app`/
+   `forsa_readonly` roles themselves (nothing in the repo ever did this)
+   and uses `ALTER DEFAULT PRIVILEGES` so future migrations never need a
+   manual grant again. Verified against a genuinely fresh Postgres
+   cluster with zero pre-existing roles.
+4. `scripts/seed.ts` now auto-syncs any `is_system_role=true` role's
+   permissions on every run. Verified by manually revoking 2 grants from
+   SUPER_ADMIN and re-running the seed — both restored.
+
+**Systematic self-scoping re-audit** (rather than more exploratory
+clicking): dispatched a focused audit comparing every non-staff portal's
+API client against its backend routes' permission requirements. Found 11
+further live bugs beyond Phase 3's list — most significantly, the
+`documents.controller.ts` module had **zero** self-scoped or public routes
+at all, meaning both the student's own receipt-upload flow and the
+university's entire Documents page were structurally broken. Also found:
+Konnect payment initiation and receipt submission were gated behind the
+staff-only `payment.record` permission (403 for every real student) *and*
+had no ownership verification at all underneath that gate — any
+authenticated user could have acted on any other student's installment,
+and the Konnect path additionally inserted the wrong id type into
+`payments.student_id`. Fixed all of it: new self-scoped routes for
+documents (`me/upload-url`, `me/:id/confirm-upload`,
+`university-mine/:id/download-url`, `university-mine/checklist
+/applications/:id`), a real ownership check added to both payment paths,
+plus self-scoped routes for university-side application detail/status
+history/score. Verified live: a real receipt upload was confirmed
+persisted and correctly attributed; Konnect now correctly reaches its
+real "not configured" business-logic response instead of a 403; the
+university portal's Dashboard/Students/Documents/Payments all load real
+data with zero HTTP errors.
+
+**The login throttle bug — most significant finding of this pass.**
+Re-verifying Phase 3's throttle fix (rather than trusting it had worked)
+found it had never actually taken effect: `auth.controller.ts` computes
+its `@Throttle()` values from `process.env` at *module-load time*, but
+`AppModule`'s import chain (`AppModule → AuthModule → AuthController`)
+fully resolves and executes *before* `AppModule`'s own
+`@Module({ imports: [ConfigModule.forRoot(...)] })` decorator body ever
+runs — so `process.env` was still unpopulated, and the hardcoded
+900-second/5-attempt fallback was silently in effect in every environment
+regardless of configured values. Found the hard way: a 120-second clean
+wait during this session's own testing didn't clear a lockout that should
+have cleared in 60. Fixed with one line — `import 'dotenv/config'` as the
+literal first import in `main.ts`. Verified with a scripted 21-attempt
+burst: the 21st correctly 429s with `retry-after: 59`, matching config
+(not the old 900).
+
+**Also found and fixed**: `forsa-guarantor`'s orphaned `HomePage.tsx`
+(never routed by `App.tsx` — `DashboardPage.tsx` is the real landing page)
+imported `studentApi`/`paymentApi`, which don't exist in that portal's
+`lib/api.ts` — a hard runtime crash had it ever been wired up, caught by
+running `tsc --noEmit` across all 6 frontends as a final check (not
+previously run repo-by-repo). Removed. A university name's missing accent
+was also corrected. `STUDENT_PORTAL_URL` — undocumented, defaults to the
+hardcoded production domain in every environment where it's unset — is
+now documented in `.env.example`.
+
+**Verification**: full student journey re-run live end to end (membership
+request → real admin approval via the actual queue UI → password set via
+the real MailHog-extracted email link → student login → AI Interview
+(demo-mode fallback confirmed) → submission with a real `program_id` →
+admin "Run Pipeline" with zero prior manual status changes → schedule
+generation → Konnect + receipt payment tests → university portal
+Dashboard/Students/Documents/Payments). 137/137 backend tests passing (16
+new/updated). All 6 frontend repos typecheck cleanly with zero errors —
+confirmed individually per-repo, not just via each app's own dev server.
+
+**Delivered**: `RELEASE_READINESS_REPORT.md` (GO verdict),
+`FINAL_BUG_REPORT.md` (complete ledger, 10 Critical/11 High/6 Medium/3 Low,
+zero open Critical/High), `SECURITY_REVIEW.md`, `PERFORMANCE_REVIEW.md`.
+
+**Still open (by design, not oversight)**: a small set of dead-code API
+calls across 3 frontends that are never actually invoked by any page
+(`FINAL_BUG_REPORT.md` L3) — confirmed unreachable, zero current risk, not
+fixed since there's no live path to verify a fix against. Migrating the
+throttler's storage backend from in-memory to Redis before scaling beyond
+a single instance — not a launch blocker for this single-instance launch,
+flagged in `SECURITY_REVIEW.md` §5.
+
+---
+
 ## Session — 2026-07-05
 
 **Goal**: stand up the `/implementation` continuity workspace per the user's

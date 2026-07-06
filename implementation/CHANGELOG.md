@@ -1,5 +1,43 @@
 # FORSA — Changelog
 
+## 2026-07-06 (continued) — Phase 3.5: final engineering pass, feature freeze gate
+- Implemented all 4 approved business decisions: `/register` redirects to
+  `/join` (T-101 removed entirely); self-submitted Financing Requests now
+  enter the automated pipeline without manual staff advancement
+  (`NEW_LEAD → UNDER_REVIEW` legalized, Stage 8 always routes through it);
+  the DB grant fix is now a permanent, idempotent migration
+  (`012_db_roles_and_grants.sql`) that also creates the `forsa_app`/
+  `forsa_readonly` roles themselves and uses `ALTER DEFAULT PRIVILEGES`;
+  `seed.ts` now auto-syncs any `is_system_role=true` role's permissions on
+  every run.
+- Systematic re-audit (not just more exploratory clicking) of every
+  non-staff portal's API calls against backend permission requirements
+  found 11 further staff-only-route bugs beyond Phase 3's list — most
+  notably, the Documents module had zero self-scoped or public routes at
+  all, and Konnect payment initiation + receipt submission were both
+  gated behind a staff-only permission with **no ownership check
+  underneath it** (any authenticated user could have acted on any other
+  student's installment). All fixed.
+- Found and fixed the most significant defect of this pass: the Phase 3
+  login-throttle fix had never actually taken effect in any environment —
+  `auth.controller.ts` reads `process.env` at module-load time, before
+  `ConfigModule.forRoot()` populates it, so the hardcoded 900s/5 fallback
+  was silently always in effect. Fixed with `import 'dotenv/config'` as
+  the first line of `main.ts`; verified with a scripted 21-attempt burst
+  (429 on #21 with `retry-after: 59`, matching config).
+- Re-ran the complete student journey live end-to-end against all these
+  fixes: membership request → real admin approval → password-set email →
+  student login → AI interview → submission → Run Pipeline (reaching
+  APPROVED_LEVEL2 across all 10 stages, zero manual intervention) →
+  schedule generation → Konnect/receipt payment tests → university portal
+  Dashboard/Students/Documents/Payments — all clean, zero HTTP errors.
+- Removed `forsa-guarantor`'s orphaned, broken-import `HomePage.tsx`
+  (never routed, found via a full per-repo `tsc --noEmit` pass).
+- 137/137 backend tests passing (16 new/updated). All 6 frontend repos
+  typecheck cleanly.
+- Delivered `RELEASE_READINESS_REPORT.md` (GO), `FINAL_BUG_REPORT.md`,
+  `SECURITY_REVIEW.md`, `PERFORMANCE_REVIEW.md`.
+
 ## 2026-07-06 (continued) — Phase 3: full browser E2E testing, all 6 portals
 - Stood up the complete local stack (docker-compose: Postgres/MinIO/
   Redis/MailHog, backend, all 6 frontends) and ran the full student
