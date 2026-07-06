@@ -145,8 +145,11 @@ const NOTIFICATION_TEMPLATES = [
    '<p>Dear {{studentName}},</p><p>Your application has been received. Reference: {{applicationId}}</p>',true],
   ['document_requested','email','Documents Required','Action Required: Documents for {{programName}}',
    '<p>Dear {{studentName}},</p><p>Please upload the following documents: {{missingDocuments}}</p>',true],
+  // T-225 — {{tierSuffix}} added (" (Silver tier)"/" (Gold tier)" or blank)
+  // so Milestone 7's tier decision is actually named in the email, not a
+  // bare "approved".
   ['application_approved','email','Application Approved','🎉 Your Application is Approved',
-   '<p>Dear {{studentName}},</p><p>Congratulations! Your application for {{programName}} at {{universityName}} has been approved at Level {{approvedLevel}}.</p>',true],
+   '<p>Dear {{studentName}},</p><p>Congratulations! Your application for {{programName}} at {{universityName}} has been approved at Level {{approvedLevel}}{{tierSuffix}}.</p>',true],
   ['application_rejected','email','Application Update','Update on Your Application',
    '<p>Dear {{studentName}},</p><p>We regret to inform you that your application could not be approved at this time. Reason: {{rejectionReason}}</p>',true],
   ['payment_due_soon','email','Payment Reminder','Payment Due in {{daysUntilDue}} Days',
@@ -160,6 +163,15 @@ const NOTIFICATION_TEMPLATES = [
   // Phase 2 — Membership Request -> Bronze (T-204)
   ['membership_approved','email','Membership Approved — Set Your Password','🎉 Welcome to FORSA — Set Your Password',
    '<p>Dear {{studentName}},</p><p>Your FORSA membership request has been approved! You are now a Bronze member.</p><p>Your FORSA ID: <strong>{{forsaId}}</strong></p><p>Set your password to access your account: <a href="{{setPasswordUrl}}">{{setPasswordUrl}}</a></p><p>This link expires in 48 hours.</p>',true],
+  // T-225 — the 3 event-driven notifications genuinely missing from the
+  // trigger list (Bronze granted, payment received/overdue, and the
+  // application-level events above were all already wired).
+  ['membership_submitted','email','Membership Request Received','We’ve received your FORSA membership request',
+   '<p>Dear {{firstName}},</p><p>Thank you for submitting a FORSA membership request. Our team will review it shortly, and you’ll receive another email once a decision is made.</p>',true],
+  ['digital_pass_ready','email','Your Digital Student Pass is Ready','🎫 Your FORSA Digital Student Pass is ready',
+   '<p>Dear {{studentName}},</p><p>Your FORSA Digital Student Pass is ready. You can view your QR pass anytime from your student dashboard.</p>',true],
+  ['waiting_list','email','Placed on the FORSA Waiting List','You’ve been placed on the FORSA Waiting List',
+   '<p>Dear {{studentName}},</p><p>Your application for {{programName}} has not been rejected — you’ve been placed on FORSA’s Waiting List while capital becomes available. We will notify you as soon as your application can move forward.</p>',true],
 ];
 
 async function main() {

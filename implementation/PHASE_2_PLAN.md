@@ -111,11 +111,10 @@ None of this had ever been exercised end-to-end before. Fixed by adding a new se
 **Repos**: `forsa-os`, `forsa-dashboard`, `forsa-university`, `forsa-student`, `forsa-finance`, `forsa-partner`.
 **Complexity actual**: the University Portal and Partner Portal identity fixes were the unplanned, higher-complexity pieces — everything else matched the "Low per portal" estimate.
 
-### M10 — Notifications (T-225)
-**Delivers**: real event-driven notifications for membership submitted, Bronze granted, Digital Pass ready, financing started, missing documents, AI interview scheduled/ready, Waiting List, Silver/Gold approved, payment received/overdue.
-**Repos**: `forsa-os` (mostly — reuses the `NotificationsService`/template plumbing already wired in Phase 1's T-106).
-**Depends on**: each event source existing (Bronze granted needs M1, Digital Pass ready needs M2, Silver/Gold approved needs M5, etc).
-**Complexity**: **Low-Medium**, but **do not treat this as one terminal end-of-phase task** — see §5's reordering recommendation. Phase 1 already had to do a catch-up pass (T-106) specifically because notifications got left for "later" and nearly didn't happen; the same failure mode is avoidable this time by wiring each notification at the moment its trigger event is built, not batching all 11 at the end.
+### M10 — Notifications (T-225) — ✅ DONE 2026-07-06
+**Delivered**: the reordering recommendation below turned out to already be true in practice — most of the trigger list was wired incrementally as each milestone landed (Bronze granted in M1, financing started/missing documents in M3, payment received/overdue in M8), not batched at the end. This pass's real work was auditing that against the full list and closing the 3 genuine gaps: `membership_submitted` (fires in `MembershipService.createRequest`, using the request's own id as `recipientId` since no student/user account exists yet for a visitor), `digital_pass_ready` (its own event alongside `membership_approved`, even though both fire from the same transaction), and `waiting_list` (fires on transition to `CAPITAL_QUEUE` — must never read like a rejection, per D-004). Also enhanced `application_approved`, which existed but never mentioned Silver/Gold — required reordering Stage 10's financing-tier lookup to happen *before* `transitionStatus` instead of after, so the tier could be threaded into the email. **AI interview scheduled/ready deliberately not built** — no distinct "ready" moment exists in the current architecture (interview scoring is synchronous with submission); treated as already covered by `application_created` rather than inventing a synthetic event.
+**Repos**: `forsa-os` only.
+**Complexity actual**: **Low**, as predicted — reused the existing `NotificationsService`/template plumbing throughout, no schema changes.
 
 ### M11 — Legal copy (T-226)
 **Delivers**: Terms of Use, Privacy Policy, Membership Terms, Financing Terms, AI Consent, Guarantor Terms, Payment Terms, Fraud Policy — rewritten for the membership-first model.

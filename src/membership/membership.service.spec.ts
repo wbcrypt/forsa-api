@@ -61,6 +61,15 @@ describe('MembershipService', () => {
       });
 
       expect(result).toEqual(expect.objectContaining({ id: 'new-req', status: 'pending' }));
+
+      // T-225 — recipientId has no real user account yet at this point,
+      // so the request's own id is used (notification_logs.recipient_id
+      // is NOT NULL and no student/user row exists for a visitor yet).
+      expect(notifications.send).toHaveBeenCalledWith(expect.objectContaining({
+        templateCode: 'membership_submitted',
+        recipientId: 'new-req',
+        recipientEmail: 'amina@example.com',
+      }));
     });
   });
 
@@ -128,6 +137,15 @@ describe('MembershipService', () => {
             forsaId: 'FORSA-2026-ABCDEF',
             setPasswordUrl: expect.stringContaining('/set-password?token='),
           }),
+        }),
+      );
+
+      // T-225 — Digital Pass ready is its own distinct notification event,
+      // sent alongside (not instead of) the welcome/set-password email.
+      expect(notifications.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          templateCode: 'digital_pass_ready',
+          recipientEmail: 'amina@example.com',
         }),
       );
     });

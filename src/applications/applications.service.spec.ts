@@ -123,6 +123,45 @@ describe('ApplicationsService.transitionStatus', () => {
       variables: expect.objectContaining({ approvedLevel: 2, universityName: 'Université de Tunis' }),
     }));
   });
+
+  // T-225 — financingTier is threaded through from the pipeline (resolved
+  // before transitionStatus is called — see pipeline.service.ts's
+  // stage10DecisionExecution) so Silver/Gold is actually named in the
+  // approval email, not a bare "approved".
+  it('includes the financing tier in the approval notification when provided', async () => {
+    const underReview = { ...baseApplication, current_status: ApplicationStatus.UNDER_REVIEW };
+    query
+      .mockResolvedValueOnce([underReview])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
+
+    await service.transitionStatus('app-1', 'tenant-1', ApplicationStatus.APPROVED_LEVEL2, 'staff-1', undefined, undefined, 'gold');
+
+    expect(notifications.send).toHaveBeenCalledWith(expect.objectContaining({
+      templateCode: 'application_approved',
+      variables: expect.objectContaining({ tierSuffix: ' (Gold tier)' }),
+    }));
+  });
+
+  // T-225/D-004 — Waiting List must never read like a rejection.
+  it('sends a waiting_list notification (not a rejection) when transitioned to CAPITAL_QUEUE', async () => {
+    const underReview = { ...baseApplication, current_status: ApplicationStatus.UNDER_REVIEW };
+    query
+      .mockResolvedValueOnce([underReview])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
+
+    await service.transitionStatus('app-1', 'tenant-1', ApplicationStatus.CAPITAL_QUEUE, 'staff-1');
+
+    expect(notifications.send).toHaveBeenCalledWith(expect.objectContaining({
+      templateCode: 'waiting_list',
+      recipientEmail: 'amina@example.com',
+    }));
+  });
 });
 
 // T-207 — the student portal's actual entry point into the Financing

@@ -290,6 +290,7 @@ export class ApplicationsService {
     changedBy: string,
     notes?: string,
     pipelineRunId?: string,
+    financingTier?: 'silver' | 'gold',
   ) {
     const application = await this.findOne(id, tenantId);
     const currentStatus = application.current_status as ApplicationStatus;
@@ -323,14 +324,23 @@ export class ApplicationsService {
       [ApplicationStatus.APPROVED_LEVEL3]: 3,
     };
     if (newStatus in approvedLevelByStatus) {
+      // T-225 — financingTier threaded through from the pipeline (resolved
+      // before this call, see pipeline.service.ts's stage10DecisionExecution)
+      // so Silver/Gold is named in the email, not a bare "approved".
       await this.notifyStudent(tenantId, application.student_id, 'application_approved', {
         programName: application.program_name || 'your program',
         universityName: application.university_name,
         approvedLevel: approvedLevelByStatus[newStatus],
+        tierSuffix: financingTier ? ` (${financingTier.charAt(0).toUpperCase() + financingTier.slice(1)} tier)` : '',
       });
     } else if (newStatus === ApplicationStatus.REJECTED) {
       await this.notifyStudent(tenantId, application.student_id, 'application_rejected', {
         rejectionReason: notes || 'Not specified',
+      });
+    } else if (newStatus === ApplicationStatus.CAPITAL_QUEUE) {
+      // T-225 — Waiting List must never read like a rejection (spec, D-004).
+      await this.notifyStudent(tenantId, application.student_id, 'waiting_list', {
+        programName: application.program_name || 'your program',
       });
     }
 

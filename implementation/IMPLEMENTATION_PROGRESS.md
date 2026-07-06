@@ -904,3 +904,43 @@ the 8 approved milestones into the remaining Phase 2 items.
   .service.spec.ts`, new file — 5). 112/112 backend tests passing.
   `tsc --noEmit`/`npm run build` clean on `forsa-os`, `forsa-finance`,
   `forsa-partner`.
+
+**T-225 — Notifications, closing out the full Phase 2 backlog.**
+
+- Audited the full trigger list (membership submitted, Bronze granted,
+  Digital Pass ready, financing started, missing documents, AI
+  interview scheduled/ready, Waiting List, Silver/Gold approved,
+  payment received/overdue) against what earlier milestones already
+  wired incrementally, rather than assuming it all still needed
+  building. Found: Bronze granted, financing started, missing
+  documents, payment received, payment overdue were all already real.
+- **3 genuine gaps closed**: `membership_submitted` (new template +
+  trigger in `MembershipService.createRequest` — `recipientId` uses the
+  request's own id, since `notification_logs.recipient_id` is `NOT
+  NULL` and no student/user account exists yet for a visitor);
+  `digital_pass_ready` (fires alongside `membership_approved` in
+  `approve()`, its own distinct event per the trigger list even though
+  both happen in the same transaction); `waiting_list` (fires on
+  transition to `CAPITAL_QUEUE` — D-004: must never read like a
+  rejection).
+- **Enhanced `application_approved`**, which existed but never
+  mentioned the financing tier: required reordering
+  `pipeline.service.ts`'s Stage 10 so the `financing_tier` lookup
+  happens *before* `transitionStatus` is called instead of after (it
+  was previously computed too late to be included) — threaded a new
+  optional `financingTier` param through `transitionStatus` into the
+  email's `{{tierSuffix}}` variable ("approved at Level 2 (Gold
+  tier)").
+- **AI interview scheduled/ready deliberately not built**: no distinct
+  "ready" moment exists in the current architecture — the AI interview
+  is self-service and its scoring is synchronous with financing-request
+  submission — so this is treated as already covered by
+  `application_created` rather than inventing a synthetic trigger point
+  with no real underlying state change.
+- 6 new tests (`membership.service.spec.ts` — 2; `applications.service
+  .spec.ts` — 2). 114/114 backend tests passing. `tsc --noEmit`/
+  `npm run build` clean.
+- This closes the entire Phase 2 backlog given to this session: all 8
+  approved milestones plus T-222/T-224/T-225 beyond them. T-226 (legal
+  copy) remains — flagged in the plan as a content task needing legal/
+  compliance sign-off, not an engineering task.

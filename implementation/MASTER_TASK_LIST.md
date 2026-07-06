@@ -1013,12 +1013,45 @@ resolve them before writing code that depends on the answer).
       actual scoping. 5 new tests (`partners.service.spec.ts`, new file).
 
 ### 2.16 Notifications (event-driven)
-- [ ] T-225 Build real event-driven notifications for at minimum: membership
+- [x] T-225 Build real event-driven notifications for at minimum: membership
       submitted, Bronze granted, Digital Pass ready, financing started,
       missing documents, AI interview (scheduled/ready), Waiting List, Silver
       approved, Gold approved, payment received, payment overdue. This
       supersedes the original 8 dead email templates (T-106) — design the
       trigger list once, covering both sets, rather than wiring twice.
+      **2026-07-06 — DONE, wiring exactly the events that weren't already
+      real and enhancing one that existed but was missing information.**
+      Audited the full trigger list against what T-106/earlier Phase 2
+      milestones already wired: Bronze granted (`membership_approved`),
+      financing started (`application_created`), missing documents
+      (`document_requested`), payment received (`payment_confirmed`),
+      payment overdue (`payment_overdue`) were all already real. **AI
+      interview scheduled/ready deliberately not built as a separate
+      event** — the AI interview is self-service and its scoring is
+      synchronous with financing-request submission (no distinct
+      "ready" moment exists in the current architecture to notify on);
+      treated as already covered by `application_created` rather than
+      inventing a synthetic trigger point that doesn't correspond to a
+      real state change. **3 new templates + triggers**: `membership
+      _submitted` (fires in `MembershipService.createRequest` —
+      `recipientId` uses the request's own id, since no student/user
+      account exists yet for a visitor and `notification_logs
+      .recipient_id` is `NOT NULL`); `digital_pass_ready` (fires
+      alongside `membership_approved` in `approve()`, its own distinct
+      event per the trigger list even though both fire from the same
+      transaction); `waiting_list` (fires from `transitionStatus` when
+      the new status is `CAPITAL_QUEUE` — D-004: must never read like a
+      rejection). **Enhanced `application_approved`**: previously said
+      "approved at Level {{approvedLevel}}" with no mention of Silver/
+      Gold (Milestone 7's financing-tier decision was invisible to the
+      student). Required reordering `pipeline.service.ts`'s Stage 10 —
+      the `financing_tier` lookup previously happened *after*
+      `transitionStatus` was called, too late to include in the
+      notification — moved it earlier and threaded a new optional
+      `financingTier` param through `transitionStatus` into the email's
+      `{{tierSuffix}}` variable. 6 new tests across `membership
+      .service.spec.ts`/`applications.service.spec.ts`. 114/114 backend
+      tests passing.
 
 ### 2.17 Legal
 - [ ] T-226 Rewrite/update all legal copy to reflect the membership-first

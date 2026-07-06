@@ -60,6 +60,23 @@ export class MembershipService {
       ],
     );
 
+    // T-225 — recipientId has no real user account yet at this point (a
+    // visitor submitting a request, before any students/users row
+    // exists) — notification_logs.recipient_id is NOT NULL, so the
+    // request's own id is the only real UUID available; reference_id/
+    // reference_type already capture this same relationship for the
+    // audit trail.
+    await this.notifications.send({
+      tenantId: dto.tenantId,
+      recipientId: request.id,
+      recipientEmail: dto.email,
+      channel: NotificationChannel.EMAIL,
+      templateCode: 'membership_submitted',
+      variables: { firstName: dto.firstName },
+      referenceId: request.id,
+      referenceType: 'membership_request',
+    }).catch(err => this.logger.error('membership_submitted notification failed', err));
+
     return { id: request.id, status: MembershipRequestStatus.PENDING, createdAt: request.created_at };
   }
 
@@ -209,6 +226,21 @@ export class MembershipService {
       referenceId: result.studentId,
       referenceType: 'student',
     }).catch(err => this.logger.error('membership_approved notification failed', err));
+
+    // T-225 — the Digital Pass is issued in the same transaction as
+    // Bronze itself (see issueForStudentTx above), but is its own
+    // distinct notification event per the trigger list.
+    await this.notifications.send({
+      tenantId,
+      recipientId: result.userId,
+      recipientEmail: result.email,
+      channel: NotificationChannel.EMAIL,
+      templateCode: 'digital_pass_ready',
+      variables: { studentName: request.first_name },
+      triggeredBy: approvedBy,
+      referenceId: result.studentId,
+      referenceType: 'student',
+    }).catch(err => this.logger.error('digital_pass_ready notification failed', err));
 
     return { studentId: result.studentId, membershipStatus: MembershipStatus.BRONZE, forsaId: result.forsaId };
   }

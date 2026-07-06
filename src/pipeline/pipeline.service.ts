@@ -1120,11 +1120,28 @@ export class PipelineService {
       [DecisionResult.CAPITAL_QUEUE]: ApplicationStatus.CAPITAL_QUEUE,
     };
 
+    // T-213/D-004 — resolved *before* transitionStatus below (not after,
+    // as originally written) so the financing_tier is available to
+    // thread into the application_approved notification — T-225 needs
+    // Silver/Gold to be mentioned in that email, not a bare "approved".
+    const isApproved = [DecisionResult.APPROVED_LEVEL1, DecisionResult.APPROVED_LEVEL2, DecisionResult.APPROVED_LEVEL3]
+      .includes(decisionResult);
+    let financingTier: 'silver' | 'gold' | undefined;
+    if (isApproved) {
+      const [winningDecision] = await this.dataSource.query<any[]>(
+        `SELECT financing_tier FROM reviewer_decisions
+         WHERE pipeline_run_id = $1 AND decision = 'approved' AND financing_tier IS NOT NULL
+         ORDER BY decided_at DESC LIMIT 1`,
+        [ctx.pipelineRunId],
+      );
+      financingTier = winningDecision?.financing_tier;
+    }
+
     const targetStatus = statusMap[decisionResult];
     if (targetStatus) {
       await this.applicationsService.transitionStatus(
         ctx.applicationId, ctx.tenantId, targetStatus,
-        'system', `Pipeline decision: ${decisionResult}`, ctx.pipelineRunId,
+        'system', `Pipeline decision: ${decisionResult}`, ctx.pipelineRunId, financingTier,
       );
     }
 
@@ -1136,23 +1153,15 @@ export class PipelineService {
       );
     }
 
-    // T-213/D-004 — on a real approval, apply the reviewer's financing_tier
-    // choice (silver/gold) to the application, and ratchet the student's
+    // T-213/D-004 — apply the reviewer's financing_tier choice
+    // (silver/gold) to the application, and ratchet the student's
     // membership_status up to match — but only upward, never down (D-004:
     // membership_status is a pure ratchet with fraud/blacklist as the only
     // exception). A student already at gold approving a new silver-tier
     // renewal keeps gold.
-    const isApproved = [DecisionResult.APPROVED_LEVEL1, DecisionResult.APPROVED_LEVEL2, DecisionResult.APPROVED_LEVEL3]
-      .includes(decisionResult);
     if (isApproved) {
-      const [winningDecision] = await this.dataSource.query<any[]>(
-        `SELECT financing_tier FROM reviewer_decisions
-         WHERE pipeline_run_id = $1 AND decision = 'approved' AND financing_tier IS NOT NULL
-         ORDER BY decided_at DESC LIMIT 1`,
-        [ctx.pipelineRunId],
-      );
-      if (winningDecision?.financing_tier) {
-        const tier = winningDecision.financing_tier as 'silver' | 'gold';
+      if (financingTier) {
+        const tier = financingTier;
         await this.dataSource.query(
           `UPDATE applications SET financing_tier = $3 WHERE id = $1 AND tenant_id = $2`,
           [ctx.applicationId, ctx.tenantId, tier],

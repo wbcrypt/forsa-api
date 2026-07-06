@@ -1,5 +1,23 @@
 # FORSA — Changelog
 
+## 2026-07-06 (continued) — T-225 Notifications, closing the Phase 2 backlog
+- Audited the full event-driven-notification trigger list against what
+  earlier milestones already wired incrementally — most of it was
+  already real, not batched at the end.
+- 3 new templates + triggers: `membership_submitted`,
+  `digital_pass_ready`, `waiting_list` (D-004: must never read like a
+  rejection).
+- Enhanced `application_approved` to name the Silver/Gold financing
+  tier — required reordering Stage 10's tier lookup to happen before
+  the status transition instead of after.
+- AI interview scheduled/ready deliberately not built — no distinct
+  "ready" moment exists in the current synchronous-scoring
+  architecture; covered by the existing `application_created` event.
+- 6 new tests, 114/114 backend tests passing.
+- Completes the full Phase 2 backlog given this session (8 approved
+  milestones + T-222/T-224/T-225). T-226 (legal copy) remains, flagged
+  as a content task needing legal/compliance sign-off.
+
 ## 2026-07-06 — T-222 (Finance portal) + T-224 (Partner portal), completing the Phase 2 backlog
 - Finance: real Disbursements page (`GET /execution/disbursements`,
   data already existed via the DEE, just no read path), fixed the
