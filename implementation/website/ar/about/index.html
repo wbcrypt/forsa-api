@@ -66,6 +66,16 @@
     .faq-note h2{font-size:22px;font-weight:900;margin-bottom:8px}
     .faq-note p{color:rgba(255,255,255,.78);font-size:14.5px}
 
+    /* ── Desktop nav crowding fix ──
+       Adding About + FAQ pushed the nav past what .wrap's 1180px cap and the
+       original 28px gaps could fit — French labels are the longest and wrap
+       to 2-3 lines even on a wide desktop viewport (not just narrow ones).
+       Widen the nav row specifically (not the shared .wrap, so hero/tiers/
+       portals/footer content width is untouched) and tighten spacing. */
+    .nav .wrap{max-width:1320px}
+    .links{gap:20px}
+    .links a{font-size:13px;white-space:nowrap}
+
     /* ── Mobile nav (hamburger) — added because the homepage design had
        none: nav links simply vanished below 980px with no replacement. ── */
     .nav-burger{display:none;background:none;border:none;cursor:pointer;padding:8px;flex-shrink:0}
@@ -73,13 +83,19 @@
     .nav.nav-open .nav-burger span:nth-child(1){transform:translateY(6px) rotate(45deg)}
     .nav.nav-open .nav-burger span:nth-child(2){opacity:0}
     .nav.nav-open .nav-burger span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
-    @media(max-width:980px){
+    /* Nav switches to the mobile dropdown at 1200px, not homepage.css's
+       980px — the 6-link nav (with About + FAQ) plus lang switcher plus two
+       buttons has no width left to stay in desktop mode between 980-1200px
+       even with nowrap + tighter spacing; it would just overflow instead of
+       wrapping. This query supersedes homepage.css's narrower one for nav
+       (higher-specificity selectors below win regardless of source order),
+       while homepage.css's unrelated 980px content-grid collapses (hero,
+       tiers, steps, portals, footer) are untouched. */
+    @media(max-width:1200px){
       .nav-burger{display:block}
-      .nav .links{position:fixed;top:72px;left:0;right:0;background:#fff;flex-direction:column;align-items:stretch;gap:2px;padding:14px 24px 20px;border-bottom:1px solid var(--line);box-shadow:0 14px 30px rgba(27,58,140,.09);transform:translateY(-8px);opacity:0;pointer-events:none;transition:.2s}
+      .nav .links{position:fixed;top:72px;left:0;right:0;background:#fff;flex-direction:column;align-items:stretch;gap:2px;padding:14px 24px 20px;border-bottom:1px solid var(--line);box-shadow:0 14px 30px rgba(27,58,140,.09);transform:translateY(-8px);opacity:0;pointer-events:none;transition:.2s;max-height:calc(100vh - 72px);overflow-y:auto}
       .nav.nav-open .links{transform:translateY(0);opacity:1;pointer-events:auto}
-      /* homepage.css sets .links a{display:none} at this same breakpoint —
-         restore display (not just opacity) for every link inside the panel. */
-      .nav .links a{display:block;padding:12px 4px;opacity:1}
+      .nav .links a{display:block;padding:12px 4px;opacity:1;white-space:normal}
       .nav .links a.btn{display:inline-flex}
       .nav .links .langs{display:flex}
       .nav .links .langs a{display:inline-flex;padding:5px 9px;font-size:11px;font-weight:800}
