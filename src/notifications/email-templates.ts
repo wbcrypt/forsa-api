@@ -5,24 +5,24 @@
  */
 
 export const FORSA_EMAIL_STYLES = `
-  body { margin: 0; padding: 0; background: #f0f4ff; font-family: 'Segoe UI', Arial, sans-serif; }
+  body { margin: 0; padding: 0; background: #EEF2FC; font-family: 'Segoe UI', Arial, sans-serif; }
   .wrapper { max-width: 600px; margin: 32px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(15,28,66,0.08); }
-  .header { background: linear-gradient(135deg, #0F1C42 0%, #1B2A5E 100%); padding: 32px 40px; text-align: center; }
+  .header { background: linear-gradient(135deg, #122868 0%, #1B3A8C 100%); padding: 32px 40px; text-align: center; }
   .logo { font-size: 28px; font-weight: 800; color: white; letter-spacing: -0.02em; }
-  .logo span { color: #2dd4bf; }
+  .logo span { color: #33D6D9; }
   .tagline { font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px; }
   .body { padding: 40px; }
-  .greeting { font-size: 22px; font-weight: 700; color: #0F1C42; margin-bottom: 12px; }
+  .greeting { font-size: 22px; font-weight: 700; color: #122868; margin-bottom: 12px; }
   .text { font-size: 15px; color: #4b5563; line-height: 1.7; margin-bottom: 16px; }
   .highlight-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 20px 24px; margin: 24px 0; }
   .highlight-box.success { background: #f0fdf4; border-color: #86efac; }
   .highlight-box.warning { background: #fffbeb; border-color: #fde68a; }
-  .highlight-box.navy { background: #f0f4ff; border-color: #c7d2fe; }
+  .highlight-box.navy { background: #EEF2FC; border-color: #B0C4EF; }
   .highlight-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin-bottom: 4px; }
-  .highlight-value { font-size: 18px; font-weight: 700; color: #0F1C42; }
-  .btn { display: inline-block; background: #14b8a6; color: white; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-weight: 700; font-size: 15px; margin: 24px 0; }
-  .btn:hover { background: #0891b2; }
-  .btn.navy { background: #0F1C42; }
+  .highlight-value { font-size: 18px; font-weight: 700; color: #122868; }
+  .btn { display: inline-block; background: #00C4C8; color: white; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-weight: 700; font-size: 15px; margin: 24px 0; }
+  .btn:hover { background: #00A8AC; }
+  .btn.navy { background: #122868; }
   .divider { border: none; border-top: 1px solid #f3f4f6; margin: 32px 0; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
   .info-item { background: #f9fafb; border-radius: 10px; padding: 14px 16px; }
@@ -31,8 +31,8 @@ export const FORSA_EMAIL_STYLES = `
   .checklist { list-style: none; padding: 0; margin: 0; }
   .checklist li { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: #374151; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
   .checklist li:last-child { border-bottom: none; }
-  .check { color: #14b8a6; font-weight: 700; flex-shrink: 0; }
-  .footer { background: #0F1C42; padding: 24px 40px; text-align: center; }
+  .check { color: #00C4C8; font-weight: 700; flex-shrink: 0; }
+  .footer { background: #122868; padding: 24px 40px; text-align: center; }
   .footer-text { font-size: 12px; color: rgba(255,255,255,0.35); line-height: 1.6; }
   .footer-text a { color: rgba(255,255,255,0.5); text-decoration: none; }
   .disclaimer { font-size: 12px; color: #9ca3af; font-style: italic; margin-top: 20px; padding-top: 20px; border-top: 1px solid #f3f4f6; }
@@ -331,7 +331,7 @@ export const paymentReminderEmail = (data: {
       </div>
       <div style="margin-top:12px;">
         <div class="highlight-label">Référence de paiement — À inclure obligatoirement</div>
-        <div style="font-size:16px;font-weight:800;color:#0F1C42;font-family:monospace;margin-top:4px;">${data.paymentReference}</div>
+        <div style="font-size:16px;font-weight:800;color:#122868;font-family:monospace;margin-top:4px;">${data.paymentReference}</div>
       </div>
       <div style="margin-top:8px;font-size:11px;color:#92400e;">
         Versement ${data.installmentNumber}/${data.totalInstallments}
@@ -525,8 +525,8 @@ export const GUARANTOR_INVITED = (guarantorName: string, studentName: string, ac
   subject: `FORSA — Invitation Portail Garant pour ${studentName}`,
   html: `
     <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-      <div style="background:#0F1C42;border-radius:14px;padding:28px;text-align:center;margin-bottom:24px">
-        <div style="width:44px;height:44px;background:#14b8a6;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">
+      <div style="background:#122868;border-radius:14px;padding:28px;text-align:center;margin-bottom:24px">
+        <div style="width:44px;height:44px;background:#00C4C8;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">
           <span style="color:white;font-weight:900;font-size:20px">F</span>
         </div>
         <h1 style="color:white;font-size:22px;font-weight:800;margin:0">Invitation Portail Garant</h1>
@@ -537,13 +537,13 @@ export const GUARANTOR_INVITED = (guarantorName: string, studentName: string, ac
         Votre rôle de garant vous permet de suivre l'avancement de ${studentName} et d'effectuer des paiements mensuels en son nom.
       </p>
       <div style="text-align:center;margin:28px 0">
-        <a href="${activationLink}" style="background:#14b8a6;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
+        <a href="${activationLink}" style="background:#00C4C8;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
           Activer mon compte Garant →
         </a>
       </div>
       <p style="color:#9ca3af;font-size:12px;line-height:1.6">Ce lien est valide 7 jours. Si vous ne connaissez pas ${studentName} ou n'avez pas consenti à être garant, ignorez cet email.</p>
       <hr style="border:none;border-top:1px solid #f3f4f6;margin:20px 0" />
-      <p style="color:#9ca3af;font-size:11px;text-align:center">© 2026 FORSA Tunisia · <a href="https://forsa.tn" style="color:#14b8a6">forsa.tn</a></p>
+      <p style="color:#9ca3af;font-size:11px;text-align:center">© 2026 FORSA Tunisia · <a href="https://forsa.tn" style="color:#00C4C8">forsa.tn</a></p>
     </div>
   `
 })
@@ -555,7 +555,7 @@ export const GUARANTOR_PAYMENT_REMINDER = (
   subject: `FORSA — Rappel paiement ${studentName} · ${amount} TND`,
   html: `
     <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-      <div style="background:#0F1C42;border-radius:14px;padding:24px 28px;margin-bottom:24px">
+      <div style="background:#122868;border-radius:14px;padding:24px 28px;margin-bottom:24px">
         <h1 style="color:white;font-size:20px;font-weight:800;margin:0">Rappel de paiement</h1>
         <p style="color:rgba(255,255,255,0.6);font-size:13px;margin:4px 0 0">Garant : ${guarantorName}</p>
       </div>
@@ -578,7 +578,7 @@ export const GUARANTOR_PAYMENT_REMINDER = (
         </div>
       </div>
       <div style="text-align:center;margin:24px 0">
-        <a href="${paymentUrl}" style="background:#14b8a6;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
+        <a href="${paymentUrl}" style="background:#00C4C8;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
           Effectuer le paiement →
         </a>
       </div>
@@ -593,7 +593,7 @@ export const GUARANTOR_PAYMENT_CONFIRMED = (
   subject: `FORSA — Paiement confirmé · ${studentName} · ${month}`,
   html: `
     <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-      <div style="background:#0F1C42;border-radius:14px;padding:24px 28px;margin-bottom:24px">
+      <div style="background:#122868;border-radius:14px;padding:24px 28px;margin-bottom:24px">
         <h1 style="color:white;font-size:20px;font-weight:800;margin:0">✓ Paiement vérifié</h1>
       </div>
       <p style="color:#374151;font-size:15px">Bonjour <strong>${guarantorName}</strong>,</p>
