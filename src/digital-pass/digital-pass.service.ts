@@ -61,8 +61,13 @@ export class DigitalPassService {
   // Self-scoped, mirrors StudentsService.findMe/findMyPayments — resolves
   // via the caller's own user_id, never a client-supplied student id.
   async findMyPass(userId: string, tenantId: string) {
+    // Was `SELECT dsp.*` — the join to students existed only to scope by
+    // user_id, so forsa_id/membership_status/member_since (everything the
+    // student portal's PassPage.tsx actually renders besides the QR code)
+    // were silently absent from every response.
     const [pass] = await this.dataSource.query<any[]>(
-      `SELECT dsp.* FROM digital_student_passes dsp
+      `SELECT dsp.*, s.first_name, s.last_name, s.forsa_id, s.membership_status, s.member_since
+       FROM digital_student_passes dsp
        JOIN students s ON s.id = dsp.student_id
        WHERE s.user_id = $1 AND dsp.tenant_id = $2`,
       [userId, tenantId],
