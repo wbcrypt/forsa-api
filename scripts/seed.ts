@@ -151,7 +151,7 @@ const NOTIFICATION_TEMPLATES = [
   ['application_approved','email','Application Approved','🎉 Your Application is Approved',
    '<p>Dear {{studentName}},</p><p>Congratulations! Your application for {{programName}} at {{universityName}} has been approved at Level {{approvedLevel}}{{tierSuffix}}.</p>',true],
   ['application_rejected','email','Application Update','Update on Your Application',
-   '<p>Dear {{studentName}},</p><p>We regret to inform you that your application could not be approved at this time. Reason: {{rejectionReason}}</p>',true],
+   '<p>Dear {{studentName}},</p><p>Your Tuition Facilitation Plan request could not be approved at this time. Reason: {{rejectionReason}}</p><p>This does not affect your FORSA Bronze membership — you keep your FORSA ID and Digital Pass, and you are welcome to reapply once the situation above is resolved.</p><p>If you have questions, reply to this email and our team will be glad to help.</p>',true],
   ['payment_due_soon','email','Payment Reminder','Payment Due in {{daysUntilDue}} Days',
    '<p>Dear {{studentName}},</p><p>Your payment of {{amount}} {{currency}} is due on {{dueDate}}.</p>',true],
   ['payment_overdue','email','Payment Overdue','Overdue Payment Notice',
