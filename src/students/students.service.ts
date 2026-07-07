@@ -94,7 +94,7 @@ export class StudentsService {
     const [data, [count]] = await Promise.all([
       this.dataSource.query(
         `SELECT s.id, s.first_name, s.last_name, s.email, s.phone_primary,
-                s.status, s.city, s.created_at,
+                s.status, s.city, s.created_at, s.membership_status, s.forsa_id,
                 fs.aggregate_score, fs.score_band,
                 a.current_status AS application_status,
                 u.name AS university_name
