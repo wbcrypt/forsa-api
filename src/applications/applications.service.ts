@@ -262,6 +262,7 @@ export class ApplicationsService {
       this.dataSource.query(
         `SELECT a.id, a.current_status, a.current_financing_level, a.tuition_amount,
                 a.lead_date, a.academic_year, a.is_renewal,
+                a.ai_score_overall, a.ai_recommendation, a.ai_report,
                 s.first_name, s.last_name, s.email,
                 u.name AS university_name,
                 p.name AS program_name,

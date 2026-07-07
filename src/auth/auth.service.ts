@@ -262,13 +262,25 @@ export class AuthService {
     validatePasswordComplexity(newPassword);
 
     const tokenHash = hashToken(rawToken);
+    // Look up the token regardless of used/expired state first, so the
+    // error can actually say what happened — a real user hit this exact
+    // ambiguity: clicked an already-consumed link again (having genuinely
+    // set their password the first time) and saw the same generic
+    // "invalid or expired" a truly bad/unknown token would show, with no
+    // way to tell the two apart.
     const [tokenRow] = await this.dataSource.query<any[]>(
-      `SELECT id, user_id, tenant_id FROM password_setup_tokens
-       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()`,
+      `SELECT id, user_id, tenant_id, used_at, expires_at FROM password_setup_tokens
+       WHERE token_hash = $1`,
       [tokenHash],
     );
     if (!tokenRow) {
-      throw new BadRequestException('This set-password link is invalid or has expired');
+      throw new BadRequestException('This set-password link is invalid. Please use the link from your email, or contact support for a new one.');
+    }
+    if (tokenRow.used_at) {
+      throw new BadRequestException('This link has already been used to set your password. If you already completed this step, please log in instead.');
+    }
+    if (new Date(tokenRow.expires_at) <= new Date()) {
+      throw new BadRequestException('This set-password link has expired. Please contact support for a new one.');
     }
 
     const passwordHash = await hashPassword(newPassword);
