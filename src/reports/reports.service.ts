@@ -12,6 +12,7 @@ export class ReportsService {
     const [portfolio, pipeline, payments, partners] = await Promise.all([
       this.dataSource.query<any[]>(
         `SELECT
+           COUNT(DISTINCT a.id) AS total_applications,
            COUNT(DISTINCT a.id) FILTER (WHERE a.current_status = 'active_student') AS active_students,
            COUNT(DISTINCT a.id) FILTER (WHERE a.current_status = 'completed') AS completed,
            COUNT(DISTINCT a.id) FILTER (WHERE a.current_status IN ('new_lead','contacted','waiting_for_documents','documents_received','under_review')) AS in_pipeline,
