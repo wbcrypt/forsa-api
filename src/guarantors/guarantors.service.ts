@@ -4,8 +4,9 @@ import { DataSource } from 'typeorm'
 import { KonnectService } from '../payments/konnect.service'
 import { DocumentsService } from '../documents/documents.service'
 import { hashPassword, validatePasswordComplexity } from '../common/utils/password.util'
+import { hashToken } from '../common/utils/encryption.util'
 import { UserStatus } from '../common/enums'
-import { RegisterGuarantorDto } from './dto/register-guarantor.dto'
+import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto'
 
 @Injectable()
 export class GuarantorsService {
@@ -16,33 +17,64 @@ export class GuarantorsService {
   ) {}
 
   /**
-   * T-102 — public self-registration ("activate my portal account").
-   * See RegisterGuarantorDto for why this can only ever activate an
-   * existing guarantor row (created by staff), never create one.
+   * Look up an invite by its raw token — used by both the public preview
+   * (GET, before the guarantor decides anything) and accept/decline
+   * (POST). Distinguishes "no such token" from "already used/expired"
+   * so the guarantor portal can show a real reason, not a generic dead end
+   * (the same UX gap fixed for the student set-password flow).
    */
-  async registerSelf(dto: RegisterGuarantorDto) {
+  private async findInviteByToken(rawToken: string) {
+    const tokenHash = hashToken(rawToken)
+    const [guarantor] = await this.db.query<any[]>(
+      `SELECT g.id, g.tenant_id, g.email, g.first_name, g.last_name, g.user_id,
+              g.invite_token_expires_at,
+              sg.student_id, sg.status AS link_status,
+              s.first_name AS student_first_name
+       FROM guarantors g
+       LEFT JOIN student_guarantors sg ON sg.guarantor_id = g.id
+       LEFT JOIN students s ON s.id = sg.student_id
+       WHERE g.invite_token = $1`,
+      [tokenHash],
+    )
+    return guarantor || null
+  }
+
+  /** Public preview — shown before the guarantor commits to accept/decline. */
+  async previewInvite(rawToken: string) {
+    const invite = await this.findInviteByToken(rawToken)
+    if (!invite) throw new BadRequestException('This invite link is invalid.')
+    if (invite.user_id) throw new BadRequestException('This invite has already been used. Please log in instead.')
+    if (invite.link_status === 'declined') throw new BadRequestException('This invitation was already declined.')
+    if (new Date(invite.invite_token_expires_at) <= new Date()) {
+      throw new BadRequestException('This invite link has expired. Ask the student\'s FORSA contact to resend it.')
+    }
+    return {
+      guarantorFirstName: invite.first_name,
+      guarantorLastName: invite.last_name,
+      email: invite.email,
+      tenantId: invite.tenant_id,
+      studentFirstName: invite.student_first_name,
+      expiresAt: invite.invite_token_expires_at,
+    }
+  }
+
+  /** Accept: verifies the token, sets a password, activates portal access. */
+  async acceptInvite(rawToken: string, dto: AcceptGuarantorInviteDto) {
     validatePasswordComplexity(dto.password)
 
-    const [guarantor] = await this.db.query<any[]>(
-      `SELECT id, user_id FROM guarantors WHERE tenant_id = $1 AND email = $2`,
-      [dto.tenantId, dto.email],
-    )
-    if (!guarantor) {
-      throw new NotFoundException(
-        'No guarantor record found for this email. Ask the student\'s FORSA contact to add you as a guarantor first.',
-      )
-    }
-    if (guarantor.user_id) {
-      throw new ConflictException('This guarantor has already activated a portal account')
+    const invite = await this.findInviteByToken(rawToken)
+    if (!invite) throw new BadRequestException('This invite link is invalid.')
+    if (invite.user_id) throw new ConflictException('This invite has already been used. Please log in instead.')
+    if (invite.link_status === 'declined') throw new BadRequestException('This invitation was already declined.')
+    if (new Date(invite.invite_token_expires_at) <= new Date()) {
+      throw new BadRequestException('This invite link has expired. Ask the student\'s FORSA contact to resend it.')
     }
 
     const existingUser = await this.db.query<any[]>(
       `SELECT id FROM users WHERE tenant_id = $1 AND email = $2`,
-      [dto.tenantId, dto.email],
+      [invite.tenant_id, invite.email],
     )
-    if (existingUser.length) {
-      throw new ConflictException('An account with this email already exists')
-    }
+    if (existingUser.length) throw new ConflictException('An account with this email already exists')
 
     const passwordHash = await hashPassword(dto.password)
 
@@ -51,24 +83,59 @@ export class GuarantorsService {
         `INSERT INTO users
           (tenant_id, email, email_verified, password_hash, full_name, status,
            must_change_password, portal_type, guarantor_id)
-         VALUES ($1,$2,false,$3,$4,$5,false,'guarantor',$6)
+         VALUES ($1,$2,true,$3,$4,$5,false,'guarantor',$6)
          RETURNING id, email`,
-        [dto.tenantId, dto.email, passwordHash, dto.fullName, UserStatus.PENDING_VERIFICATION, guarantor.id],
+        [invite.tenant_id, invite.email, passwordHash,
+         `${invite.first_name} ${invite.last_name}`.trim(), UserStatus.ACTIVE, invite.id],
       )
 
+      // Token is single-use: clear it so this same link can never be
+      // replayed (findInviteByToken would no longer find a row for it).
       await manager.query(
-        `UPDATE guarantors SET user_id = $2, portal_activated = true WHERE id = $1`,
-        [guarantor.id, user.id],
+        `UPDATE guarantors SET user_id = $2, portal_activated = true, invite_token = NULL WHERE id = $1`,
+        [invite.id, user.id],
       )
+
+      if (invite.student_id) {
+        await manager.query(
+          `UPDATE student_guarantors SET status = 'active' WHERE guarantor_id = $1 AND student_id = $2`,
+          [invite.id, invite.student_id],
+        )
+      }
 
       await manager.query(
         `INSERT INTO audit_logs (tenant_id, user_id, action_type, module, target_entity, target_id, new_value, created_at)
-         VALUES ($1,$2,'guarantor.self_registered','guarantors','guarantors',$3,$4,NOW())`,
-        [dto.tenantId, user.id, guarantor.id, JSON.stringify({ email: dto.email })],
+         VALUES ($1,$2,'guarantor.invite_accepted','guarantors','guarantors',$3,$4,NOW())`,
+        [invite.tenant_id, user.id, invite.id, JSON.stringify({ email: invite.email })],
       ).catch(() => {})
 
-      return { guarantorId: guarantor.id, userId: user.id, email: user.email }
+      return { guarantorId: invite.id, userId: user.id, email: user.email }
     })
+  }
+
+  /** Decline: no account is ever created — just marks the link declined for staff to see. */
+  async declineInvite(rawToken: string, dto: DeclineGuarantorInviteDto) {
+    const invite = await this.findInviteByToken(rawToken)
+    if (!invite) throw new BadRequestException('This invite link is invalid.')
+    if (invite.user_id) throw new ConflictException('This invite has already been used.')
+    if (invite.link_status === 'declined') return { success: true }
+
+    if (invite.student_id) {
+      await this.db.query(
+        `UPDATE student_guarantors SET status = 'declined', withdrawal_date = CURRENT_DATE, withdrawal_reason = $3
+         WHERE guarantor_id = $1 AND student_id = $2`,
+        [invite.id, invite.student_id, dto.reason || 'Declined by guarantor'],
+      )
+    }
+    await this.db.query(`UPDATE guarantors SET invite_token = NULL WHERE id = $1`, [invite.id])
+
+    await this.db.query(
+      `INSERT INTO audit_logs (tenant_id, action_type, module, target_entity, target_id, new_value, created_at)
+       VALUES ($1,'guarantor.invite_declined','guarantors','guarantors',$2,$3,NOW())`,
+      [invite.tenant_id, invite.id, JSON.stringify({ email: invite.email, reason: dto.reason })],
+    ).catch(() => {})
+
+    return { success: true }
   }
 
   /**

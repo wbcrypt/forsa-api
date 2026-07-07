@@ -129,6 +129,18 @@ export class StudentsController {
     return this.service.addGuarantor(id, t, dto, u);
   }
 
+  @Post(':id/guarantors/:guarantorId/resend-invite')
+  @RequirePermissions('student.edit')
+  @HttpCode(HttpStatus.OK)
+  resendGuarantorInvite(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('guarantorId', ParseUUIDPipe) guarantorId: string,
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.resendGuarantorInvite(id, guarantorId, t, u);
+  }
+
   @Delete(':id/guarantors/:guarantorId')
   @RequirePermissions('student.edit')
   @HttpCode(HttpStatus.OK)

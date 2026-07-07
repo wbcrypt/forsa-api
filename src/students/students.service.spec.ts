@@ -17,6 +17,7 @@ describe('StudentsService.findMyPayments', () => {
     service = new StudentsService(
       { query } as unknown as DataSource,
       {} as unknown as ConfigService,
+      {} as any,
     );
   });
 

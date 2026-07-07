@@ -3,10 +3,14 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { encrypt, decrypt } from '../common/utils/encryption.util';
+import { addDays } from 'date-fns';
+import { encrypt, decrypt, generateSecureToken, hashToken } from '../common/utils/encryption.util';
 import { ConfigService } from '@nestjs/config';
-import { StudentStatus, ExceptionalEventType, SourceTrustLevel } from '../common/enums';
+import { StudentStatus, ExceptionalEventType, SourceTrustLevel, NotificationChannel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
+import { NotificationsService } from '../notifications/notifications.service';
+
+const GUARANTOR_INVITE_TTL_DAYS = 7;
 
 @Injectable()
 export class StudentsService {
@@ -15,6 +19,7 @@ export class StudentsService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly configService: ConfigService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async create(dto: any, tenantId: string, createdBy: string) {
@@ -124,8 +129,10 @@ export class StudentsService {
               json_agg(DISTINCT jsonb_build_object(
                 'id', sg.id, 'role', sg.role, 'status', sg.status,
                 'guarantorId', g.id, 'fullName', g.first_name || ' ' || g.last_name,
-                'employmentStatus', g.employment_status, 'riskLevel', g.risk_level
-              )) FILTER (WHERE sg.id IS NOT NULL AND sg.status = 'active') AS guarantors
+                'email', g.email, 'employmentStatus', g.employment_status, 'riskLevel', g.risk_level,
+                'inviteSentAt', g.invite_sent_at, 'inviteExpiresAt', g.invite_token_expires_at,
+                'portalActivated', g.portal_activated
+              )) FILTER (WHERE sg.id IS NOT NULL AND sg.status != 'withdrawn') AS guarantors
        FROM students s
        LEFT JOIN student_profiles sp ON sp.student_id = s.id
        LEFT JOIN forsa_scores fs ON fs.student_id = s.id
@@ -182,30 +189,54 @@ export class StudentsService {
 
   async addGuarantor(studentId: string, tenantId: string, dto: any, addedBy: string) {
     // Verify student
-    await this.findOne(studentId, tenantId);
+    const student = await this.findOne(studentId, tenantId);
+
+    if (!dto.email) {
+      throw new BadRequestException('email is required — the invite link is sent there');
+    }
+    if (!dto.firstName || !dto.lastName) {
+      throw new BadRequestException('firstName and lastName are required');
+    }
+
+    const [existingByEmail] = await this.dataSource.query<any[]>(
+      `SELECT id FROM guarantors WHERE tenant_id = $1 AND email = $2`,
+      [tenantId, dto.email],
+    );
+    if (existingByEmail) {
+      throw new BadRequestException('A guarantor with this email has already been added');
+    }
 
     const nationalIdRef = dto.nationalId
       ? encrypt(dto.nationalId, this.configService.get<string>('encryption.piiKey')!)
       : null;
 
+    // Guarantors never self-register from scratch — a guarantor row (and
+    // the invite that activates it) can only be created here, by staff,
+    // for a specific student. See guarantors.service.ts's invite/accept/
+    // decline flow for the other half of this.
+    const rawToken = generateSecureToken(32);
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = addDays(new Date(), GUARANTOR_INVITE_TTL_DAYS);
+
     const [guarantor] = await this.dataSource.query<any[]>(
       `INSERT INTO guarantors
         (tenant_id, first_name, last_name, date_of_birth, national_id_reference,
          relationship_to_student, employment_status, employer_name, income_stability,
-         email, phone_primary, contact_reliability, risk_level, document_status, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'unknown','unknown','pending',$12)
-       RETURNING id`,
+         email, phone_primary, contact_reliability, risk_level, document_status, created_by,
+         invite_token, invite_sent_at, invite_token_expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'unknown','unknown','pending',$12,$13,NOW(),$14)
+       RETURNING id, email`,
       [
         tenantId, dto.firstName, dto.lastName, dto.dateOfBirth, nationalIdRef,
         dto.relationship, dto.employmentStatus, dto.employerName, dto.incomeStability,
-        dto.email, dto.phone, addedBy,
+        dto.email, dto.phone, addedBy, tokenHash, expiresAt,
       ],
     );
 
     const [link] = await this.dataSource.query<any[]>(
       `INSERT INTO student_guarantors
         (student_id, guarantor_id, role, status, effective_date, added_by)
-       VALUES ($1,$2,$3,'active',CURRENT_DATE,$4)
+       VALUES ($1,$2,$3,'pending_invitation',CURRENT_DATE,$4)
        RETURNING *`,
       [studentId, guarantor.id, dto.role || 'primary', addedBy],
     );
@@ -213,7 +244,56 @@ export class StudentsService {
     await this.audit(tenantId, addedBy, 'student.guarantor.added', studentId, null,
       { guarantorId: guarantor.id, role: dto.role });
 
+    await this.sendGuarantorInviteEmail(tenantId, guarantor.id, guarantor.email, dto.firstName, student.first_name, addedBy, rawToken);
+
     return { guarantor, link };
+  }
+
+  private async sendGuarantorInviteEmail(
+    tenantId: string, guarantorId: string, email: string, guarantorFirstName: string,
+    studentFirstName: string, triggeredBy: string, rawToken: string,
+  ) {
+    const inviteUrl = `${process.env.GUARANTOR_PORTAL_URL || 'https://guarantor.forsa.tn'}/invite/${rawToken}`;
+    await this.notifications.send({
+      tenantId,
+      recipientId: guarantorId,
+      recipientEmail: email,
+      channel: NotificationChannel.EMAIL,
+      templateCode: 'guarantor_invited',
+      variables: { guarantorFirstName, studentFirstName, inviteUrl },
+      triggeredBy,
+      referenceId: guarantorId,
+      referenceType: 'guarantor',
+    }).catch(err => this.logger.error('guarantor_invited notification failed', err));
+  }
+
+  /** Re-issue a fresh invite token/email for a guarantor still pending activation. */
+  async resendGuarantorInvite(studentId: string, guarantorId: string, tenantId: string, requestedBy: string) {
+    const [guarantor] = await this.dataSource.query<any[]>(
+      `SELECT g.id, g.email, g.first_name, g.user_id, s.first_name AS student_first_name
+       FROM guarantors g
+       JOIN student_guarantors sg ON sg.guarantor_id = g.id AND sg.student_id = $2
+       JOIN students s ON s.id = $2
+       WHERE g.id = $1 AND g.tenant_id = $3`,
+      [guarantorId, studentId, tenantId],
+    );
+    if (!guarantor) throw new NotFoundException('Guarantor not found for this student');
+    if (guarantor.user_id) throw new BadRequestException('This guarantor has already activated their portal account');
+
+    const rawToken = generateSecureToken(32);
+    const tokenHash = hashToken(rawToken);
+    const expiresAt = addDays(new Date(), GUARANTOR_INVITE_TTL_DAYS);
+
+    await this.dataSource.query(
+      `UPDATE guarantors SET invite_token = $2, invite_sent_at = NOW(), invite_token_expires_at = $3 WHERE id = $1`,
+      [guarantorId, tokenHash, expiresAt],
+    );
+
+    await this.sendGuarantorInviteEmail(
+      tenantId, guarantor.id, guarantor.email, guarantor.first_name, guarantor.student_first_name, requestedBy, rawToken,
+    );
+
+    return { success: true };
   }
 
   async withdrawGuarantor(

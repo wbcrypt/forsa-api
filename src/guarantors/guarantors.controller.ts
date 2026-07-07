@@ -1,9 +1,9 @@
-import { Controller, Get, Post, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
+import { Controller, Get, Post, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiOperation } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser, CurrentTenant, Public } from '../common/decorators'
 import { GuarantorsService } from './guarantors.service'
-import { RegisterGuarantorDto } from './dto/register-guarantor.dto'
+import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto'
 
 @ApiTags('Guarantors')
 @UseGuards(JwtAuthGuard)
@@ -11,14 +11,32 @@ import { RegisterGuarantorDto } from './dto/register-guarantor.dto'
 export class GuarantorsController {
   constructor(private readonly service: GuarantorsService) {}
 
-  // T-102: genuinely public — @Public() overrides the class-level
-  // JwtAuthGuard for this route only. See RegisterGuarantorDto for why this
-  // can only activate an existing guarantor row, never create one.
+  // Guarantors never self-register from an arbitrary tenant+email guess
+  // (the retired T-102 flow) — the only way into the portal is a secure,
+  // single-use, expiring token emailed when staff adds the guarantor to a
+  // student (students.service.ts#addGuarantor). These 3 routes are the
+  // entire public surface of that: preview before committing, accept, or
+  // decline — @Public() overrides the class-level JwtAuthGuard for each.
   @Public()
-  @Post('register')
-  @ApiOperation({ summary: 'Public guarantor self-registration — activates portal access for an existing guarantor record (T-102)' })
-  registerSelf(@Body() dto: RegisterGuarantorDto) {
-    return this.service.registerSelf(dto)
+  @Get('invite/:token')
+  @ApiOperation({ summary: 'Preview a guarantor invite before accepting/declining — who invited you, for which student' })
+  previewInvite(@Param('token') token: string) {
+    return this.service.previewInvite(token)
+  }
+
+  @Public()
+  @Post('invite/:token/accept')
+  @ApiOperation({ summary: 'Accept a guarantor invite — sets a password and activates portal access' })
+  acceptInvite(@Param('token') token: string, @Body() dto: AcceptGuarantorInviteDto) {
+    return this.service.acceptInvite(token, dto)
+  }
+
+  @Public()
+  @Post('invite/:token/decline')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Decline a guarantor invite — no account is created' })
+  declineInvite(@Param('token') token: string, @Body() dto: DeclineGuarantorInviteDto) {
+    return this.service.declineInvite(token, dto)
   }
 
   @Get('my-student')

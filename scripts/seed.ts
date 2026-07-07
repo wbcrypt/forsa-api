@@ -172,6 +172,8 @@ const NOTIFICATION_TEMPLATES = [
    '<p>Dear {{studentName}},</p><p>Your FORSA Digital Student Pass is ready. You can view your QR pass anytime from your student dashboard.</p>',true],
   ['waiting_list','email','Placed on the FORSA Waiting List','You’ve been placed on the FORSA Waiting List',
    '<p>Dear {{studentName}},</p><p>Your application for {{programName}} has not been rejected — you’ve been placed on FORSA’s Waiting List while capital becomes available. We will notify you as soon as your application can move forward.</p>',true],
+  ['guarantor_invited','email','You\'ve Been Invited as a FORSA Guarantor','You\'ve been invited to be {{studentFirstName}}\'s FORSA guarantor',
+   '<p>Dear {{guarantorFirstName}},</p><p>{{studentFirstName}} has listed you as their guarantor for a FORSA Tuition Facilitation Plan. As a guarantor, you\'ll be able to track their plan and make payments on their behalf.</p><p>Please review and respond to this invitation: <a href="{{inviteUrl}}">{{inviteUrl}}</a></p><p>This link expires in 7 days. If you don\'t recognize this request, you can safely decline it from the link above.</p>',true],
 ];
 
 async function main() {
