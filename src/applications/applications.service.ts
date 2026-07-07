@@ -383,6 +383,43 @@ export class ApplicationsService {
     await this.audit(tenantId, changedBy, 'application.status.changed', id,
       { status: currentStatus }, { status: newStatus, notes });
 
+    const approvedStatuses: ApplicationStatus[] = [
+      ApplicationStatus.APPROVED_LEVEL1, ApplicationStatus.APPROVED_LEVEL2, ApplicationStatus.APPROVED_LEVEL3,
+    ];
+    if (approvedStatuses.includes(newStatus) && financingTier) {
+      // Same ratchet-only-upward rule as pipeline.service.ts's automated
+      // decision path (D-004): membership_status only ever moves up
+      // (bronze -> silver -> gold), never down, from an approval. A
+      // student already at gold approving a new silver-tier renewal keeps
+      // gold. This is the manual-admin-decision counterpart to that logic
+      // — without it, approving through this endpoint (as opposed to the
+      // pipeline/human-decision one) silently never changed the student's
+      // actual membership tier at all.
+      await this.dataSource.query(
+        `UPDATE applications SET financing_tier = $3 WHERE id = $1 AND tenant_id = $2`,
+        [id, tenantId, financingTier],
+      );
+      const tierRank: Record<string, number> = { bronze: 0, silver: 1, gold: 2, blacklisted: -1 };
+      const [student] = await this.dataSource.query<any[]>(
+        `SELECT membership_status FROM students WHERE id = $1 AND tenant_id = $2`,
+        [application.student_id, tenantId],
+      );
+      const currentRank = tierRank[student?.membership_status] ?? -1;
+      if (tierRank[financingTier] > currentRank) {
+        await this.dataSource.query(
+          `UPDATE students SET membership_status = $2 WHERE id = $1`,
+          [application.student_id, financingTier],
+        );
+        await this.dataSource.query(
+          `INSERT INTO membership_status_history
+            (student_id, tenant_id, previous_status, new_status, reason, changed_by)
+           VALUES ($1,$2,$3,$4,$5,$6)`,
+          [application.student_id, tenantId, student?.membership_status || null, financingTier,
+           `Tuition Facilitation Plan approved at ${financingTier} tier`, changedBy],
+        );
+      }
+    }
+
     const approvedLevelByStatus: Partial<Record<ApplicationStatus, number>> = {
       [ApplicationStatus.APPROVED_LEVEL1]: 1,
       [ApplicationStatus.APPROVED_LEVEL2]: 2,

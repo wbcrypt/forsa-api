@@ -34,4 +34,15 @@ export class TransitionStatusDto {
   @IsString()
   @MaxLength(2000)
   notes?: string;
+
+  // Students never manually request Silver/Gold — the membership level is
+  // the *result* of an approved Tuition Facilitation Plan, decided here by
+  // whoever approves it. Without this, the ApplicationWorkflowPage.tsx
+  // "advance status" UI could move an application all the way to approved
+  // without ever ratcheting the student's actual membership_status, unlike
+  // the pipeline/human-decision path (pipeline.service.ts) which always did.
+  @ApiPropertyOptional({ enum: ['silver', 'gold'] })
+  @IsOptional()
+  @IsEnum(['silver', 'gold'])
+  financingTier?: 'silver' | 'gold';
 }

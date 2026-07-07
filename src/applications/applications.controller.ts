@@ -104,7 +104,7 @@ export class ApplicationsController {
     @CurrentTenant() t: string,
     @CurrentUser('id') u: string,
   ) {
-    return this.service.transitionStatus(id, t, body.status, u, body.notes);
+    return this.service.transitionStatus(id, t, body.status, u, body.notes, undefined, body.financingTier);
   }
 
   // T-223 — the university portal's one write capability. No
