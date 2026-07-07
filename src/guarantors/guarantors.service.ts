@@ -112,19 +112,20 @@ export class GuarantorsService {
     const link = await this.findLinkedStudent(userId, tenantId)
     if (!link) return { student: null, application: null, paymentSchedule: null, installments: [] }
 
-    // Activation meeting status
-    const [meeting] = await this.db.query<any[]>(
-      `SELECT id, scheduled_at, status FROM activation_meetings
-       WHERE application_id = $1 ORDER BY created_at DESC LIMIT 1`,
-      [link.application_id],
-    ).catch(() => [[]])
+    // Sanity-check discovery — this method silently failed on every call:
+    // `activation_meetings` has no migration anywhere in the codebase (never
+    // built), and `contracts` has no `signed_at` column (the real column is
+    // `fully_signed_at`). Both errors were swallowed by .catch(() => [[]]),
+    // which also doesn't match query()'s real resolved shape — destructuring
+    // `[meeting] = [[]]` yields `meeting = []` (a truthy empty array), so
+    // `activation_meeting: meeting || null` was rendering `[]`, not `null`.
+    const activationMeeting = null
 
-    // Contracts
     const [contract] = await this.db.query<any[]>(
-      `SELECT id, status, signed_at FROM contracts
+      `SELECT id, status, fully_signed_at FROM contracts
        WHERE application_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [link.application_id],
-    ).catch(() => [[]])
+    ).catch(() => [null])
 
     // Payment schedule + upcoming installment
     const [schedule] = await this.db.query<any[]>(
@@ -158,7 +159,7 @@ export class GuarantorsService {
         university_name: link.university_name,
         program_name: link.program_name,
         tuition_amount: link.tuition_amount,
-        activation_meeting: meeting || null,
+        activation_meeting: activationMeeting,
         contract: contract || null,
       },
       paymentSchedule: schedule || null,
