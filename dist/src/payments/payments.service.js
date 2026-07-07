@@ -69,7 +69,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
        JOIN pipeline_runs pr ON pr.id = fd.pipeline_run_id
        WHERE pr.application_id = $1 ORDER BY pr.run_number DESC LIMIT 1`, [params.applicationId]);
         if (!decision)
-            throw new common_1.BadRequestException('No financing decision found');
+            throw new common_1.BadRequestException('No tuition facilitation decision found');
         const graceDaysPolicy = await this.policyService.resolve('payment.grace_period_days', { tenantId: params.tenantId });
         const graceDays = graceDaysPolicy?.value || 7;
         const totalAmount = new decimal_js_1.default(decision.approved_amount || application.tuition_amount);

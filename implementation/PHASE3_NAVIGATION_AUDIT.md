@@ -46,7 +46,7 @@ Scope: the public website (`implementation/website/`, 16 pages, 3 languages) plu
 | Parent / Guarantor | `guarantor.forsa.tn/login` |
 | University | `university.forsa.tn/login` |
 | Partner | `partner.forsa.tn/login` |
-| Admin | `dashboard.forsa.tn/login` *(inferred — see §6)* |
+| Admin | `admin.forsa.tn/login` *(corrected during Phase 4 — see PHASE4 reports)* |
 | "New to FORSA? Join for Free" | `student.forsa.tn/join` |
 
 ### Footer (identical on every page)
@@ -130,7 +130,7 @@ No page is unreachable; no page is a dead end (every page has a working way back
 
 ## 6. Remaining issues / recommendations
 
-1. **Admin domain unconfirmed.** No repo or env file documents a public subdomain for the Admin Dashboard. `dashboard.forsa.tn` was inferred from the `forsa-dashboard` repo name, following the same `<role>.forsa.tn` pattern as the other four portals — but this needs explicit confirmation from the team before launch. If the real domain differs, it's a one-line fix in `content_login.py` → `PORTAL_LOGIN_URLS`.
+1. ~~Admin domain unconfirmed.~~ **Resolved in Phase 4.** The originally inferred `dashboard.forsa.tn` was wrong — confirmed via `forsa-deploy-stack/nginx/nginx.conf`, which explicitly routes the public domain `admin.forsa.tn` to the `dashboard` Docker service. Fixed in `content_login.py` and all 4 deployed login-chooser pages.
 2. **Privacy Policy / Terms of Use still point to pages that don't exist yet** (`forsa.tn/privacy`, `forsa.tn/terms`) — flagged already in the Phase 2 report, still open.
 3. **Portal cards on the homepage link to portal *roots*, not `/login`** — this is intentional (they're framed as "explore this portal" cards with descriptive copy, not auth shortcuts), but worth a sentence of confirmation that this is the desired behavior rather than an oversight, since it's a subtly different pattern from the new Login page's cards.
 4. **The 5 portal apps themselves were not journey-tested past their `/login` and `/join` entry points** — verifying what happens *inside* each portal (dashboard content, forms, etc.) was outside this audit's reach since they're separate running applications, not part of the static website being audited.

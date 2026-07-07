@@ -51,7 +51,7 @@ let ContractsService = ContractsService_1 = class ContractsService {
        JOIN universities u ON u.id = a.university_id
        WHERE fd.id = $1 AND fd.tenant_id = $2`, [params.financingDecisionId, params.tenantId]);
         if (!decision)
-            throw new common_1.NotFoundException('Financing decision not found');
+            throw new common_1.NotFoundException('Tuition facilitation decision not found');
         const templatePolicy = await this.policyService.resolve(`contract.template.${params.contractType}`, { tenantId: params.tenantId, universityId: decision.university_id });
         const [agreement] = await this.dataSource.query(`SELECT * FROM university_agreements
        WHERE university_id = $1 AND tenant_id = $2 AND status = 'active' LIMIT 1`, [decision.university_id, params.tenantId]);

@@ -36,11 +36,13 @@ const notifications_module_1 = require("./notifications/notifications.module");
 const reports_module_1 = require("./reports/reports.module");
 const ai_module_1 = require("./ai/ai.module");
 const tenant_interceptor_1 = require("./common/interceptors/tenant.interceptor");
+const health_controller_1 = require("./health/health.controller");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
+        controllers: [health_controller_1.HealthController],
         imports: [
             config_1.ConfigModule.forRoot({
                 isGlobal: true,

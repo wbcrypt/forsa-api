@@ -306,7 +306,7 @@ let ApplicationsService = ApplicationsService_1 = class ApplicationsService {
        WHERE pr.application_id = $1
        ORDER BY pr.run_number DESC LIMIT 1`, [id]);
         if (!decision)
-            throw new common_1.BadRequestException('No financing decision found to appeal');
+            throw new common_1.BadRequestException('No tuition facilitation decision found to appeal');
         const appealDeadline = new Date();
         appealDeadline.setDate(appealDeadline.getDate() + 30);
         const [appeal] = await this.dataSource.query(`INSERT INTO application_appeals

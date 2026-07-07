@@ -2,24 +2,24 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GUARANTOR_PAYMENT_CONFIRMED = exports.GUARANTOR_PAYMENT_REMINDER = exports.GUARANTOR_INVITED = exports.EMAIL_TEMPLATES = exports.bronzeMemberEmail = exports.paymentReceivedEmail = exports.paymentReminderEmail = exports.activationMeetingEmail = exports.preApprovedEmail = exports.aiInterviewCompletedEmail = exports.applicationReceivedEmail = exports.FORSA_EMAIL_STYLES = void 0;
 exports.FORSA_EMAIL_STYLES = `
-  body { margin: 0; padding: 0; background: #f0f4ff; font-family: 'Segoe UI', Arial, sans-serif; }
+  body { margin: 0; padding: 0; background: #EEF2FC; font-family: 'Segoe UI', Arial, sans-serif; }
   .wrapper { max-width: 600px; margin: 32px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(15,28,66,0.08); }
-  .header { background: linear-gradient(135deg, #0F1C42 0%, #1B2A5E 100%); padding: 32px 40px; text-align: center; }
+  .header { background: linear-gradient(135deg, #122868 0%, #1B3A8C 100%); padding: 32px 40px; text-align: center; }
   .logo { font-size: 28px; font-weight: 800; color: white; letter-spacing: -0.02em; }
-  .logo span { color: #2dd4bf; }
+  .logo span { color: #33D6D9; }
   .tagline { font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 4px; }
   .body { padding: 40px; }
-  .greeting { font-size: 22px; font-weight: 700; color: #0F1C42; margin-bottom: 12px; }
+  .greeting { font-size: 22px; font-weight: 700; color: #122868; margin-bottom: 12px; }
   .text { font-size: 15px; color: #4b5563; line-height: 1.7; margin-bottom: 16px; }
   .highlight-box { background: #f0f9ff; border: 1.5px solid #bae6fd; border-radius: 12px; padding: 20px 24px; margin: 24px 0; }
   .highlight-box.success { background: #f0fdf4; border-color: #86efac; }
   .highlight-box.warning { background: #fffbeb; border-color: #fde68a; }
-  .highlight-box.navy { background: #f0f4ff; border-color: #c7d2fe; }
+  .highlight-box.navy { background: #EEF2FC; border-color: #B0C4EF; }
   .highlight-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin-bottom: 4px; }
-  .highlight-value { font-size: 18px; font-weight: 700; color: #0F1C42; }
-  .btn { display: inline-block; background: #14b8a6; color: white; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-weight: 700; font-size: 15px; margin: 24px 0; }
-  .btn:hover { background: #0891b2; }
-  .btn.navy { background: #0F1C42; }
+  .highlight-value { font-size: 18px; font-weight: 700; color: #122868; }
+  .btn { display: inline-block; background: #00C4C8; color: white; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-weight: 700; font-size: 15px; margin: 24px 0; }
+  .btn:hover { background: #00A8AC; }
+  .btn.navy { background: #122868; }
   .divider { border: none; border-top: 1px solid #f3f4f6; margin: 32px 0; }
   .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
   .info-item { background: #f9fafb; border-radius: 10px; padding: 14px 16px; }
@@ -28,8 +28,8 @@ exports.FORSA_EMAIL_STYLES = `
   .checklist { list-style: none; padding: 0; margin: 0; }
   .checklist li { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; color: #374151; padding: 8px 0; border-bottom: 1px solid #f3f4f6; }
   .checklist li:last-child { border-bottom: none; }
-  .check { color: #14b8a6; font-weight: 700; flex-shrink: 0; }
-  .footer { background: #0F1C42; padding: 24px 40px; text-align: center; }
+  .check { color: #00C4C8; font-weight: 700; flex-shrink: 0; }
+  .footer { background: #122868; padding: 24px 40px; text-align: center; }
   .footer-text { font-size: 12px; color: rgba(255,255,255,0.35); line-height: 1.6; }
   .footer-text a { color: rgba(255,255,255,0.5); text-decoration: none; }
   .disclaimer { font-size: 12px; color: #9ca3af; font-style: italic; margin-top: 20px; padding-top: 20px; border-top: 1px solid #f3f4f6; }
@@ -47,12 +47,12 @@ const emailWrapper = (content, footer) => `
   <div class="wrapper">
     <div class="header">
       <div class="logo">FORSA<span>.</span></div>
-      <div class="tagline">Financement éducatif 0% — تمويل تعليمي</div>
+      <div class="tagline">Écosystème éducatif digital — 0% d'intérêts — منظومة تعليمية رقمية</div>
     </div>
     <div class="body">
       ${content}
       <p class="disclaimer">
-        Cet email vous a été envoyé par FORSA Tunisia en relation avec votre demande de financement.
+        Cet email vous a été envoyé par FORSA Tunisia en relation avec votre demande d'adhésion.
         Si vous avez des questions, contactez-nous à <a href="mailto:hello@forsa.tn">hello@forsa.tn</a>.
       </p>
     </div>
@@ -72,7 +72,7 @@ const applicationReceivedEmail = (data) => ({
     html: emailWrapper(`
     <p class="greeting">Bonjour ${data.firstName},</p>
     <p class="text">
-      Nous avons bien reçu votre demande de financement FORSA. Votre dossier est maintenant en cours de traitement.
+      Nous avons bien reçu votre demande d'adhésion FORSA. Votre dossier est maintenant en cours de traitement.
     </p>
 
     <div class="highlight-box navy">
@@ -150,11 +150,11 @@ const aiInterviewCompletedEmail = (data) => ({
 });
 exports.aiInterviewCompletedEmail = aiInterviewCompletedEmail;
 const preApprovedEmail = (data) => ({
-    subject: `🎉 Pré-approuvé(e) — ${data.firstName}, FORSA finance vos études !`,
+    subject: `🎉 Pré-approuvé(e) — ${data.firstName}, FORSA facilite vos études !`,
     html: emailWrapper(`
     <p class="greeting">Excellente nouvelle, ${data.firstName} ! 🎉</p>
     <p class="text">
-      Votre demande de financement FORSA a été <strong>pré-approuvée</strong> pour un montant de <strong>${data.amount} TND</strong>.
+      Votre plan de facilitation des frais universitaires FORSA a été <strong>pré-approuvé</strong> pour un montant de <strong>${data.amount} TND</strong>.
     </p>
 
     <div class="highlight-box success">
@@ -177,7 +177,7 @@ const preApprovedEmail = (data) => ({
 
     <p class="text"><strong>⚠️ Important — Réunion d'Activation obligatoire</strong></p>
     <p class="text">
-      Pour finaliser votre financement, vous devez participer à une <strong>Réunion d'Activation</strong> en personne avec l'équipe FORSA.
+      Pour finaliser votre plan de facilitation, vous devez participer à une <strong>Réunion d'Activation</strong> en personne avec l'équipe FORSA.
       <strong>Votre garant doit être présent à la même réunion.</strong>
     </p>
 
@@ -210,7 +210,7 @@ const activationMeetingEmail = (data) => ({
     <p class="greeting">Bonjour ${data.firstName},</p>
     <p class="text">
       Votre Réunion d'Activation FORSA ${data.meetingDate ? `est confirmée pour le <strong>${data.meetingDate} à ${data.meetingTime}</strong>` : 'a été planifiée'}.
-      C'est la dernière étape avant l'activation de votre financement.
+      C'est la dernière étape avant l'activation de votre plan de facilitation.
     </p>
 
     ${data.meetingDate ? `
@@ -245,7 +245,7 @@ const activationMeetingEmail = (data) => ({
     <p class="text"><strong>Lors de la réunion :</strong></p>
     <ul class="checklist">
       <li><span class="check">✓</span> Vérification des identités (étudiant et garant)</li>
-      <li><span class="check">✓</span> Signature du contrat de financement FORSA</li>
+      <li><span class="check">✓</span> Signature du contrat du plan de facilitation FORSA</li>
       <li><span class="check">✓</span> Signature des lettres de change</li>
       <li><span class="check">✓</span> Remise des copies de tous les documents</li>
       <li><span class="check">✓</span> Activation de votre compte FORSA</li>
@@ -286,7 +286,7 @@ const paymentReminderEmail = (data) => ({
       </div>
       <div style="margin-top:12px;">
         <div class="highlight-label">Référence de paiement — À inclure obligatoirement</div>
-        <div style="font-size:16px;font-weight:800;color:#0F1C42;font-family:monospace;margin-top:4px;">${data.paymentReference}</div>
+        <div style="font-size:16px;font-weight:800;color:#122868;font-family:monospace;margin-top:4px;">${data.paymentReference}</div>
       </div>
       <div style="margin-top:8px;font-size:11px;color:#92400e;">
         Versement ${data.installmentNumber}/${data.totalInstallments}
@@ -392,8 +392,8 @@ const bronzeMemberEmail = (data) => ({
     <p class="greeting">Bonjour ${data.firstName},</p>
     <p class="text">
       Votre dossier a été examiné avec attention par l'équipe FORSA.
-      Les places de financement direct pour cette session sont limitées et ont été attribuées aux candidats
-      répondant à nos critères actuels de financement.
+      Les places disponibles pour le plan de facilitation cette session sont limitées et ont été attribuées aux candidats
+      répondant à nos critères actuels d'éligibilité.
     </p>
     <p class="text">
       <strong>Vous rejoignez l'écosystème FORSA en tant que Membre Bronze.</strong>
@@ -417,7 +417,7 @@ const bronzeMemberEmail = (data) => ({
       <li><span class="check">✓</span> Votre compte et profil FORSA — permanent</li>
       <li><span class="check">✓</span> Votre FORSA Score — visible et en progression</li>
       <li><span class="check">✓</span> Votre entretien IA enregistré dans votre dossier</li>
-      <li><span class="check">✓</span> Priorité de considération au prochain cycle de financement</li>
+      <li><span class="check">✓</span> Priorité de considération au prochain cycle du plan de facilitation</li>
       <li><span class="check">✓</span> Accès aux remises et avantages des partenaires universitaires</li>
       <li><span class="check">✓</span> Ressources et accompagnement pour votre préparation financière</li>
     </ul>
@@ -425,7 +425,7 @@ const bronzeMemberEmail = (data) => ({
     <div class="highlight-box navy">
       <div class="highlight-label">La suite</div>
       <div style="font-size:14px;color:#374151;margin-top:6px;line-height:1.7;">
-        FORSA examine en priorité les membres Bronze à l'ouverture de nouvelles capacités de financement.
+        FORSA examine en priorité les membres Bronze à l'ouverture de nouvelles capacités du plan de facilitation.
         Votre historique avec nous — score, entretien, engagement — n'est jamais perdu.
         <strong>Gardez votre profil à jour.</strong>
       </div>
@@ -455,8 +455,8 @@ const GUARANTOR_INVITED = (guarantorName, studentName, activationLink) => ({
     subject: `FORSA — Invitation Portail Garant pour ${studentName}`,
     html: `
     <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-      <div style="background:#0F1C42;border-radius:14px;padding:28px;text-align:center;margin-bottom:24px">
-        <div style="width:44px;height:44px;background:#14b8a6;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">
+      <div style="background:#122868;border-radius:14px;padding:28px;text-align:center;margin-bottom:24px">
+        <div style="width:44px;height:44px;background:#00C4C8;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:12px">
           <span style="color:white;font-weight:900;font-size:20px">F</span>
         </div>
         <h1 style="color:white;font-size:22px;font-weight:800;margin:0">Invitation Portail Garant</h1>
@@ -467,13 +467,13 @@ const GUARANTOR_INVITED = (guarantorName, studentName, activationLink) => ({
         Votre rôle de garant vous permet de suivre l'avancement de ${studentName} et d'effectuer des paiements mensuels en son nom.
       </p>
       <div style="text-align:center;margin:28px 0">
-        <a href="${activationLink}" style="background:#14b8a6;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
+        <a href="${activationLink}" style="background:#00C4C8;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
           Activer mon compte Garant →
         </a>
       </div>
       <p style="color:#9ca3af;font-size:12px;line-height:1.6">Ce lien est valide 7 jours. Si vous ne connaissez pas ${studentName} ou n'avez pas consenti à être garant, ignorez cet email.</p>
       <hr style="border:none;border-top:1px solid #f3f4f6;margin:20px 0" />
-      <p style="color:#9ca3af;font-size:11px;text-align:center">© 2026 FORSA Tunisia · <a href="https://forsa.tn" style="color:#14b8a6">forsa.tn</a></p>
+      <p style="color:#9ca3af;font-size:11px;text-align:center">© 2026 FORSA Tunisia · <a href="https://forsa.tn" style="color:#00C4C8">forsa.tn</a></p>
     </div>
   `
 });
@@ -482,7 +482,7 @@ const GUARANTOR_PAYMENT_REMINDER = (guarantorName, studentName, amount, dueDate,
     subject: `FORSA — Rappel paiement ${studentName} · ${amount} TND`,
     html: `
     <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-      <div style="background:#0F1C42;border-radius:14px;padding:24px 28px;margin-bottom:24px">
+      <div style="background:#122868;border-radius:14px;padding:24px 28px;margin-bottom:24px">
         <h1 style="color:white;font-size:20px;font-weight:800;margin:0">Rappel de paiement</h1>
         <p style="color:rgba(255,255,255,0.6);font-size:13px;margin:4px 0 0">Garant : ${guarantorName}</p>
       </div>
@@ -505,7 +505,7 @@ const GUARANTOR_PAYMENT_REMINDER = (guarantorName, studentName, amount, dueDate,
         </div>
       </div>
       <div style="text-align:center;margin:24px 0">
-        <a href="${paymentUrl}" style="background:#14b8a6;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
+        <a href="${paymentUrl}" style="background:#00C4C8;color:white;text-decoration:none;padding:13px 28px;border-radius:12px;font-weight:700;font-size:14px;display:inline-block">
           Effectuer le paiement →
         </a>
       </div>
@@ -518,7 +518,7 @@ const GUARANTOR_PAYMENT_CONFIRMED = (guarantorName, studentName, amount, month) 
     subject: `FORSA — Paiement confirmé · ${studentName} · ${month}`,
     html: `
     <div style="font-family:Inter,sans-serif;max-width:560px;margin:0 auto;padding:24px">
-      <div style="background:#0F1C42;border-radius:14px;padding:24px 28px;margin-bottom:24px">
+      <div style="background:#122868;border-radius:14px;padding:24px 28px;margin-bottom:24px">
         <h1 style="color:white;font-size:20px;font-weight:800;margin:0">✓ Paiement vérifié</h1>
       </div>
       <p style="color:#374151;font-size:15px">Bonjour <strong>${guarantorName}</strong>,</p>

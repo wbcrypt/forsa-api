@@ -72,18 +72,18 @@ export class NotificationsService {
     }
 
     // Log notification (always, even on failure)
+    const sentAt = status === 'sent' ? new Date() : null;
     await this.dataSource.query(
       `INSERT INTO notification_logs
         (tenant_id, template_id, recipient_id, recipient_email, recipient_phone,
          channel, subject, body, status, error_message, reference_id, reference_type,
          triggered_by, sent_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
-               CASE WHEN $9 = 'sent' THEN NOW() ELSE NULL END)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
         params.tenantId, template.id, params.recipientId,
         params.recipientEmail, params.recipientPhone,
         params.channel, subject, rendered, status, errorMessage,
-        params.referenceId, params.referenceType, params.triggeredBy,
+        params.referenceId, params.referenceType, params.triggeredBy, sentAt,
       ],
     ).catch(err => this.logger.error('Failed to log notification', err));
   }
