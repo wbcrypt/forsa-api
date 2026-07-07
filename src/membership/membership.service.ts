@@ -48,6 +48,19 @@ export class MembershipService {
       throw new BadRequestException('A membership request for this email is already pending review');
     }
 
+    // Phase 5 UX audit finding — the pending-request check above never
+    // caught someone who is already a FORSA member submitting a brand-new
+    // request through the public "Join FORSA" form; it silently created a
+    // redundant record in the review queue instead of telling them they
+    // already have an account.
+    const existingMember = await this.dataSource.query<any[]>(
+      `SELECT id FROM students WHERE tenant_id = $1 AND email = $2`,
+      [dto.tenantId, dto.email],
+    );
+    if (existingMember.length) {
+      throw new BadRequestException('An active FORSA membership already exists for this email. Please log in instead.');
+    }
+
     const [request] = await this.dataSource.query<any[]>(
       `INSERT INTO membership_requests
         (tenant_id, first_name, last_name, phone, email, city, university_id,
