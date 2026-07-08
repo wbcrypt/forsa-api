@@ -29,6 +29,17 @@ export class StudentsController {
     return this.service.findMe(u, t);
   }
 
+  // Discovered during manual pilot testing — no self-service profile edit
+  // route existed at all; the Dashboard's "Complete Profile" checklist item
+  // led to a read-only page with nothing to actually complete. Same
+  // self-scoped pattern as findMe: resolves the student from the JWT
+  // identity, never a client-supplied id.
+  @Patch('me')
+  @ApiOperation({ summary: "Update the logged-in student portal user's own profile" })
+  updateMyProfile(@Body() dto: any, @CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.updateMyProfile(u, t, dto);
+  }
+
   // T-219 — the pre-existing GET /:id/payments route (@RequirePermissions
   // 'payment.view', a staff-only permission) already spans every payment
   // across every application/financing period for a student, not just the

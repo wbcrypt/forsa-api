@@ -192,6 +192,19 @@ export class MembershipService {
 
       await manager.query(`UPDATE students SET user_id = $2 WHERE id = $1`, [student.id, user.id]);
 
+      // Discovered during manual pilot testing — this was the ONE real
+      // student-provisioning path (self-service Membership Request ->
+      // Bronze) that never created a student_profiles row at all. The
+      // staff-only CRM creation path (students.service.ts#create) always
+      // did; this one didn't, silently leaving academic_level permanently
+      // unreachable (not just unset) for every real pilot student, and the
+      // Dashboard's "Complete Profile" checklist item permanently
+      // impossible to satisfy no matter what the student did.
+      await manager.query(
+        `INSERT INTO student_profiles (student_id, preferred_language) VALUES ($1, $2)`,
+        [student.id, 'fr'],
+      );
+
       // T-205 — issued in the same transaction as Bronze itself: a Bronze
       // member should never exist without a pass, or vice versa.
       await this.digitalPass.issueForStudentTx(manager, student.id, tenantId);

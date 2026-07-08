@@ -68,24 +68,67 @@ export class StudentsService {
     // any guarantor relationship at all (and its status) without a second
     // round trip, so the "Invite Guarantor" checklist item can reflect
     // reality instead of always showing as incomplete.
+    // academic_level lives on student_profiles, not students — this join
+    // was missing entirely, so it was never returned here regardless of
+    // whether it was ever set (discovered during manual pilot testing
+    // alongside the fact that the real student-provisioning path never
+    // created a student_profiles row in the first place — see approve()
+    // in membership.service.ts).
     const [student] = await this.dataSource.query<any[]>(
-      `SELECT s.*, fs.aggregate_score, fs.score_band,
+      `SELECT s.*, sp.academic_level, fs.aggregate_score, fs.score_band,
               json_agg(DISTINCT jsonb_build_object(
                 'id', sg.id, 'status', sg.status, 'guarantorId', g.id,
                 'fullName', g.first_name || ' ' || g.last_name, 'email', g.email,
                 'portalActivated', g.portal_activated
               )) FILTER (WHERE sg.id IS NOT NULL AND sg.status != 'withdrawn') AS guarantors
        FROM students s
+       LEFT JOIN student_profiles sp ON sp.student_id = s.id
        LEFT JOIN forsa_scores fs ON fs.student_id = s.id
        LEFT JOIN student_guarantors sg ON sg.student_id = s.id
        LEFT JOIN guarantors g ON g.id = sg.guarantor_id
        WHERE s.user_id = $1 AND s.tenant_id = $2
-       GROUP BY s.id, fs.id`,
+       GROUP BY s.id, sp.academic_level, fs.id`,
       [userId, tenantId],
     );
     if (!student) throw new NotFoundException('No student profile linked to this user');
     delete student.national_id_reference;
     return student;
+  }
+
+  /**
+   * Self-service profile completion — discovered missing during manual
+   * pilot testing: there was no way whatsoever for a student to edit their
+   * own nationality/date of birth/academic level/phone/city, so the
+   * Dashboard's "Complete Profile" checklist item pointed at a page with
+   * nothing editable on it. Upserts into student_profiles for
+   * academicLevel since that row may not exist for students provisioned
+   * before this fix.
+   */
+  async updateMyProfile(userId: string, tenantId: string, dto: any) {
+    const student = await this.findMe(userId, tenantId);
+
+    await this.dataSource.query(
+      `UPDATE students
+       SET phone_primary = COALESCE($3, phone_primary),
+           city = COALESCE($4, city),
+           nationality = COALESCE($5, nationality),
+           date_of_birth = COALESCE($6, date_of_birth),
+           updated_at = NOW()
+       WHERE id = $1 AND tenant_id = $2`,
+      [student.id, tenantId, dto.phonePrimary, dto.city, dto.nationality, dto.dateOfBirth],
+    );
+
+    if (dto.academicLevel) {
+      await this.dataSource.query(
+        `INSERT INTO student_profiles (student_id, academic_level, preferred_language)
+         VALUES ($1, $2, 'fr')
+         ON CONFLICT (student_id) DO UPDATE SET academic_level = $2`,
+        [student.id, dto.academicLevel],
+      );
+    }
+
+    await this.audit(tenantId, userId, 'student.self_updated_profile', student.id, null, dto);
+    return this.findMe(userId, tenantId);
   }
 
   /**

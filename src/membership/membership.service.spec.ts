@@ -99,6 +99,7 @@ describe('MembershipService', () => {
         .mockResolvedValueOnce([{ id: 'student-1', first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com', forsa_id: 'FORSA-2026-ABCDEF' }]) // INSERT students
         .mockResolvedValueOnce([{ id: 'user-1', email: 'amina@example.com' }]) // INSERT users
         .mockResolvedValueOnce(undefined) // UPDATE students SET user_id
+        .mockResolvedValueOnce(undefined) // INSERT student_profiles
         .mockResolvedValueOnce(undefined) // INSERT membership_status_history
         .mockResolvedValueOnce(undefined) // UPDATE membership_requests -> approved
         .mockResolvedValueOnce(undefined) // INSERT password_setup_tokens
@@ -161,6 +162,7 @@ describe('MembershipService', () => {
       managerQuery
         .mockResolvedValueOnce([{ id: 'student-1', first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com', forsa_id: 'FORSA-2026-111111' }])
         .mockResolvedValueOnce([{ id: 'user-1', email: 'amina@example.com' }])
+        .mockResolvedValueOnce(undefined)
         .mockResolvedValueOnce(undefined)
         .mockResolvedValueOnce(undefined)
         .mockResolvedValueOnce(undefined)
