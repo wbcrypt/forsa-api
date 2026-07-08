@@ -173,6 +173,8 @@ Guarantors **never self-register**. The only way into the guarantor portal is a 
 
 **Updated in Phase 10**: a student can now create this invitation directly, with no staff action required — `POST /students/me/guarantors` (surfaced in the student portal's `/guarantor` page), resolving the student from their own login identity. Staff retain the same ability via the student record in the admin dashboard, for cases where a student needs help or staff are entering the guarantor on their behalf (e.g., phone intake). Both paths produce the identical invitation mechanism described below.
 
+**Updated in the workflow alignment fix**: the Tuition Facilitation Apply wizard now has its own mandatory Guarantor step (§5), collecting the same details and sending the same invitation as the standalone `/guarantor` page — but only *after* the application is actually created, never before. This is the primary path a first-time applicant hits in practice; the standalone page remains available for adding/replacing a guarantor outside the wizard (e.g., before starting an application, or after a decline). The pipeline's Completeness Gate (Stage 1) now genuinely requires a guarantor relationship to exist — an invitation still pending acceptance satisfies it (waiting on a response is a normal in-review state), but no guarantor at all blocks the application from reaching a human reviewer.
+
 ```
 Invitation created (by student, self-service — or by admin, on the
 student's behalf)
@@ -228,10 +230,20 @@ The student, from their own Dashboard, via the single canonical `/apply` entry p
 
 ### The wizard, in order
 
-1. **Your Profile** — personal details, academic info (university, program, tuition amount), financial info (payment-responsible party, household income, employment status, and a yes/no "do you have a guarantor?" question — this question is informational context for the AI interview; the actual invitation is sent separately from the student's `/guarantor` page, reachable from the Bronze Dashboard checklist. See §4.).
-2. **Legal Consent** — explicit, itemized consent that a human review committee decides, not the AI.
-3. **AI Readiness Interview** — a real conversational interview producing a per-dimension score report (household stability, financial capacity, academic commitment, documentation quality). If run without a live Anthropic key (demo mode), the score is honestly left `null` with a "manual review required" flag rather than fabricated.
-4. **Submit** → `POST /applications/me`. The backend resolves the student from the caller's own JWT — a client-supplied student ID in the request body is never trusted.
+**Updated in the workflow alignment fix** (manual pilot testing found the admin pipeline's Stage 1 Completeness Gate blocking every self-submitted application, because nothing in this wizard ever collected or required the data that gate actually checks — the system was creating applications guaranteed to fail the very first pipeline stage). The wizard now has 6 steps:
+
+1. **Your Profile** — personal details, academic info (university, program, tuition amount, academic year), financial info (payment-responsible party, household income, employment status, and a yes/no "do you have a guarantor?" question — informational context for the AI interview).
+2. **Financial Situation** — same step as above in the current implementation (the profile/financial split is cosmetic, not two separate submissions).
+3. **Documents** — upload national ID, Bac diploma, university acceptance letter, and income proof, using the student's own self-service upload endpoints (`documents/me/upload-url` + confirm). **Next is blocked until all 4 are uploaded.**
+4. **Guarantor** — first name, last name, email, relationship. Collected as part of the application itself now — the invitation is sent only once the application is actually created (step 6), never before or separately.
+5. **Legal Consent** — explicit, itemized consent that a human review committee decides, not the AI.
+6. **AI Readiness Interview** — a real conversational interview producing a per-dimension score report (household stability, financial capacity, academic commitment, documentation quality). If run without a live Anthropic key (demo mode), the score is honestly left `null` with a "manual review required" flag rather than fabricated. **Submit** → `POST /applications/me`, which:
+   - Rejects with a specific message if required fields (program, university, tuition amount, academic year) are missing.
+   - Rejects with a specific message listing exactly which required documents are still missing.
+   - On success, reassigns the pre-uploaded documents from the student's holding area into `application_documents` against the new application, and the student portal calls the guarantor-invite endpoint immediately after.
+   - Resolves the student from the caller's own JWT — a client-supplied student ID in the request body is never trusted.
+
+A student can also still invite a guarantor independently at any time via the `/guarantor` page reachable from the Bronze Dashboard checklist (e.g., before starting an application, or to replace a declined guarantor) — the wizard's own Guarantor step and the standalone page use the same underlying self-service mechanism.
 
 ### Duplicate prevention
 
@@ -239,11 +251,11 @@ A student **cannot** have two Tuition Facilitation applications in flight simult
 
 ### Who validates
 
-FORSA staff, via either of two admin screens (a pre-existing architectural divergence — see §9/§10): the pipeline/human-decision review screen, or the manual Application Workflow screen. Both now produce identical, correct outcomes.
+FORSA staff, via either of two admin screens (a pre-existing architectural divergence — see §9/§10): the pipeline/human-decision review screen, or the manual Application Workflow screen. Both now produce identical, correct outcomes. The application detail view shows a **Completeness Checklist** (program selected, each required document's status, guarantor status) so staff never have to guess why an application is or isn't ready to clear Stage 1.
 
 ### What documents
 
-Required documents are tracked per `document_type_code` against the application (national ID, Bac diploma, university acceptance letter, income proof, etc.), each independently in one of: `absent`, `uploaded`, `under_review`, `verified`, `rejected`, `expired`, `superseded`.
+Required documents (national ID, Bac diploma, university acceptance letter, income proof) are collected in the wizard's Documents step and tracked per `document_type_code` against the application, each independently in one of: `absent`, `uploaded`, `under_review`, `verified`, `rejected`, `expired`, `superseded`. A document being merely `uploaded` is **not** enough to satisfy the pipeline's Completeness Gate — a staff member must review it to `verified` or `under_review` first. This is a deliberate staff gate, not a bug: document review is a real business control.
 
 ### What decisions
 
@@ -508,12 +520,16 @@ Columns represent the four self-scoped portals (Student, Guarantor, University, 
 
 **Would every decision be documented?** Yes — every approval, rejection, and status change is captured in `audit_logs`, and the state machine forbids undocumented/invalid transitions outright rather than allowing silent shortcuts.
 
-### Operational gaps — status after Phase 10
+### Operational gaps — status after the workflow alignment fix
 
-Full detail and verification evidence for everything below is in `PILOT_BLOCKERS_STATUS.md` and `PHASE10_IMPLEMENTATION_REPORT.md`. Summary:
+Full detail and verification evidence for everything below is in `PILOT_BLOCKERS_STATUS.md`, `PHASE10_IMPLEMENTATION_REPORT.md`, and `MANUAL_TESTING_FINDINGS.md`. Summary:
+
+**Closed — workflow alignment fix (most severe, found via manual pilot testing):**
+- The admin pipeline's Stage 1 Completeness Gate was blocking **every** self-submitted application, because the wizard never collected the documents, program, or guarantor the gate actually requires. The system was creating applications guaranteed to fail immediately. Now: the wizard has mandatory Documents and Guarantor steps, `createForSelf` validates completeness before an application is ever created, and the admin detail view shows a real Completeness Checklist. Verified live: Stage 1 now genuinely passes for a properly-completed submission.
+- A second, compounding gap found in the process: the `programs` table was completely empty tenant-wide, meaning `program_id` — one of Stage 1's hard requirements — could never actually be populated through the real UI for any university, independent of anything else. Seeded 5 real programs for the one existing partner university; this needs to be done for any additional university added before its students can ever successfully apply.
 
 **Closed in Phase 10:**
-- Guarantor invitation is now genuinely student-initiated, no staff action required.
+- Guarantor invitation is now genuinely student-initiated, no staff action required (further embedded directly into the Apply wizard by the workflow alignment fix above).
 - The Bronze Dashboard's ambiguous single next-action card replaced with a real progress checklist.
 - The waiting list (`capital_queue`) experience now explains what's happening, confirms Bronze is intact, gives an estimated queue position, and says what to do while waiting — instead of falling through to a generic "in progress" message.
 - The admin Applications list now surfaces computed queue-blocker tags (Urgent, Missing Guarantor, Waiting Documents, Waiting Student, Waiting University, Waiting List, Ready for Review) so staff can spot stuck applications without opening each one.
@@ -527,5 +543,6 @@ Full detail and verification evidence for everything below is in `PILOT_BLOCKERS
 6. **No SMS/push notifications actually send today** (§11) — schema-ready, not built. Don't describe this as live to a pilot partner.
 7. **No renewal flow, despite the field existing** (§8/§13) — only relevant if a returning student is expected during the pilot window.
 8. **Fraud-flagged accounts have no reinstatement path** (§13) — acceptable if fraud-flagging is genuinely meant to be permanent and human-reviewed before it's ever applied.
+9. **A pipeline can still block later at Stage 3** ("no active university agreement found") for a university with no agreement on file — separate from and unaffected by the Stage 1 fix above; confirm every partner university involved in the pilot has an active agreement row before relying on the automated pipeline path for their students.
 
-None of the above are Critical in the sense of corrupting a business process today. The core membership → guarantor → application → tier-assignment → payment loop that a first pilot actually needs was verified working end-to-end in Phase 8 (`BROWSER_TEST_REPORT.md`), and the four gaps closed in Phase 10 were re-verified live against the same running stack (see `PHASE10_IMPLEMENTATION_REPORT.md`).
+None of the above are Critical in the sense of corrupting a business process today, now that the workflow alignment fix has closed the one gap that genuinely was. The core membership → guarantor → application (with real documents) → completeness gate → tier-assignment → payment loop that a first pilot actually needs was verified working end-to-end against the live stack.

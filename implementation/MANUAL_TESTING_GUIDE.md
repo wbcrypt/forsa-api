@@ -83,20 +83,29 @@ Recommended order: **A → B → C → D → E → F → G**. A and B use a bran
 
 ### Scenario B — Bronze to Tuition Facilitation (continue with the same account from Scenario A)
 
+**Updated** — the wizard now has 6 steps and directly enforces the documents and guarantor the admin pipeline actually requires; you can no longer reach submission without them. Have 4 small PDF/JPG/PNG files ready to use as stand-ins for National ID, Bac Diploma, University Acceptance Letter, and Income Proof before you start.
+
 | Step | Action | Expected Result |
 |---|---|---|
 | B1 | On the Dashboard, click the checklist's current step ("Complete Profile") | Goes to Profile page |
 | B2 | Fill in the remaining profile fields, save | Back on Dashboard, checklist now shows "Complete Profile" done, "Invite Guarantor" highlighted next |
-| B3 | Click through to invite a guarantor (or go directly to `/guarantor`) | A form: first name, last name, email, relationship |
-| B4 | Fill it in with a real-looking email and submit | Success message; a status card shows "Invitation Pending" |
-| B5 | Check MailHog | A "You've Been Invited as a FORSA Guarantor" email arrived |
-| B6 | Back on the Dashboard | Checklist shows "Invite Guarantor" done, "Submit Tuition Facilitation Request" highlighted as the final step |
-| B7 | Click through to Apply | Multi-step wizard: profile/academic info → legal consent → AI interview |
-| B8 | Complete and submit the wizard | Confirmation; application now visible under "My Application" |
-| B9 | Log into Admin, find your new application (Applications list) | Notice the **Queue** column — should show a tag like "Ready for Review" once it reaches Under Review |
-| B10 | Open it, approve at Silver or Gold tier | Confirm the tier selector is required before confirming |
-| B11 | Back in the Student Portal, refresh the Dashboard | Membership tier tile now shows Silver/Gold — matching whatever you picked, automatically, with no separate "upgrade" step |
-| B12 | Go to `/pass` | Digital Pass visually reflects the new tier |
+| B3 | Click through to Apply (or `/apply` directly) | 6-step wizard begins: Your Profile |
+| B4 | Fill in personal + academic info (university, program, tuition amount) and continue | Step 2: Financial Situation |
+| B5 | Fill in financial questions and continue | Step 3: Documents |
+| B6 | Try clicking Next with no documents uploaded | Blocked with an error — documents are mandatory before continuing |
+| B7 | Upload all 4 required documents, then Next | Each shows a green checkmark and "Replace" once uploaded; step 4: Guarantor |
+| B8 | Fill in guarantor first name, last name, email, continue | Step 5: Legal Consent |
+| B9 | Accept all consent items, continue | Step 6: AI Interview begins |
+| B10 | Complete the interview | Confirmation screen; **check for a guarantor-invite warning banner** — if you see one, the invite failed and needs sending manually from `/guarantor` |
+| B11 | Check MailHog | A "You've Been Invited as a FORSA Guarantor" email arrived — sent only now, after the application was created, not earlier |
+| B12 | Log into Admin, find your new application (Applications list) | Notice the **Queue** column — should show a tag like "Ready for Review" once it reaches Under Review |
+| B13 | Open the application | See the new **Completeness Checklist** card — Program selected, all 4 documents (status "uploaded", not yet reviewed), Guarantor "Pending" — badge reads "Incomplete" until documents are reviewed |
+| B14 | Go to the Documents tab, mark each document Verified | Back on Overview, the Completeness Checklist badge should flip to "Ready for Stage 1" |
+| B15 | Approve at Silver or Gold tier | Confirm the tier selector is required before confirming |
+| B16 | Back in the Student Portal, refresh the Dashboard | Membership tier tile now shows Silver/Gold — matching whatever you picked, automatically, with no separate "upgrade" step |
+| B17 | Go to `/pass` | Digital Pass visually reflects the new tier |
+
+**Alternative guarantor path:** a guarantor can also be invited independently at any time via the standalone `/guarantor` page (reachable from the Dashboard checklist) — useful before starting an application, or to replace one who declined. Both paths send the identical invitation.
 
 ### Scenario C — Guarantor Journey
 
@@ -186,3 +195,6 @@ These are intentionally incomplete or out of scope — **not bugs**, don't log t
 9. **`amira.bensalah@example.tn` shows Bronze membership despite having an `active_student` application** — this is stale seed data created before the automatic tier-assignment fix existed, not a live bug. If you see this exact account in this exact state, it's already known; if you see the *same pattern* on an account you just processed yourself (approved an application and the tier didn't update), that would be a real, new, Critical-severity finding — log it.
 10. **The student portal's in-app `/notifications` page is currently always empty.** It's correctly built and correctly wired to its query — there's simply no code path that ever creates the kind of notification record it's looking for (every real notification is sent by email, not "in-app"). Don't log this as a bug; it's documented in `FORSA_OPERATIONS_MANUAL.md` §11.
 11. **The Admin Applications page's queue-tag filter chips only filter the current page** of results, not the full dataset across pages — accurate at the pilot's current scale (a handful of applications), but if you load a page with many applications and page forward, the filter resets per page.
+12. **Uploading a document only gets it to "uploaded," not "verified."** A staff member must review it (Documents tab → mark Verified) before the Completeness Checklist shows "Ready for Stage 1" — this is an intentional staff gate, not a bug.
+13. **If you click "Run Pipeline" instead of manually approving,** it may block at Stage 3 with "no active university agreement found" for a university that doesn't have one on file. That's unrelated to document/guarantor completeness (Stage 1, which should now pass) — it's a separate, pre-existing requirement. Use the manual Advance/Approve action instead if you just want to test the Silver/Gold assignment.
+14. **Any new university you add for testing needs at least one program seeded** (`programs` table) before a student can select it in the Apply wizard's Program field — otherwise the field falls back to free text, which does not satisfy `program_id` and will correctly block submission.
