@@ -150,6 +150,16 @@ export class GuarantorsService {
     // is program_id, a FK to programs) — this has thrown a 500 on every
     // call since it was built, meaning the Guarantor Portal's core
     // feature (see which student you're backing) has never worked.
+    //
+    // Found during manual pilot testing — applications was an INNER JOIN,
+    // so a guarantor whose student hadn't submitted a Tuition Facilitation
+    // application yet (a completely normal, common state — accepting an
+    // invite happens independently of and often before applying) saw "No
+    // linked student" even though the guarantor-student relationship
+    // itself was perfectly valid and active. The guarantor relationship
+    // and the application are two different things; only the second one
+    // should ever be allowed to be absent. Also now excludes withdrawn
+    // links, which the old query didn't filter out either.
     const [link] = await this.db.query<any[]>(
       `SELECT
          g.id AS guarantor_id,
@@ -162,13 +172,13 @@ export class GuarantorsService {
          p.name AS program_name,
          a.tuition_amount
        FROM guarantors g
-       JOIN student_guarantors sg ON sg.guarantor_id = g.id
+       JOIN student_guarantors sg ON sg.guarantor_id = g.id AND sg.status = 'active'
        JOIN students s ON s.id = sg.student_id
-       JOIN applications a ON a.student_id = s.id AND a.tenant_id = $2
+       LEFT JOIN applications a ON a.student_id = s.id AND a.tenant_id = $2
        LEFT JOIN universities u ON u.id = a.university_id
        LEFT JOIN programs p ON p.id = a.program_id
        WHERE g.user_id = $1 AND g.tenant_id = $2
-       ORDER BY a.created_at DESC
+       ORDER BY a.created_at DESC NULLS LAST
        LIMIT 1`,
       [userId, tenantId],
     )
@@ -220,7 +230,13 @@ export class GuarantorsService {
         last_name: link.last_name,
         email: link.student_email,
       },
-      application: {
+      // link.application_id is null when the linked student hasn't
+      // submitted a Tuition Facilitation request yet — a real, normal
+      // state now that this lookup no longer requires an application to
+      // exist. Returning a clean `null` here (rather than an object full
+      // of null fields) lets the frontend show a genuine "no application
+      // yet" empty state instead of a blank-looking application card.
+      application: link.application_id ? {
         id: link.application_id,
         current_status: link.current_status,
         university_name: link.university_name,
@@ -228,7 +244,7 @@ export class GuarantorsService {
         tuition_amount: link.tuition_amount,
         activation_meeting: activationMeeting,
         contract: contract || null,
-      },
+      } : null,
       paymentSchedule: schedule || null,
       installments,
     }

@@ -39,6 +39,38 @@ describe('GuarantorsService.getLinkedStudent', () => {
     expect(findLinkedStudentCall[0]).toContain('p.name AS program_name');
     expect(findLinkedStudentCall[0]).not.toContain('a.program_name');
   });
+
+  // Found during manual pilot testing — applications was an INNER JOIN,
+  // so a guarantor whose linked student simply hadn't submitted a Tuition
+  // Facilitation request yet (a normal, common state) saw "No linked
+  // student" even though the guarantor-student relationship itself was
+  // perfectly valid. Locks down: the student still resolves, with a clean
+  // `application: null` rather than an object full of null fields.
+  it('resolves the linked student even when they have no application yet', async () => {
+    const query = jest.fn()
+      .mockResolvedValueOnce([{
+        guarantor_id: 'g-1', student_id: 's-1', first_name: 'Amina', last_name: 'Trabelsi',
+        student_email: 'amina@example.com', application_id: null, current_status: null,
+        university_id: null, university_name: null, program_name: null, tuition_amount: null,
+      }]) // findLinkedStudent — LEFT JOIN applications, nothing to match
+      .mockResolvedValueOnce([null]) // contracts (application_id is null, nothing matches)
+      .mockResolvedValueOnce([undefined]) // payment_schedules
+      .mockResolvedValueOnce([]); // installments
+
+    const service = new GuarantorsService(
+      { query } as unknown as DataSource,
+      {} as unknown as KonnectService,
+      {} as unknown as DocumentsService,
+    );
+
+    const result = await service.getLinkedStudent('user-1', 'tenant-1');
+
+    expect(result.student).toEqual(expect.objectContaining({ id: 's-1', first_name: 'Amina' }));
+    expect(result.application).toBeNull();
+    const findLinkedStudentCall = query.mock.calls[0];
+    expect(findLinkedStudentCall[0]).toContain('LEFT JOIN applications a');
+    expect(findLinkedStudentCall[0]).toContain("sg.status = 'active'");
+  });
 });
 
 // Phase 8 workflow audit — the invite/preview/accept/decline lifecycle
