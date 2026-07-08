@@ -275,14 +275,23 @@ export class PipelineService {
     if (!ctx.application.student_id) missingFields.push('student_id');
     if (!ctx.application.program_id) missingFields.push('program_id');
 
-    // Check guarantor completeness (if required by policy)
-    const guarantorRequired = await this.policyService.getBoolean(
+    // Check guarantor completeness (if required by policy — defaults to
+    // required, since no 'guarantor.required' policy row has ever existed
+    // in this tenant and getBoolean() returns null rather than a sensible
+    // default when nothing is configured; a Tuition Facilitation Plan
+    // without a guarantor on file was never actually the intended product
+    // behavior). An invitation still pending acceptance satisfies this
+    // gate — "waiting on the guarantor to respond" is a normal in-review
+    // state, not a reason to block the application from even reaching a
+    // human reviewer; only a genuinely absent/withdrawn/declined
+    // guarantor relationship blocks Stage 1.
+    const guarantorRequired = (await this.policyService.getBoolean(
       'guarantor.required', { tenantId: ctx.tenantId },
-    );
+    )) ?? true;
     if (guarantorRequired) {
       const [guarantor] = await this.dataSource.query<any[]>(
         `SELECT sg.id FROM student_guarantors sg
-         WHERE sg.student_id = $1 AND sg.status = 'active' LIMIT 1`,
+         WHERE sg.student_id = $1 AND sg.status IN ('active', 'pending_invitation') LIMIT 1`,
         [ctx.studentId],
       );
       if (!guarantor) missingFields.push('guarantor');

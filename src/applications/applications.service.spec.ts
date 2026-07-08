@@ -297,23 +297,58 @@ describe('ApplicationsService.createForSelf', () => {
     );
   });
 
+  const ALL_REQUIRED_DOCS = [
+    { document_type_code: 'national_id', id: 'doc-1' },
+    { document_type_code: 'bac_diploma', id: 'doc-2' },
+    { document_type_code: 'university_acceptance', id: 'doc-3' },
+    { document_type_code: 'income_proof', id: 'doc-4' },
+  ];
+  const COMPLETE_DTO = {
+    tuitionAmount: 5000, programId: 'program-1', universityId: 'uni-1', academicYear: '2026-2027',
+  };
+
   it('resolves studentId from the caller identity and never trusts a client-supplied one', async () => {
     query
       .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }]) // membership check
       .mockResolvedValueOnce([]) // in-flight duplicate check — none found
+      .mockResolvedValueOnce(ALL_REQUIRED_DOCS) // required-document completeness check
       .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }]) // INSERT applications
       .mockResolvedValueOnce(undefined) // INSERT application_status_history
       .mockResolvedValueOnce(undefined) // audit
-      .mockResolvedValueOnce([]); // notifyStudent's student lookup
+      .mockResolvedValueOnce([]) // notifyStudent's student lookup
+      .mockResolvedValue(undefined); // the 8 attach-documents UPDATE/INSERT calls that follow
 
     // A malicious/confused client-supplied studentId in the body must be
     // ignored — the resolved identity always wins.
-    await service.createForSelf('user-1', 'tenant-1', { studentId: 'someone-elses-student-id', tuitionAmount: 5000 });
+    await service.createForSelf('user-1', 'tenant-1', { ...COMPLETE_DTO, studentId: 'someone-elses-student-id' });
 
-    const insertCall = query.mock.calls[2];
+    const insertCall = query.mock.calls[3];
     expect(insertCall[0]).toContain('INSERT INTO applications');
     expect(insertCall[1]).toContain('student-1');
     expect(insertCall[1]).not.toContain('someone-elses-student-id');
+  });
+
+  // Manual pilot testing discovery — the admin pipeline's Stage 1
+  // Completeness Gate blocked every self-submitted application because
+  // nothing in the student flow ever required these fields/documents
+  // before letting a student submit. Locks down that createForSelf now
+  // rejects incomplete submissions itself, rather than silently creating
+  // an application guaranteed to fail Stage 1.
+  it('rejects submission when required fields are missing', async () => {
+    query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+      .mockResolvedValueOnce([]);
+
+    await expect(service.createForSelf('user-1', 'tenant-1', { tuitionAmount: 5000 }))
+      .rejects.toThrow(/program, university, academic year/);
+  });
+
+  it('rejects submission when required documents are missing', async () => {
+    query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([ALL_REQUIRED_DOCS[0], ALL_REQUIRED_DOCS[1]]); // only 2 of 4 uploaded
+
+    await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO))
+      .rejects.toThrow(/university_acceptance, income_proof/);
   });
 
   // Phase 8 workflow audit — no check existed at all before this: a
@@ -335,12 +370,14 @@ describe('ApplicationsService.createForSelf', () => {
     query
       .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
       .mockResolvedValueOnce([]) // rejected/completed/withdrawn excluded server-side, so none found
+      .mockResolvedValueOnce(ALL_REQUIRED_DOCS)
       .mockResolvedValueOnce([{ id: 'app-2', student_id: 'student-1' }])
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce([]);
+      .mockResolvedValueOnce([])
+      .mockResolvedValue(undefined);
 
-    await expect(service.createForSelf('user-1', 'tenant-1', { tuitionAmount: 5000 })).resolves.toBeDefined();
+    await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO)).resolves.toBeDefined();
 
     const dupCheckCall = query.mock.calls[1];
     expect(dupCheckCall[0]).toContain("NOT IN ('rejected', 'completed', 'withdrawn')");
@@ -474,6 +511,75 @@ describe('ApplicationsService.confirmEnrollment', () => {
     const updateCall = query.mock.calls[2];
     expect(updateCall[0]).toContain('UPDATE applications SET current_status');
     expect(updateCall[1]).toContain('university_confirmed');
+  });
+});
+
+// Workflow alignment fix — requirement 5: "Admin application page should
+// show a clear completeness checklist." Mirrors exactly what Stage 1 of
+// the pipeline checks, so an admin sees the same signal the gate uses
+// rather than having to guess why an application is stuck.
+describe('ApplicationsService.findOneForAdmin — completeness checklist', () => {
+  let service: ApplicationsService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new ApplicationsService(
+      { query } as unknown as DataSource,
+      {} as unknown as NotificationsService,
+      {} as unknown as UniversitiesService,
+    );
+  });
+
+  const baseApp = { id: 'app-1', student_id: 'student-1', program_id: 'program-1' };
+
+  it('reports allComplete: true only when program, all 4 verified documents, and a live guarantor all exist', async () => {
+    query
+      .mockResolvedValueOnce([baseApp]) // findOne
+      .mockResolvedValueOnce([
+        { document_type_code: 'national_id', status: 'verified' },
+        { document_type_code: 'bac_diploma', status: 'verified' },
+        { document_type_code: 'university_acceptance', status: 'under_review' },
+        { document_type_code: 'income_proof', status: 'verified' },
+      ])
+      .mockResolvedValueOnce([{ status: 'pending_invitation', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
+
+    const result = await service.findOneForAdmin('app-1', 'tenant-1');
+
+    expect(result.completeness.programSelected).toBe(true);
+    expect(result.completeness.guarantor).toEqual(expect.objectContaining({ status: 'pending_invitation', name: 'Mohamed Ali' }));
+    expect(result.completeness.allComplete).toBe(true);
+  });
+
+  it('reports each missing document as absent and allComplete: false when documents are missing', async () => {
+    query
+      .mockResolvedValueOnce([baseApp])
+      .mockResolvedValueOnce([{ document_type_code: 'national_id', status: 'verified' }]) // only 1 of 4
+      .mockResolvedValueOnce([{ status: 'active', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
+
+    const result = await service.findOneForAdmin('app-1', 'tenant-1');
+
+    const byType = Object.fromEntries(result.completeness.documents.map((d: any) => [d.type, d.status]));
+    expect(byType.national_id).toBe('verified');
+    expect(byType.bac_diploma).toBe('absent');
+    expect(result.completeness.allComplete).toBe(false);
+  });
+
+  it('reports guarantor: null and allComplete: false when no guarantor has ever been added', async () => {
+    query
+      .mockResolvedValueOnce([baseApp])
+      .mockResolvedValueOnce([
+        { document_type_code: 'national_id', status: 'verified' },
+        { document_type_code: 'bac_diploma', status: 'verified' },
+        { document_type_code: 'university_acceptance', status: 'verified' },
+        { document_type_code: 'income_proof', status: 'verified' },
+      ])
+      .mockResolvedValueOnce([]); // no guarantor link
+
+    const result = await service.findOneForAdmin('app-1', 'tenant-1');
+
+    expect(result.completeness.guarantor).toBeNull();
+    expect(result.completeness.allComplete).toBe(false);
   });
 });
 

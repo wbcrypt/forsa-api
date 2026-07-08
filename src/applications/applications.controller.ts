@@ -82,9 +82,9 @@ export class ApplicationsController {
 
   @Get(':id')
   @RequirePermissions('application.view')
-  @ApiOperation({ summary: 'Get full application detail' })
+  @ApiOperation({ summary: 'Get full application detail, including the admin completeness checklist' })
   findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() t: string) {
-    return this.service.findOne(id, t);
+    return this.service.findOneForAdmin(id, t);
   }
 
   @Get(':id/pipeline-history')

@@ -72,6 +72,50 @@ describe('PipelineService — stage gates', () => {
       expect(result.outputs.missingFields).toContain('guarantor');
     });
 
+    // Manual pilot testing discovery — guarantor.required has never had a
+    // policy row in this tenant, so getBoolean() returned null; the old
+    // `if (guarantorRequired)` treated that as "not required," meaning
+    // Stage 1 never actually enforced a guarantor on file at all. Now
+    // defaults to required when unconfigured.
+    it('defaults to requiring a guarantor when no policy is configured', async () => {
+      query
+        .mockResolvedValueOnce([
+          { document_type_code: 'national_id', status: 'verified' },
+          { document_type_code: 'bac_diploma', status: 'verified' },
+          { document_type_code: 'university_acceptance', status: 'verified' },
+          { document_type_code: 'income_proof', status: 'verified' },
+        ])
+        .mockResolvedValueOnce([]); // no guarantor linked
+      policyService.getBoolean.mockResolvedValue(null); // unconfigured
+
+      const result = await (service as any).stage1Completeness(baseCtx);
+
+      expect(result.status).toBe('blocked');
+      expect(result.outputs.missingFields).toContain('guarantor');
+    });
+
+    // A guarantor invitation still awaiting the guarantor's response is a
+    // normal in-review state, not a reason to block the application from
+    // reaching a human reviewer — only a genuinely absent guarantor
+    // relationship should block Stage 1.
+    it('does not block on a guarantor invitation still pending acceptance', async () => {
+      query
+        .mockResolvedValueOnce([
+          { document_type_code: 'national_id', status: 'verified' },
+          { document_type_code: 'bac_diploma', status: 'verified' },
+          { document_type_code: 'university_acceptance', status: 'verified' },
+          { document_type_code: 'income_proof', status: 'verified' },
+        ])
+        .mockResolvedValueOnce([{ id: 'sg-1' }]); // pending_invitation guarantor link found
+      policyService.getBoolean.mockResolvedValue(true);
+
+      const result = await (service as any).stage1Completeness(baseCtx);
+
+      expect(result.status).toBe('passed');
+      const guarantorQueryCall = query.mock.calls[1];
+      expect(guarantorQueryCall[0]).toContain("'active', 'pending_invitation'");
+    });
+
     it('passes when all required documents are uploaded and no guarantor is required', async () => {
       query.mockResolvedValueOnce([
         { document_type_code: 'national_id', status: 'verified' },

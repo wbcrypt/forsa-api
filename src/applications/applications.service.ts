@@ -169,6 +169,19 @@ export class ApplicationsService {
   // Resolves studentId server-side from the caller's own user_id, never a
   // client-supplied value, and gates on active membership (D-004: a
   // Visitor/non-member cannot reach financing).
+  // Manual pilot testing found the admin pipeline's Stage 1 Completeness
+  // Gate (national_id, bac_diploma, university_acceptance, income_proof,
+  // program_id — see pipeline.service.ts#stage1Completeness) blocking every
+  // self-submitted application, because nothing in the student-facing flow
+  // ever collected or required that data before letting a student submit.
+  // The system was creating applications guaranteed to fail the very
+  // first pipeline stage. This is the required document set, defined once
+  // and shared with the completeness check below so the two can never
+  // drift apart.
+  private static readonly REQUIRED_DOCUMENT_TYPES = [
+    'national_id', 'bac_diploma', 'university_acceptance', 'income_proof',
+  ];
+
   async createForSelf(userId: string, tenantId: string, dto: any) {
     const [student] = await this.dataSource.query<any[]>(
       `SELECT id, membership_status FROM students WHERE user_id = $1 AND tenant_id = $2`,
@@ -201,7 +214,68 @@ export class ApplicationsService {
       );
     }
 
-    return this.create({ ...dto, studentId: student.id }, tenantId, userId);
+    // Required-field completeness — the same fields Stage 1 checks,
+    // enforced before an application is ever created rather than
+    // discovered blocked afterward.
+    const missingFields: string[] = [];
+    if (!dto.programId) missingFields.push('program');
+    if (!dto.universityId) missingFields.push('university');
+    if (!dto.tuitionAmount) missingFields.push('tuition amount');
+    if (!dto.academicYear) missingFields.push('academic year');
+    if (missingFields.length) {
+      throw new BadRequestException(
+        `Please complete the following before submitting: ${missingFields.join(', ')}.`,
+      );
+    }
+
+    // Required-document completeness — uploaded via the student's own
+    // pre-application document upload (documents.entity_type = 'student',
+    // documents.entity_id = student.id — see documents.service.ts's
+    // generateMyUploadUrl/confirmMyUpload). Only a genuinely completed
+    // upload (status = 'uploaded') counts; a still-'uploading' row (the
+    // client never confirmed) does not.
+    const uploadedDocs = await this.dataSource.query<any[]>(
+      `SELECT document_type_code, id FROM documents
+       WHERE entity_type = 'student' AND entity_id = $1 AND tenant_id = $2
+         AND status = 'uploaded' AND document_type_code = ANY($3)
+       ORDER BY created_at DESC`,
+      [student.id, tenantId, ApplicationsService.REQUIRED_DOCUMENT_TYPES],
+    );
+    const uploadedTypeCodes = new Set(uploadedDocs.map(d => d.document_type_code));
+    const missingDocs = ApplicationsService.REQUIRED_DOCUMENT_TYPES.filter(
+      code => !uploadedTypeCodes.has(code),
+    );
+    if (missingDocs.length) {
+      throw new BadRequestException(
+        `Please upload the following required documents before submitting: ${missingDocs.join(', ')}.`,
+      );
+    }
+
+    const application = await this.create({ ...dto, studentId: student.id }, tenantId, userId);
+
+    // Attach the pre-uploaded documents to the now-real application — one
+    // per required type (the most recent upload if a type was uploaded
+    // more than once), reassigning them from the student-scoped holding
+    // area to this specific application so Stage 1's own query
+    // (application_documents joined by application_id) can see them.
+    const attachedByType = new Map<string, any>();
+    for (const doc of uploadedDocs) {
+      if (!attachedByType.has(doc.document_type_code)) attachedByType.set(doc.document_type_code, doc);
+    }
+    for (const doc of attachedByType.values()) {
+      await this.dataSource.query(
+        `UPDATE documents SET entity_type = 'application', entity_id = $2 WHERE id = $1`,
+        [doc.id, application.id],
+      );
+      await this.dataSource.query(
+        `INSERT INTO application_documents (application_id, document_id, document_type_code, status)
+         VALUES ($1, $2, $3, 'uploaded')
+         ON CONFLICT (application_id, document_type_code) DO UPDATE SET document_id = $2, status = 'uploaded'`,
+        [application.id, doc.id, doc.document_type_code],
+      );
+    }
+
+    return application;
   }
 
   // Phase 3 (browser E2E testing) discovery — forsa-university's
@@ -326,12 +400,12 @@ export class ApplicationsService {
                 -- (FORSA_OPERATIONS_MANUAL.md §9/§15). Priority order:
                 -- an overdue decision matters more than a routine "ready"
                 -- tag; a missing guarantor blocks the same review a
-                -- "ready" application doesn't. Deliberately NOT based on
-                -- application_documents (that table has zero rows across
-                -- the entire tenant today — nothing populates a
-                -- required-documents checklist yet, so a documents-based
-                -- tag would be fabricated, not real; see
-                -- OPERATIONS_AUDIT_REPORT.md).
+                -- "ready" application doesn't. Not based on per-document
+                -- completeness here (that level of detail is the
+                -- Completeness Checklist on the application detail page —
+                -- see ApplicationsService#getCompleteness, added in the
+                -- workflow alignment fix) — this list-level tag stays a
+                -- coarse "what's the one most important thing" signal.
                 CASE
                   WHEN a.current_status IN ('new_lead','contacted','under_review','more_info_required')
                        AND a.updated_at < NOW() - INTERVAL '5 days'
@@ -400,6 +474,60 @@ export class ApplicationsService {
 
     if (!application) throw new NotFoundException('Application not found');
     return application;
+  }
+
+  /**
+   * Admin-facing completeness checklist — requirement 5 of the workflow
+   * alignment fix: "Admin application page should show a clear
+   * completeness checklist." Mirrors exactly what Stage 1 of the pipeline
+   * actually checks (program, the 4 required documents, guarantor), so an
+   * admin never has to guess why an application is stuck at Stage 1 —
+   * they see precisely the same signal the gate itself uses.
+   *
+   * Deliberately NOT folded into findOne() itself — findOne is the shared
+   * detail-fetch used by several internal, completeness-irrelevant callers
+   * (confirmEnrollment's ownership check, findOneForMyUniversity, etc.);
+   * attaching this there would mean two extra queries on every one of
+   * those call sites for data they never look at.
+   */
+  async findOneForAdmin(id: string, tenantId: string) {
+    const application = await this.findOne(id, tenantId);
+    application.completeness = await this.getCompleteness(application.id, application.student_id, !!application.program_id);
+    return application;
+  }
+
+  private async getCompleteness(applicationId: string, studentId: string, programSelected: boolean) {
+    const docs = await this.dataSource.query<any[]>(
+      `SELECT document_type_code, status FROM application_documents WHERE application_id = $1`,
+      [applicationId],
+    );
+    const docByType = new Map(docs.map((d: any) => [d.document_type_code, d.status]));
+    const documents = ApplicationsService.REQUIRED_DOCUMENT_TYPES.map(code => ({
+      type: code,
+      status: docByType.get(code) || 'absent',
+    }));
+
+    const [guarantorLink] = await this.dataSource.query<any[]>(
+      `SELECT sg.status, g.first_name, g.last_name, g.email
+       FROM student_guarantors sg
+       JOIN guarantors g ON g.id = sg.guarantor_id
+       WHERE sg.student_id = $1 AND sg.status != 'withdrawn'
+       ORDER BY sg.created_at DESC LIMIT 1`,
+      [studentId],
+    );
+
+    return {
+      programSelected,
+      documents,
+      guarantor: guarantorLink ? {
+        status: guarantorLink.status, // pending_invitation | active | declined
+        name: `${guarantorLink.first_name} ${guarantorLink.last_name}`,
+        email: guarantorLink.email,
+      } : null,
+      allComplete: programSelected
+        && documents.every(d => ['verified', 'under_review'].includes(d.status))
+        && !!guarantorLink && ['active', 'pending_invitation'].includes(guarantorLink.status),
+    };
   }
 
   // T-223 — university staff confirming tuition/enrollment before the
