@@ -214,7 +214,8 @@ Preview  (public, read-only — sees who invited them and for whom,
 - **Preview:** `GET /guarantors/invite/:token`, public, no auth. Distinguishes four distinct failure states with four distinct messages: invalid/no-such-token, already used, already declined, expired.
 - **Accept:** password only (their profile — first/last name, relationship — was already captured at invitation time by whoever added them). Creates the `users` row, sets `portal_activated = true`, clears the invite token, and (if linked to a specific student) flips `student_guarantors.status` to `active`.
 - **Decline:** optional reason, no password needed. No account, ever. `student_guarantors.status = 'declined'`.
-- **Profile completion / Documents:** the guarantor's *profile* (name, relationship, phone, employment status) is captured up front at invitation time by whoever adds them, not filled in by the guarantor after accepting. There is **no dedicated document-upload step in the guarantor's own onboarding** — the guarantor portal's document-related capability is limited to uploading a *payment receipt* on the student's behalf once linked, not identity/income documents as part of onboarding itself. This is a real gap against a design that describes a guarantor "profile → documents" step; see §14.
+- **Profile completion:** the guarantor's *basic* profile (name, relationship, phone, employment status) is still captured up front at invitation time by whoever adds them. **Updated in Phase 13 (Case Management):** once accepted, the guarantor's own dashboard now shows a Case Status card prompting them to complete a genuine **Financial Responsibility Profile** themselves — `PATCH /guarantors/my-case/financial-profile` — covering employment duration, salary range, income source, marital status, dependents, home ownership, monthly expenses, existing loans, other guarantees, and whether they're already supporting another student. This is FORSA evaluating the guarantor half of the Case, not just recording who they are. `guarantors.financial_profile_completed_at` tracks completion; `GET /guarantors/my-case` reports it alongside documents and meeting status.
+- **Documents:** there is still **no dedicated identity/income document-upload step in the guarantor's own onboarding** — the guarantor portal's document-related capability remains limited to uploading a *payment receipt* on the student's behalf once linked. `guarantors.document_status` exists as a column and is surfaced in the new Case Status view, but nothing in the codebase currently writes to it via a real upload flow — it is read-only from the guarantor's own portal today. This gap, first flagged before Phase 13, remains open; see §14.
 - **Portal / future interactions:** once active, the guarantor sees their linked student's application status, payment schedule, and can submit payment receipts or initiate an online payment (Konnect, unverified — see §8) on the student's behalf.
 - **Resend:** if an invite is still pending, an admin can resend it — this immediately invalidates the old token and issues a fresh one (never two live tokens at once).
 
@@ -245,6 +246,8 @@ The student, from their own Dashboard, via the single canonical `/apply` entry p
 
 A student can also still invite a guarantor independently at any time via the `/guarantor` page reachable from the Bronze Dashboard checklist (e.g., before starting an application, or to replace a declined guarantor) — the wizard's own Guarantor step and the standalone page use the same underlying self-service mechanism.
 
+**Phase 13 (Case Management):** the student's fuller financial and personal profile — employment status, monthly income, scholarships, existing loans, other financial commitments, living situation, emergency contact — is collected via the **Profile page** (`PATCH /students/me`) rather than as additional wizard steps, so this data can be added or updated at any time, not only during initial submission. The wizard's own required fields are unchanged from the previous phase.
+
 ### Duplicate prevention
 
 A student **cannot** have two Tuition Facilitation applications in flight simultaneously. Any existing application not in a terminal state (`rejected`, `completed`, `withdrawn`) blocks a new submission with a specific error. A rejected application does **not** block reapplication — that's the deliberate "Apply Again" path. *(This check did not exist before the Phase 8 audit; it is fixed and verified as of this manual.)*
@@ -263,7 +266,13 @@ Required documents (national ID, Bac diploma, university acceptance letter, inco
 
 ### What happens after approval
 
-`approved_levelN` → `contract_sent` → `contract_signed` → `university_confirmed` (the partner university's one write action — see §6) → `university_paid` → `active_student` → eventually `completed` or `withdrawn`.
+`approved_levelN` → `contract_sent` → `contract_signed` → `university_confirmed` (the partner university's one write action — see §6) → `university_paid` → `active_student` → eventually `completed` or `withdrawn`. **Unchanged by Phase 13** — the Case Management redesign explicitly does not touch this transition table.
+
+### The Case, and the activation meeting (Phase 13 — Case Management)
+
+FORSA does not evaluate the student alone — it evaluates Student + Guarantor + Educational Request as one **Case**. This is not a new database entity (see `CASE_MANAGEMENT_ARCHITECTURE.md` for why that was deliberately rejected); it's a richer view over the same application, student, and guarantor rows, assembled by `GET /applications/:id/case` and rendered as the admin's new "Case Summary" tab: student profile, guarantor's Financial Responsibility Profile, every document, AI analysis, risk flags, and meeting status, in one place.
+
+After an approval in principle (`approved_levelN`) and before the contract stage, staff typically schedule an **activation meeting** — a real capability new in this phase (`case_meetings`; previously the product's copy referenced an "Activation Meeting" with no table or endpoint behind it at all). Both student and guarantor are emailed the same date, time, office location, reference number, and required original documents. A meeting's own status (`scheduled → confirmed → completed`, or `rescheduled`/`cancelled`) is tracked independently of `current_status` — scheduling, confirming, or cancelling a meeting never touches the application's real state machine.
 
 ### How Silver/Gold is assigned
 

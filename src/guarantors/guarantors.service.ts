@@ -7,6 +7,7 @@ import { hashPassword, validatePasswordComplexity } from '../common/utils/passwo
 import { hashToken } from '../common/utils/encryption.util'
 import { UserStatus } from '../common/enums'
 import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto'
+import { UpdateFinancialProfileDto } from './dto/financial-profile.dto'
 
 @Injectable()
 export class GuarantorsService {
@@ -189,14 +190,17 @@ export class GuarantorsService {
     const link = await this.findLinkedStudent(userId, tenantId)
     if (!link) return { student: null, application: null, paymentSchedule: null, installments: [] }
 
-    // Sanity-check discovery — this method silently failed on every call:
-    // `activation_meetings` has no migration anywhere in the codebase (never
-    // built), and `contracts` has no `signed_at` column (the real column is
-    // `fully_signed_at`). Both errors were swallowed by .catch(() => [[]]),
-    // which also doesn't match query()'s real resolved shape — destructuring
-    // `[meeting] = [[]]` yields `meeting = []` (a truthy empty array), so
-    // `activation_meeting: meeting || null` was rendering `[]`, not `null`.
-    const activationMeeting = null
+    // Phase 13 (Case Management) — case_meetings now genuinely exists.
+    // Previously this was hardcoded `null` with a comment explaining the
+    // table had never been built (`contracts` has no `signed_at` column
+    // either — the real column is `fully_signed_at`, fixed below too).
+    const [activationMeeting] = link.application_id ? await this.db.query<any[]>(
+      `SELECT id, reference_number, scheduled_at, office_location, estimated_duration_minutes,
+              required_documents, required_attendees, special_instructions, status
+       FROM case_meetings WHERE application_id = $1 AND status != 'cancelled'
+       ORDER BY created_at DESC LIMIT 1`,
+      [link.application_id],
+    ) : [null]
 
     const [contract] = await this.db.query<any[]>(
       `SELECT id, status, fully_signed_at FROM contracts
@@ -267,6 +271,73 @@ export class GuarantorsService {
     )
 
     return { schedule, installments, application: link }
+  }
+
+  /**
+   * Phase 13 (Case Management) — the guarantor's own Case status: what a
+   * guarantor should always know (invitation status, profile status,
+   * documents remaining, meeting information), computed from the same
+   * data the admin's Case Summary uses so the two can never disagree.
+   */
+  async getMyCaseStatus(userId: string, tenantId: string) {
+    const [g] = await this.db.query<any[]>(
+      `SELECT financial_profile_completed_at, document_status FROM guarantors WHERE user_id = $1 AND tenant_id = $2`,
+      [userId, tenantId],
+    )
+    const link = await this.findLinkedStudent(userId, tenantId)
+    const [meeting] = link?.application_id ? await this.db.query<any[]>(
+      `SELECT id, reference_number, scheduled_at, office_location, estimated_duration_minutes,
+              required_documents, required_attendees, special_instructions, status
+       FROM case_meetings WHERE application_id = $1 AND status != 'cancelled'
+       ORDER BY created_at DESC LIMIT 1`,
+      [link.application_id],
+    ) : [null]
+
+    const profileStatus = g?.financial_profile_completed_at ? 'completed' : 'pending'
+    let nextAction = 'Complete your Financial Responsibility Profile'
+    if (profileStatus === 'completed' && g?.document_status !== 'verified') nextAction = 'Upload your supporting documents'
+    else if (profileStatus === 'completed' && g?.document_status === 'verified' && !meeting) nextAction = 'Waiting for FORSA to review the case'
+    else if (meeting && ['scheduled', 'confirmed'].includes(meeting.status)) nextAction = `Attend your meeting on ${new Date(meeting.scheduled_at).toLocaleDateString()}`
+    else if (meeting?.status === 'completed') nextAction = 'Waiting for the university to confirm enrollment'
+
+    return {
+      invitationStatus: 'active', // this method only reachable once accepted — declined/pending never call it
+      profileStatus,
+      documentsStatus: g?.document_status || 'pending',
+      meeting: meeting || null,
+      nextAction,
+    }
+  }
+
+  async updateMyFinancialProfile(userId: string, tenantId: string, dto: UpdateFinancialProfileDto) {
+    const [g] = await this.db.query<any[]>(
+      `SELECT id FROM guarantors WHERE user_id = $1 AND tenant_id = $2`,
+      [userId, tenantId],
+    )
+    if (!g) throw new NotFoundException('Guarantor profile not found')
+
+    await this.db.query(
+      `UPDATE guarantors SET
+         employment_duration_years = COALESCE($2, employment_duration_years),
+         salary_range = COALESCE($3, salary_range),
+         income_source = COALESCE($4, income_source),
+         marital_status = COALESCE($5, marital_status),
+         number_of_dependents = COALESCE($6, number_of_dependents),
+         home_ownership = COALESCE($7, home_ownership),
+         monthly_expenses = COALESCE($8, monthly_expenses),
+         existing_loans_amount = COALESCE($9, existing_loans_amount),
+         other_guarantees = COALESCE($10, other_guarantees),
+         supporting_other_students = COALESCE($11, supporting_other_students),
+         financial_profile_completed_at = now(),
+         updated_at = now()
+       WHERE id = $1`,
+      [
+        g.id, dto.employmentDurationYears, dto.salaryRange, dto.incomeSource, dto.maritalStatus,
+        dto.numberOfDependents, dto.homeOwnership, dto.monthlyExpenses, dto.existingLoansAmount,
+        dto.otherGuarantees, dto.supportingOtherStudents,
+      ],
+    )
+    return { status: 'completed' }
   }
 
   /**

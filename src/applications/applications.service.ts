@@ -9,6 +9,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { computeHouseholdStabilityScore, deriveRecommendation } from '../ai/household-stability.util';
 import { UniversitiesService } from '../universities/universities.service';
 import { computeAdminStage, computeStudentMilestone } from './application-stages.util';
+import { ScheduleMeetingDto, UpdateMeetingStatusDto } from './dto/meeting.dto';
 
 // Valid status transitions (state machine)
 const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
@@ -130,9 +131,9 @@ export class ApplicationsService {
          academic_year, current_status, lead_date, is_renewal,
          previous_application_id, assigned_to_user_id, created_by,
          ai_score_overall, ai_recommendation, ai_report,
-         interview_language, interview_transcript)
+         interview_language, interview_transcript, expected_graduation_date)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new_lead',CURRENT_DATE,$12,$13,$14,$15,
-               $16,$17,$18,$19,$20)
+               $16,$17,$18,$19,$20,$21)
        RETURNING *`,
       [
         tenantId, dto.studentId, dto.universityId, dto.programId,
@@ -143,6 +144,7 @@ export class ApplicationsService {
         aiScoreOverall, aiRecommendation,
         dto.aiReport ? (typeof dto.aiReport === 'string' ? dto.aiReport : JSON.stringify(dto.aiReport)) : null,
         dto.interviewLanguage ?? null, dto.interviewTranscript ?? null,
+        dto.expectedGraduationDate ?? null,
       ],
     );
 
@@ -341,7 +343,26 @@ export class ApplicationsService {
     );
     if (!owned) throw new NotFoundException('Application not found');
     const completeness = await this.getCompleteness(owned.id, owned.student_id, !!owned.program_id);
-    return computeStudentMilestone(owned.current_status, completeness);
+    const meeting = await this.getCurrentMeeting(owned.id);
+    return computeStudentMilestone(owned.current_status, completeness, meeting);
+  }
+
+  /**
+   * Phase 13 (Case Management) — one Case File, not two disconnected
+   * participants. Latest non-cancelled meeting row for this application,
+   * shared by the student timeline, the guarantor's case status, and the
+   * admin Case Summary so all three can never disagree about it.
+   */
+  private async getCurrentMeeting(applicationId: string) {
+    const [meeting] = await this.dataSource.query<any[]>(
+      `SELECT id, reference_number, scheduled_at, office_location, assigned_officer_user_id,
+              estimated_duration_minutes, required_documents, required_attendees,
+              special_instructions, status, cancellation_reason
+       FROM case_meetings WHERE application_id = $1 AND status != 'cancelled'
+       ORDER BY created_at DESC LIMIT 1`,
+      [applicationId],
+    );
+    return meeting || null;
   }
 
   /**
@@ -522,6 +543,213 @@ export class ApplicationsService {
     // timeline from ever silently disagreeing.
     application.adminStage = computeAdminStage(application.current_status, application.completeness);
     return application;
+  }
+
+  /**
+   * Phase 13 (Case Management & Dual Applicant Workflow) — "FORSA does not
+   * evaluate only the student. FORSA evaluates Student + Guarantor +
+   * Educational Request. This entire package becomes one Case File."
+   *
+   * This is not a new physical entity — an application already *is* the
+   * case (core business logic, permissions, and the operational pipeline
+   * are explicitly out of scope for this phase). What was actually missing
+   * was a single place that bundles the student's full financial profile,
+   * the guarantor's full Financial Responsibility Profile, every document,
+   * the AI analysis, the meeting, and the payment schedule together —
+   * instead of an admin having to open five different tabs/screens to
+   * reconstruct one underwriting decision by hand.
+   */
+  async getCaseSummary(id: string, tenantId: string) {
+    const application = await this.findOneForAdmin(id, tenantId);
+
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT id, first_name, last_name, email, phone_primary, date_of_birth, nationality,
+              national_id_reference, address, city, employment_status, monthly_income,
+              has_scholarship, scholarship_details, existing_loans_amount,
+              other_financial_commitments, living_situation, emergency_contact_name,
+              emergency_contact_phone, emergency_contact_relationship, membership_status
+       FROM students WHERE id = $1 AND tenant_id = $2`,
+      [application.student_id, tenantId],
+    );
+
+    const [guarantor] = await this.dataSource.query<any[]>(
+      `SELECT g.id, g.first_name, g.last_name, g.email, g.phone_primary, g.date_of_birth,
+              g.relationship_to_student, g.employment_status, g.employer_name, g.income_stability,
+              g.employment_duration_years, g.salary_range, g.income_source, g.marital_status,
+              g.number_of_dependents, g.home_ownership, g.monthly_expenses, g.existing_loans_amount,
+              g.other_guarantees, g.supporting_other_students, g.financial_profile_completed_at,
+              g.document_status, g.portal_activated, sg.status AS link_status
+       FROM student_guarantors sg
+       JOIN guarantors g ON g.id = sg.guarantor_id
+       WHERE sg.student_id = $1 AND sg.status != 'withdrawn'
+       ORDER BY sg.created_at DESC LIMIT 1`,
+      [application.student_id],
+    );
+
+    const meeting = await this.getCurrentMeeting(application.id);
+
+    const [schedule] = await this.dataSource.query<any[]>(
+      `SELECT * FROM payment_schedules WHERE application_id = $1 LIMIT 1`,
+      [application.id],
+    );
+    const installments = schedule ? await this.dataSource.query<any[]>(
+      `SELECT sequence_number, amount, due_date, status, amount_paid, paid_at
+       FROM installments WHERE payment_schedule_id = $1 ORDER BY sequence_number`,
+      [schedule.id],
+    ) : [];
+
+    return {
+      application: {
+        id: application.id, current_status: application.current_status, adminStage: application.adminStage,
+        university_id: application.university_id, university_name: application.university_name,
+        program_id: application.program_id, program_name: application.program_name,
+        tuition_amount: application.tuition_amount, academic_year: application.academic_year,
+        expected_graduation_date: application.expected_graduation_date,
+        financing_tier: application.financing_tier, created_at: application.created_at,
+      },
+      student: student || null,
+      guarantor: guarantor || null,
+      documents: application.completeness.documents,
+      completeness: application.completeness,
+      aiAnalysis: {
+        report: application.ai_report || null,
+        recommendation: application.ai_recommendation || null,
+        score: application.ai_score_overall || null,
+      },
+      meeting,
+      paymentSchedule: schedule ? { ...schedule, installments } : null,
+    };
+  }
+
+  /**
+   * Phase 13 (Case Management) — "After approval in principle, generate a
+   * Meeting." Deliberately not tied into applications.current_status
+   * transitions (no new status value, no change to the operational
+   * pipeline) — this is a parallel, additive record staff create manually
+   * once they've decided to move a Case toward contract. Both student and
+   * guarantor are notified with the same reference number, date/time,
+   * location, and requirements.
+   */
+  async scheduleMeeting(applicationId: string, tenantId: string, dto: ScheduleMeetingDto, createdBy: string) {
+    const [application] = await this.dataSource.query<any[]>(
+      `SELECT a.id, a.student_id, s.first_name, s.last_name FROM applications a
+       JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2`,
+      [applicationId, tenantId],
+    );
+    if (!application) throw new NotFoundException('Application not found');
+
+    const referenceNumber = `MTG-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const [meeting] = await this.dataSource.query<any[]>(
+      `INSERT INTO case_meetings
+         (tenant_id, application_id, reference_number, scheduled_at, office_location,
+          assigned_officer_user_id, estimated_duration_minutes, required_documents,
+          required_attendees, special_instructions, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING *`,
+      [
+        tenantId, applicationId, referenceNumber, dto.scheduledAt, dto.officeLocation,
+        dto.assignedOfficerUserId || null, dto.estimatedDurationMinutes || 30,
+        JSON.stringify(dto.requiredDocuments || ['National ID', 'Original diploma/acceptance letter']),
+        JSON.stringify(dto.requiredAttendees || ['student', 'guarantor']),
+        dto.specialInstructions || null, createdBy,
+      ],
+    );
+
+    await this.notifyMeeting('meeting_scheduled', application, meeting, tenantId);
+    return meeting;
+  }
+
+  async updateMeetingStatus(meetingId: string, tenantId: string, dto: UpdateMeetingStatusDto) {
+    const [meeting] = await this.dataSource.query<any[]>(
+      `SELECT * FROM case_meetings WHERE id = $1 AND tenant_id = $2`,
+      [meetingId, tenantId],
+    );
+    if (!meeting) throw new NotFoundException('Meeting not found');
+    if (dto.status === 'cancelled' && !dto.cancellationReason) {
+      throw new BadRequestException('A cancellation reason is required');
+    }
+
+    const [application] = await this.dataSource.query<any[]>(
+      `SELECT a.id, a.student_id, s.first_name, s.last_name FROM applications a
+       JOIN students s ON s.id = a.student_id WHERE a.id = $1`,
+      [meeting.application_id],
+    );
+
+    // Rescheduling creates a fresh row (a new date/reference) rather than
+    // mutating the old one in place, so the Case retains a clean history
+    // of every meeting it ever had — the old row is marked 'rescheduled'
+    // (terminal for it), the new row starts at 'scheduled'.
+    if (dto.status === 'rescheduled') {
+      if (!dto.newScheduledAt) throw new BadRequestException('newScheduledAt is required when rescheduling');
+      await this.dataSource.query(`UPDATE case_meetings SET status = 'rescheduled', updated_at = now() WHERE id = $1`, [meetingId]);
+      const referenceNumber = `MTG-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const [newMeeting] = await this.dataSource.query<any[]>(
+        `INSERT INTO case_meetings
+           (tenant_id, application_id, reference_number, scheduled_at, office_location,
+            assigned_officer_user_id, estimated_duration_minutes, required_documents,
+            required_attendees, special_instructions, created_by)
+         SELECT tenant_id, application_id, $2, $3, office_location, assigned_officer_user_id,
+                estimated_duration_minutes, required_documents, required_attendees,
+                special_instructions, created_by
+         FROM case_meetings WHERE id = $1
+         RETURNING *`,
+        [meetingId, referenceNumber, dto.newScheduledAt],
+      );
+      await this.notifyMeeting('meeting_rescheduled', application, newMeeting, tenantId);
+      return newMeeting;
+    }
+
+    const [updated] = await this.dataSource.query<any[]>(
+      `UPDATE case_meetings SET status = $2, cancellation_reason = $3, updated_at = now()
+       WHERE id = $1 RETURNING *`,
+      [meetingId, dto.status, dto.cancellationReason || null],
+    );
+    if (dto.status === 'cancelled') await this.notifyMeeting('meeting_cancelled', application, updated, tenantId);
+    return updated;
+  }
+
+  private async notifyMeeting(templateCode: string, application: any, meeting: any, tenantId: string) {
+    const studentName = `${application.first_name} ${application.last_name}`.trim();
+    const variables = {
+      studentName,
+      meetingDate: new Date(meeting.scheduled_at).toLocaleDateString(),
+      meetingTime: new Date(meeting.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      officeLocation: meeting.office_location,
+      referenceNumber: meeting.reference_number,
+      estimatedDuration: meeting.estimated_duration_minutes,
+      requiredAttendees: Array.isArray(meeting.required_attendees) ? meeting.required_attendees.join(', ') : meeting.required_attendees,
+      requiredDocuments: Array.isArray(meeting.required_documents) ? meeting.required_documents.join(', ') : meeting.required_documents,
+      specialInstructions: meeting.special_instructions || '',
+      cancellationReason: meeting.cancellation_reason || '',
+    };
+
+    const [student] = await this.dataSource.query<any[]>(
+      `SELECT email FROM students WHERE id = $1`, [application.student_id],
+    );
+    if (student?.email) {
+      await this.notifications.send({
+        tenantId, recipientId: application.student_id, recipientEmail: student.email,
+        channel: NotificationChannel.EMAIL, templateCode,
+        variables: { ...variables, recipientName: studentName },
+        referenceType: 'application',
+      }).catch(err => this.logger.error(`Meeting notification ${templateCode} (student) failed`, err));
+    }
+
+    const [guarantor] = await this.dataSource.query<any[]>(
+      `SELECT g.email, g.first_name, g.last_name FROM student_guarantors sg
+       JOIN guarantors g ON g.id = sg.guarantor_id
+       WHERE sg.student_id = $1 AND sg.status = 'active' ORDER BY sg.created_at DESC LIMIT 1`,
+      [application.student_id],
+    );
+    if (guarantor?.email) {
+      await this.notifications.send({
+        tenantId, recipientId: application.student_id, recipientEmail: guarantor.email,
+        channel: NotificationChannel.EMAIL, templateCode,
+        variables: { ...variables, recipientName: `${guarantor.first_name} ${guarantor.last_name}`.trim() },
+        referenceType: 'application',
+      }).catch(err => this.logger.error(`Meeting notification ${templateCode} (guarantor) failed`, err));
+    }
   }
 
   private async getCompleteness(applicationId: string, studentId: string, programSelected: boolean) {

@@ -130,4 +130,23 @@ describe('computeStudentMilestone', () => {
       'guarantor_status', 'under_review', 'decision', 'university_confirmation', 'active_student',
     ]);
   });
+
+  // Phase 13 (Case Management) — "Student should always know ... Next
+  // Required Action," computed from the same inputs as the milestones.
+  it('tells the student to invite a guarantor when none exists yet', () => {
+    expect(computeStudentMilestone('new_lead', noGuarantor).nextAction).toMatch(/Invite a guarantor/);
+  });
+
+  it('tells the student no action is needed while under internal review', () => {
+    expect(computeStudentMilestone('under_review', allVerified).nextAction).toMatch(/No action needed/);
+  });
+
+  it('tells the student to attend their scheduled meeting once one exists, at the decision stage', () => {
+    const result = computeStudentMilestone('approved_level2', allVerified, { status: 'scheduled', scheduled_at: '2026-08-01' });
+    expect(result.nextAction).toMatch(/Attend your meeting/);
+  });
+
+  it('reassures rather than dead-ends once rejected', () => {
+    expect(computeStudentMilestone('rejected', allVerified).nextAction).toMatch(/Bronze membership stays fully active/);
+  });
 });

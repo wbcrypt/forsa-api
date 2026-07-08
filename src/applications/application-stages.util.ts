@@ -168,10 +168,47 @@ export interface StudentMilestoneView {
   }[];
   isWaitingList: boolean;
   isRejected: boolean;
+  nextAction: string;
+  meeting: MeetingInput | null;
+}
+
+interface MeetingInput {
+  status: string;
+  scheduled_at: string | Date;
+  [key: string]: unknown;
+}
+
+/**
+ * Phase 13 (Case Management) — "Student should always know: Case Status,
+ * Case Progress, Next Required Action." One required action in plain
+ * language, computed from the exact same inputs as the milestones
+ * themselves so it can never point somewhere the milestones disagree with.
+ */
+function computeNextAction(currentKey: StudentMilestoneKey, isRejected: boolean, completeness: CompletenessInput, meeting?: MeetingInput | null): string {
+  if (isRejected) return 'Review your options — Bronze membership stays fully active, and you can apply again anytime';
+  switch (currentKey) {
+    case 'guarantor_status':
+      return completeness.guarantor?.status === 'declined' ? 'Invite a new guarantor — your previous one declined' : 'Invite a guarantor to continue';
+    case 'documents_verified':
+      return 'Upload any remaining required documents';
+    case 'under_review':
+      return 'No action needed — FORSA is reviewing your case';
+    case 'decision':
+      if (meeting && ['scheduled', 'confirmed'].includes(meeting.status)) {
+        return `Attend your meeting on ${new Date(meeting.scheduled_at).toLocaleDateString()}`;
+      }
+      return 'Congratulations — waiting for your activation meeting to be scheduled';
+    case 'university_confirmation':
+      return 'No action needed — waiting for your university to confirm enrollment';
+    case 'active_student':
+      return 'No action needed — your Tuition Facilitation Plan is active';
+    default:
+      return 'Complete your application';
+  }
 }
 
 /** Student Timeline — the customer journey, in plain language. */
-export function computeStudentMilestone(currentStatus: string, completeness: CompletenessInput): StudentMilestoneView {
+export function computeStudentMilestone(currentStatus: string, completeness: CompletenessInput, meeting?: MeetingInput | null): StudentMilestoneView {
   const isRejected = currentStatus === ApplicationStatus.REJECTED;
   const isWaitingList = currentStatus === ApplicationStatus.CAPITAL_QUEUE;
 
@@ -232,5 +269,9 @@ export function computeStudentMilestone(currentStatus: string, completeness: Com
     return { key, label: STUDENT_MILESTONE_LABELS[key], status, detail };
   });
 
-  return { milestones, isWaitingList, isRejected };
+  return {
+    milestones, isWaitingList, isRejected,
+    nextAction: computeNextAction(currentKey, isRejected, completeness, meeting),
+    meeting: meeting || null,
+  };
 }

@@ -10,6 +10,7 @@ import { CurrentUser, CurrentTenant, RequirePermissions } from '../common/decora
 import { PaginationDto } from '../common/utils/pagination.util';
 import { ApplicationStatus } from '../common/enums';
 import { TransitionStatusDto } from './dto/transition-status.dto';
+import { ScheduleMeetingDto, UpdateMeetingStatusDto } from './dto/meeting.dto';
 
 @ApiTags('Applications')
 @ApiBearerAuth()
@@ -108,6 +109,38 @@ export class ApplicationsController {
   @ApiOperation({ summary: 'Get full status transition history' })
   getStatusHistory(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() t: string) {
     return this.service.getStatusHistory(id, t);
+  }
+
+  // Phase 13 (Case Management & Dual Applicant Workflow) — "Admin now
+  // reviews the COMPLETE CASE": student summary, guarantor summary,
+  // documents, AI analysis, completeness, risk flags, timeline, meeting
+  // status, all in one response. Reuses application.view — no new
+  // permission introduced, per this phase's explicit constraints.
+  @Get(':id/case')
+  @RequirePermissions('application.view')
+  @ApiOperation({ summary: 'Get the complete Case Summary — student + guarantor + documents + AI analysis + meeting + payments' })
+  getCaseSummary(@Param('id', ParseUUIDPipe) id: string, @CurrentTenant() t: string) {
+    return this.service.getCaseSummary(id, t);
+  }
+
+  @Post(':id/meetings')
+  @RequirePermissions('application.edit')
+  @ApiOperation({ summary: 'Schedule the Case activation meeting (after approval in principle)' })
+  scheduleMeeting(
+    @Param('id', ParseUUIDPipe) id: string, @Body() dto: ScheduleMeetingDto,
+    @CurrentTenant() t: string, @CurrentUser('id') u: string,
+  ) {
+    return this.service.scheduleMeeting(id, t, dto, u);
+  }
+
+  @Patch('meetings/:meetingId')
+  @RequirePermissions('application.edit')
+  @ApiOperation({ summary: 'Confirm, complete, reschedule, or cancel a Case activation meeting' })
+  updateMeetingStatus(
+    @Param('meetingId', ParseUUIDPipe) meetingId: string, @Body() dto: UpdateMeetingStatusDto,
+    @CurrentTenant() t: string,
+  ) {
+    return this.service.updateMeetingStatus(meetingId, t, dto);
   }
 
   @Patch(':id/status')

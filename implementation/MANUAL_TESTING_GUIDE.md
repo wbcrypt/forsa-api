@@ -116,6 +116,9 @@ Recommended order: **A → B → C → D → E → F → G**. A and B use a bran
 | C3 | Look at the guarantor dashboard | Shows the linked student's name and application status |
 | C4 | **Decline test (use a second, fresh invite):** open a new invite link and click Decline instead | Confirms decline with an optional reason; **no account is created** — try logging in with that email afterward and confirm it fails |
 | C5 | **Resend test:** as the student who sent the still-pending invite, click "Resend Invitation" from `/guarantor` | A new email arrives; the old invite link (if you saved it) should now say "invalid" if you try it |
+| C6 | **(Phase 13 — Case Management)** On the guarantor dashboard, look for the "Statut de mon dossier (Case)" card | Shows three checkpoints — Profil financier, Documents, Réunion — and a single next-action line |
+| C7 | Click "Compléter mon profil financier" and fill in the Financial Responsibility Profile (salary range, marital status, dependents, home ownership, etc.), save | Checkpoint flips to done; the next-action line updates |
+| C8 | As admin, open this guarantor's linked application → Case Summary tab | The exact same Financial Responsibility Profile values you just entered as the guarantor should appear in the Guarantor Summary card — same data, not a re-entry |
 
 ### Scenario D — Admin Journey
 
@@ -128,6 +131,10 @@ Recommended order: **A → B → C → D → E → F → G**. A and B use a bran
 | D5 | Open Sarra Jendoubi's application (`under_review`) | Review her AI report / documents |
 | D6 | Approve her at a tier, or reject her | Watch her `membership_status` / rejection state change — log into her account afterward (or check the Students list) to confirm |
 | D7 | Go to Audit Log | Every action you just took (D2, D6) should appear with your identity and a timestamp |
+| D8 | **(Phase 13 — Case Management)** Open any application, click the new "📋 Case Summary" tab | Shows Student Summary, Guarantor Summary, Risk Flags (if any), and Meeting Status in one place — no need to hop across Documents/Payments/AI Report tabs to reconstruct the picture |
+| D9 | From the Case Summary tab, schedule a meeting (date/time, office location) | Both the student and the guarantor should receive a "Your FORSA Activation Meeting" email in MailHog with the same reference number, date, and location |
+| D10 | Confirm the meeting, then try Reschedule | Confirming updates the status in place; rescheduling issues a **new** reference number (check MailHog for a second email) rather than silently editing the old one |
+| D11 | Check the student's `/application` page and the guarantor's dashboard | Both should show the same meeting date/time/location/reference number you just scheduled |
 
 ### Scenario E — University Journey
 
@@ -198,3 +205,5 @@ These are intentionally incomplete or out of scope — **not bugs**, don't log t
 12. **Uploading a document only gets it to "uploaded," not "verified."** A staff member must review it (Documents tab → mark Verified) before the Completeness Checklist shows "Ready for Stage 1" — this is an intentional staff gate, not a bug.
 13. **If you click "Run Pipeline" instead of manually approving,** it may block at Stage 3 with "no active university agreement found" for a university that doesn't have one on file. That's unrelated to document/guarantor completeness (Stage 1, which should now pass) — it's a separate, pre-existing requirement. Use the manual Advance/Approve action instead if you just want to test the Silver/Gold assignment.
 14. **Any new university you add for testing needs at least one program seeded** (`programs` table) before a student can select it in the Apply wizard's Program field — otherwise the field falls back to free text, which does not satisfy `program_id` and will correctly block submission.
+15. **(Phase 13) A guarantor's `documents_remaining`/`documentsStatus` on the Case Status card has no real upload flow behind it yet.** The column exists and is surfaced, but nothing currently writes to it from the guarantor's own portal — it will show "pending" indefinitely in testing unless set directly in the database. This is a known, documented gap (`FORSA_OPERATIONS_MANUAL.md` §4, `CASE_MANAGEMENT_ARCHITECTURE.md`), not something to log as a new bug.
+16. **(Phase 13) Scheduling a meeting is not gated by `current_status`** — you can schedule one on any application regardless of its stage (deliberately; see `CASE_MANAGEMENT_ARCHITECTURE.md`'s state machine section). Don't be surprised if it's possible to schedule a meeting on an application that isn't actually at Pre-Approval yet — that's expected in this implementation, not a bug to log.

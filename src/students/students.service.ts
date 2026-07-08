@@ -107,15 +107,37 @@ export class StudentsService {
   async updateMyProfile(userId: string, tenantId: string, dto: any) {
     const student = await this.findMe(userId, tenantId);
 
+    // Phase 13 (Case Management) — Step 1 of the Case wizard: "the student
+    // must complete a complete financial profile... the objective is to
+    // fully understand the student's situation before review." Identity
+    // (address, DOB) and Financial/Personal fields added here — Academic
+    // fields (university/program/tuition/academic year/expected
+    // graduation) live on the application itself, not the student record.
     await this.dataSource.query(
       `UPDATE students
        SET phone_primary = COALESCE($3, phone_primary),
            city = COALESCE($4, city),
            nationality = COALESCE($5, nationality),
            date_of_birth = COALESCE($6, date_of_birth),
+           address = COALESCE($7, address),
+           employment_status = COALESCE($8, employment_status),
+           monthly_income = COALESCE($9, monthly_income),
+           has_scholarship = COALESCE($10, has_scholarship),
+           scholarship_details = COALESCE($11, scholarship_details),
+           existing_loans_amount = COALESCE($12, existing_loans_amount),
+           other_financial_commitments = COALESCE($13, other_financial_commitments),
+           living_situation = COALESCE($14, living_situation),
+           emergency_contact_name = COALESCE($15, emergency_contact_name),
+           emergency_contact_phone = COALESCE($16, emergency_contact_phone),
+           emergency_contact_relationship = COALESCE($17, emergency_contact_relationship),
            updated_at = NOW()
        WHERE id = $1 AND tenant_id = $2`,
-      [student.id, tenantId, dto.phonePrimary, dto.city, dto.nationality, dto.dateOfBirth],
+      [
+        student.id, tenantId, dto.phonePrimary, dto.city, dto.nationality, dto.dateOfBirth, dto.address,
+        dto.employmentStatus, dto.monthlyIncome, dto.hasScholarship, dto.scholarshipDetails,
+        dto.existingLoansAmount, dto.otherFinancialCommitments, dto.livingSituation,
+        dto.emergencyContactName, dto.emergencyContactPhone, dto.emergencyContactRelationship,
+      ],
     );
 
     if (dto.academicLevel) {
