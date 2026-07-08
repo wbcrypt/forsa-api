@@ -8,6 +8,7 @@ import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.uti
 import { NotificationsService } from '../notifications/notifications.service';
 import { computeHouseholdStabilityScore, deriveRecommendation } from '../ai/household-stability.util';
 import { UniversitiesService } from '../universities/universities.service';
+import { computeAdminStage, computeStudentMilestone } from './application-stages.util';
 
 // Valid status transitions (state machine)
 const STATUS_TRANSITIONS: Record<string, ApplicationStatus[]> = {
@@ -323,6 +324,27 @@ export class ApplicationsService {
   }
 
   /**
+   * Workflow architecture redesign — the Student Timeline view: plain-
+   * language customer-journey milestones, computed from the exact same
+   * (current_status, completeness) input the admin Completeness Checklist
+   * and Admin Pipeline view use (see application-stages.util.ts), so the
+   * two views can never disagree about where an application actually
+   * stands even though they describe it in completely different
+   * vocabularies.
+   */
+  async getMyApplicationTimeline(userId: string, tenantId: string, applicationId: string) {
+    const [owned] = await this.dataSource.query<any[]>(
+      `SELECT a.id, a.current_status, a.student_id, a.program_id FROM applications a
+       JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND s.user_id = $3`,
+      [applicationId, tenantId, userId],
+    );
+    if (!owned) throw new NotFoundException('Application not found');
+    const completeness = await this.getCompleteness(owned.id, owned.student_id, !!owned.program_id);
+    return computeStudentMilestone(owned.current_status, completeness);
+  }
+
+  /**
    * Phase 10 — Waiting List Experience. "Students should never feel
    * abandoned" (FORSA_OPERATIONS_MANUAL.md §3) — an estimated review order
    * so a waitlisted student sees concrete progress rather than a bare
@@ -493,6 +515,12 @@ export class ApplicationsService {
   async findOneForAdmin(id: string, tenantId: string) {
     const application = await this.findOne(id, tenantId);
     application.completeness = await this.getCompleteness(application.id, application.student_id, !!application.program_id);
+    // Workflow architecture redesign — the Admin Pipeline view: internal
+    // operational stages, not the raw CRM current_status. See
+    // application-stages.util.ts for why this is computed rather than
+    // stored, and why that's what keeps it and the student-facing
+    // timeline from ever silently disagreeing.
+    application.adminStage = computeAdminStage(application.current_status, application.completeness);
     return application;
   }
 

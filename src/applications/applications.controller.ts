@@ -73,6 +73,15 @@ export class ApplicationsController {
     return this.service.getQueuePositionForMe(u, t, id);
   }
 
+  // Workflow architecture redesign — the Student Timeline view (plain-
+  // language customer-journey milestones), distinct from the Admin
+  // Pipeline view GET /applications/:id returns to staff.
+  @Get('me/:id/timeline')
+  @ApiOperation({ summary: "Get the logged-in student's own application's customer-journey timeline" })
+  getMyApplicationTimeline(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.getMyApplicationTimeline(u, t, id);
+  }
+
   @Get()
   @RequirePermissions('application.view')
   @ApiOperation({ summary: 'List applications with filters' })
