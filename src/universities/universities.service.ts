@@ -368,8 +368,15 @@ export class UniversitiesService {
   // philosophy as findAllPublic.
   async findProgramsPublic(universityId: string, tenantId: string) {
     if (!tenantId) throw new BadRequestException('tenantId is required');
+    // Phase 14 (Final Case Flow Refinement) — "the student must NOT
+    // manually enter tuition amount... it must come from the university/
+    // program configuration." tuition_amount is now returned here so the
+    // Apply wizard can display it read-only once a program is selected;
+    // applications.service.ts#createForSelf still re-derives and never
+    // trusts this figure from the client, but the wizard needs it to show
+    // the student what they're actually requesting before they submit.
     return this.dataSource.query(
-      `SELECT p.id, p.name FROM programs p
+      `SELECT p.id, p.name, p.tuition_amount FROM programs p
        JOIN universities u ON u.id = p.university_id
        WHERE p.university_id = $1 AND u.tenant_id = $2 AND p.status = 'active'
        ORDER BY p.name`,

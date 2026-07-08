@@ -297,26 +297,24 @@ describe('ApplicationsService.createForSelf', () => {
     );
   });
 
-  const ALL_REQUIRED_DOCS = [
-    { document_type_code: 'national_id', id: 'doc-1' },
-    { document_type_code: 'bac_diploma', id: 'doc-2' },
-    { document_type_code: 'university_acceptance', id: 'doc-3' },
-    { document_type_code: 'income_proof', id: 'doc-4' },
-  ];
+  // Phase 14 (Final Case Flow Refinement) — tuitionAmount is deliberately
+  // absent here: the server derives it from programs.tuition_amount and
+  // never trusts a client-supplied value. requestedTier and
+  // platformFeeAcknowledged are new required fields.
   const COMPLETE_DTO = {
-    tuitionAmount: 5000, programId: 'program-1', universityId: 'uni-1', academicYear: '2026-2027',
+    programId: 'program-1', universityId: 'uni-1', academicYear: '2026-2027',
+    requestedTier: 'silver', platformFeeAcknowledged: true,
   };
 
   it('resolves studentId from the caller identity and never trusts a client-supplied one', async () => {
     query
       .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }]) // membership check
       .mockResolvedValueOnce([]) // in-flight duplicate check — none found
-      .mockResolvedValueOnce(ALL_REQUIRED_DOCS) // required-document completeness check
+      .mockResolvedValueOnce([{ tuition_amount: 5000 }]) // program tuition lookup
       .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }]) // INSERT applications
       .mockResolvedValueOnce(undefined) // INSERT application_status_history
       .mockResolvedValueOnce(undefined) // audit
-      .mockResolvedValueOnce([]) // notifyStudent's student lookup
-      .mockResolvedValue(undefined); // the 8 attach-documents UPDATE/INSERT calls that follow
+      .mockResolvedValueOnce([]); // notifyStudent's student lookup
 
     // A malicious/confused client-supplied studentId in the body must be
     // ignored — the resolved identity always wins.
@@ -330,25 +328,46 @@ describe('ApplicationsService.createForSelf', () => {
 
   // Manual pilot testing discovery — the admin pipeline's Stage 1
   // Completeness Gate blocked every self-submitted application because
-  // nothing in the student flow ever required these fields/documents
-  // before letting a student submit. Locks down that createForSelf now
-  // rejects incomplete submissions itself, rather than silently creating
-  // an application guaranteed to fail Stage 1.
+  // nothing in the student flow ever required these fields before letting
+  // a student submit. Locks down that createForSelf now rejects
+  // incomplete submissions itself, rather than silently creating an
+  // application guaranteed to fail Stage 1.
   it('rejects submission when required fields are missing', async () => {
     query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
       .mockResolvedValueOnce([]);
 
-    await expect(service.createForSelf('user-1', 'tenant-1', { tuitionAmount: 5000 }))
-      .rejects.toThrow(/program, university, academic year/);
+    await expect(service.createForSelf('user-1', 'tenant-1', {}))
+      .rejects.toThrow(/program, university, academic year, requested plan \(Silver or Gold\), administrative fee acknowledgment/);
   });
 
-  it('rejects submission when required documents are missing', async () => {
+  // Phase 14 — "the student must NOT manually enter tuition amount... it
+  // must come from the university/program configuration." Locks down
+  // that a program with no tuition_amount configured yet blocks
+  // submission with a staff-actionable message, rather than silently
+  // creating an application with a null/zero tuition.
+  it('rejects submission when the selected program has no tuition amount configured', async () => {
     query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([ALL_REQUIRED_DOCS[0], ALL_REQUIRED_DOCS[1]]); // only 2 of 4 uploaded
+      .mockResolvedValueOnce([{ tuition_amount: null }]);
 
     await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO))
-      .rejects.toThrow(/university_acceptance, income_proof/);
+      .rejects.toThrow(/does not have a tuition amount configured/);
+  });
+
+  it('rejects submission when requestedTier is not silver or gold', async () => {
+    query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+      .mockResolvedValueOnce([]);
+
+    await expect(service.createForSelf('user-1', 'tenant-1', { ...COMPLETE_DTO, requestedTier: 'platinum' }))
+      .rejects.toThrow(/requested plan \(Silver or Gold\)/);
+  });
+
+  it('rejects submission when the platform fee has not been acknowledged', async () => {
+    query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+      .mockResolvedValueOnce([]);
+
+    await expect(service.createForSelf('user-1', 'tenant-1', { ...COMPLETE_DTO, platformFeeAcknowledged: false }))
+      .rejects.toThrow(/administrative fee acknowledgment/);
   });
 
   // Phase 8 workflow audit — no check existed at all before this: a
@@ -361,7 +380,7 @@ describe('ApplicationsService.createForSelf', () => {
       .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
       .mockResolvedValueOnce([{ id: 'existing-app-1' }]); // an in-flight application exists
 
-    await expect(service.createForSelf('user-1', 'tenant-1', { tuitionAmount: 5000 })).rejects.toThrow(
+    await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO)).rejects.toThrow(
       'You already have a Tuition Facilitation request in progress. Please wait for a decision before submitting another.',
     );
   });
@@ -370,12 +389,11 @@ describe('ApplicationsService.createForSelf', () => {
     query
       .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
       .mockResolvedValueOnce([]) // rejected/completed/withdrawn excluded server-side, so none found
-      .mockResolvedValueOnce(ALL_REQUIRED_DOCS)
+      .mockResolvedValueOnce([{ tuition_amount: 5000 }])
       .mockResolvedValueOnce([{ id: 'app-2', student_id: 'student-1' }])
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce([])
-      .mockResolvedValue(undefined);
+      .mockResolvedValueOnce([]);
 
     await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO)).resolves.toBeDefined();
 

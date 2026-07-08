@@ -231,22 +231,35 @@ The student, from their own Dashboard, via the single canonical `/apply` entry p
 
 ### The wizard, in order
 
-**Updated in the workflow alignment fix** (manual pilot testing found the admin pipeline's Stage 1 Completeness Gate blocking every self-submitted application, because nothing in this wizard ever collected or required the data that gate actually checks — the system was creating applications guaranteed to fail the very first pipeline stage). The wizard now has 6 steps:
+**Updated in Phase 14 (Final Case Flow Refinement)** — the validated final V1 workflow. The wizard now has 5 steps (the Documents step from the workflow alignment fix is removed entirely — see below):
 
-1. **Your Profile** — personal details, academic info (university, program, tuition amount, academic year), financial info (payment-responsible party, household income, employment status, and a yes/no "do you have a guarantor?" question — informational context for the AI interview).
-2. **Financial Situation** — same step as above in the current implementation (the profile/financial split is cosmetic, not two separate submissions).
-3. **Documents** — upload national ID, Bac diploma, university acceptance letter, and income proof, using the student's own self-service upload endpoints (`documents/me/upload-url` + confirm). **Next is blocked until all 4 are uploaded.**
-4. **Guarantor** — first name, last name, email, relationship. Collected as part of the application itself now — the invitation is sent only once the application is actually created (step 6), never before or separately.
-5. **Legal Consent** — explicit, itemized consent that a human review committee decides, not the AI.
-6. **AI Readiness Interview** — a real conversational interview producing a per-dimension score report (household stability, financial capacity, academic commitment, documentation quality). If run without a live Anthropic key (demo mode), the score is honestly left `null` with a "manual review required" flag rather than fabricated. **Submit** → `POST /applications/me`, which:
-   - Rejects with a specific message if required fields (program, university, tuition amount, academic year) are missing.
-   - Rejects with a specific message listing exactly which required documents are still missing.
-   - On success, reassigns the pre-uploaded documents from the student's holding area into `application_documents` against the new application, and the student portal calls the guarantor-invite endpoint immediately after.
+1. **Your Profile** — personal details; academic info (university, program — a real selection only, no free-text fallback; academic year; current-student status). **Tuition is never typed by the student** — once a program is selected, its `tuition_amount` (configured by FORSA/admin against the program) is fetched and shown read-only. Also collected here: the **requested plan** (Silver or Gold — a preference the student expresses, not a decision; the admin still makes the actual tier decision at approval, unchanged), with a live display of tuition amount, plan structure (Silver = 10 months, Gold = 12 — see `STABILITY_SCORE_MODEL.md`), estimated monthly payment, the **30 TND/month administrative platform fee**, and the total — plus a required acknowledgment checkbox ("I understand that FORSA charges 30 TND/month as an administrative platform fee," in French/English/Arabic) and an optional, analytics-only "Why are you choosing FORSA?" question (never used in scoring or decisioning).
+2. **Financial Situation** — payment-responsible party, household income, employment status, and a yes/no "do you have a guarantor?" question — informational context for the AI interview.
+3. **Guarantor** — first name, last name, email, relationship. Collected as part of the application itself — the invitation is sent only once the application is actually created (step 5), never before or separately.
+4. **Legal Consent** — explicit, itemized consent that a human review committee decides, not the AI.
+5. **AI Readiness Interview** — a real conversational interview, kept for qualitative context; its own self-reported dimension scores are **no longer what informs the actual decision** (see "How the Case is scored" below — that's the new internal FORSA Stability Score, computed from structured profile data instead). **Submit** → `POST /applications/me`, which:
+   - Rejects with a specific message if required fields (program, university, academic year, requested plan, fee acknowledgment) are missing.
+   - Looks up `programs.tuition_amount` itself and uses that value — a client-supplied `tuitionAmount` in the request is silently ignored, even if present. Verified live: a forged `tuitionAmount: 999999` in the raw request had no effect; the created application used the real program tuition.
+   - Rejects with a specific message if the selected program has no tuition configured yet.
+   - **No document upload happens here at all** — see below.
+   - On success, the student portal calls the guarantor-invite endpoint immediately after.
    - Resolves the student from the caller's own JWT — a client-supplied student ID in the request body is never trusted.
 
 A student can also still invite a guarantor independently at any time via the `/guarantor` page reachable from the Bronze Dashboard checklist (e.g., before starting an application, or to replace a declined guarantor) — the wizard's own Guarantor step and the standalone page use the same underlying self-service mechanism.
 
-**Phase 13 (Case Management):** the student's fuller financial and personal profile — employment status, monthly income, scholarships, existing loans, other financial commitments, living situation, emergency contact — is collected via the **Profile page** (`PATCH /students/me`) rather than as additional wizard steps, so this data can be added or updated at any time, not only during initial submission. The wizard's own required fields are unchanged from the previous phase.
+**Phase 13 (Case Management), unaffected by Phase 14:** the student's fuller financial and personal profile — employment status, monthly income, scholarships, existing loans, other financial commitments, living situation, emergency contact — is collected via the **Profile page** (`PATCH /students/me`) rather than as additional wizard steps, so this data can be added or updated at any time.
+
+### Documents — verified physically at the meeting, not uploaded (Phase 14)
+
+**"No document upload during the application. Documents are verified physically during the meeting."** This reverses the workflow alignment fix's document-upload requirement — the Phase 12 requirement existed because nothing else ensured Stage 1 could ever pass; Phase 14 replaces that gate with the tier/fee-acknowledgment check instead (see §10) and moves paperwork verification to the in-person activation meeting:
+- **Student meeting paperwork:** CIN (national ID) only. Academic verification — university, program, enrollment, tuition — is confirmed by the university directly, not uploaded by the student.
+- **Guarantor meeting paperwork:** CIN, employment/income proof according to their situation, and a signed, completed كمبيالة per FORSA's template.
+
+This is the default `case_meetings.required_documents` list (`applications.service.ts#scheduleMeeting`) and is spelled out explicitly in the meeting notification email (§ "The Case, and the activation meeting").
+
+### How the Case is scored (Phase 14)
+
+The internal FORSA Stability Score — full model in `STABILITY_SCORE_MODEL.md` — is computed automatically, server-side, the moment the guarantor completes their Financial Responsibility Profile (Guarantor Stability 60%, Household Stability 20%, Payment Capacity 15%, Student Stability Bonus 5%; documents, enrollment proof, and FORSA history are explicitly excluded from V1). **Student income is a bonus only, never a requirement** — its absence contributes 0 to that 5%-weighted component, never a penalty. The AI's role is strictly to explain the already-computed score (risk factors, positive factors, suggested meeting questions, a confidence score) — it never approves or rejects anything; that remains a human status transition, unchanged from every prior phase of this platform.
 
 ### Duplicate prevention
 
@@ -254,11 +267,11 @@ A student **cannot** have two Tuition Facilitation applications in flight simult
 
 ### Who validates
 
-FORSA staff, via either of two admin screens (a pre-existing architectural divergence — see §9/§10): the pipeline/human-decision review screen, or the manual Application Workflow screen. Both now produce identical, correct outcomes. The application detail view shows a **Completeness Checklist** (program selected, each required document's status, guarantor status) so staff never have to guess why an application is or isn't ready to clear Stage 1.
+FORSA staff, via either of two admin screens (a pre-existing architectural divergence — see §9/§10): the pipeline/human-decision review screen, or the manual Application Workflow screen. Both now produce identical, correct outcomes. The application detail view shows a **Completeness Checklist** (program selected, guarantor status) so staff never have to guess why an application is or isn't ready to clear Stage 1 — the document-status rows remain in this checklist's infrastructure but are moot for any Phase-14-era application, since none will ever have an uploaded document to show.
 
 ### What documents
 
-Required documents (national ID, Bac diploma, university acceptance letter, income proof) are collected in the wizard's Documents step and tracked per `document_type_code` against the application, each independently in one of: `absent`, `uploaded`, `under_review`, `verified`, `rejected`, `expired`, `superseded`. A document being merely `uploaded` is **not** enough to satisfy the pipeline's Completeness Gate — a staff member must review it to `verified` or `under_review` first. This is a deliberate staff gate, not a bug: document review is a real business control.
+**Superseded by Phase 14** — the previous model (required national ID, Bac diploma, university acceptance letter, and income proof, uploaded digitally before submission and tracked per `document_type_code` against the application) is gone. No document is ever uploaded during the application; the `application_documents`/`documents` infrastructure remains in the codebase but nothing writes to it for a new application anymore. Paperwork is verified in person at the activation meeting instead — see "Documents — verified physically at the meeting" above.
 
 ### What decisions
 
@@ -272,7 +285,7 @@ Required documents (national ID, Bac diploma, university acceptance letter, inco
 
 FORSA does not evaluate the student alone — it evaluates Student + Guarantor + Educational Request as one **Case**. This is not a new database entity (see `CASE_MANAGEMENT_ARCHITECTURE.md` for why that was deliberately rejected); it's a richer view over the same application, student, and guarantor rows, assembled by `GET /applications/:id/case` and rendered as the admin's new "Case Summary" tab: student profile, guarantor's Financial Responsibility Profile, every document, AI analysis, risk flags, and meeting status, in one place.
 
-After an approval in principle (`approved_levelN`) and before the contract stage, staff typically schedule an **activation meeting** — a real capability new in this phase (`case_meetings`; previously the product's copy referenced an "Activation Meeting" with no table or endpoint behind it at all). Both student and guarantor are emailed the same date, time, office location, reference number, and required original documents. A meeting's own status (`scheduled → confirmed → completed`, or `rescheduled`/`cancelled`) is tracked independently of `current_status` — scheduling, confirming, or cancelling a meeting never touches the application's real state machine.
+After an approval in principle (`approved_levelN`) and before the contract stage, staff typically schedule an **activation meeting** — a real capability new in Phase 13 (`case_meetings`; previously the product's copy referenced an "Activation Meeting" with no table or endpoint behind it at all). Both student and guarantor are emailed the same date, time, office location, reference number, **assigned FORSA officer** (looked up by name, not just shown as an ID — Phase 14), required attendees, and required paperwork, with an explicit line that originals are verified in person. The default paperwork list (Phase 14): CIN for the student; CIN, employment/income proof, and a signed كمبيالة for the guarantor. A meeting's own status (`scheduled → confirmed → completed`, or `rescheduled`/`cancelled`) is tracked independently of `current_status` — scheduling, confirming, or cancelling a meeting never touches the application's real state machine.
 
 ### How Silver/Gold is assigned
 
@@ -568,9 +581,15 @@ Columns represent the four self-scoped portals (Student, Guarantor, University, 
 
 **Would every decision be documented?** Yes — every approval, rejection, and status change is captured in `audit_logs`, and the state machine forbids undocumented/invalid transitions outright rather than allowing silent shortcuts.
 
-### Operational gaps — status after the workflow alignment fix
+### Operational gaps — status after Phase 14
 
-Full detail and verification evidence for everything below is in `PILOT_BLOCKERS_STATUS.md`, `PHASE10_IMPLEMENTATION_REPORT.md`, and `MANUAL_TESTING_FINDINGS.md`. Summary:
+Full detail and verification evidence for everything below is in `PILOT_BLOCKERS_STATUS.md`, `PHASE10_IMPLEMENTATION_REPORT.md`, `MANUAL_TESTING_FINDINGS.md`, and `PHASE14_FINAL_CASE_FLOW_REPORT.md`. Summary:
+
+**Closed — Phase 14 (Final Case Flow Refinement), the validated final V1 workflow:**
+- Tuition/support amount are never typed by the student — always server-derived from `programs.tuition_amount`, verified live against a forged client-supplied value being silently ignored.
+- The pipeline's Stage 1 Completeness Gate no longer requires any document upload (which would otherwise now block every application, since documents are verified in person at the meeting instead) — it checks the requested plan and fee acknowledgment instead.
+- A real, deterministic internal FORSA Stability Score (Guarantor 60% / Household 20% / Payment Capacity 15% / Student Bonus 5%) now exists and is computed automatically — see `STABILITY_SCORE_MODEL.md`.
+- Discovered and fixed while implementing this phase: the guarantor portal had a complete i18n system built (`useLocale`, full FR/EN/AR translation catalogs) but **no language switcher rendered anywhere** in the logged-in portal — every screen was hardcoded French regardless of locale. Added a working switcher; the pre-existing rest of that portal (payment ledger, student summary card) remains untranslated as a separate, smaller follow-up (see `PHASE14_FINAL_CASE_FLOW_REPORT.md`'s remaining risks).
 
 **Closed — workflow alignment fix (most severe, found via manual pilot testing):**
 - The admin pipeline's Stage 1 Completeness Gate was blocking **every** self-submitted application, because the wizard never collected the documents, program, or guarantor the gate actually requires. The system was creating applications guaranteed to fail immediately. Now: the wizard has mandatory Documents and Guarantor steps, `createForSelf` validates completeness before an application is ever created, and the admin detail view shows a real Completeness Checklist. Verified live: Stage 1 now genuinely passes for a properly-completed submission.

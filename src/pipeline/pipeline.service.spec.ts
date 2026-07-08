@@ -31,6 +31,12 @@ describe('PipelineService — stage gates', () => {
   });
 
   describe('stage1Completeness', () => {
+    // Phase 14 (Final Case Flow Refinement) — "No document upload during
+    // the application. Documents are verified physically during the
+    // meeting." Stage 1 no longer checks application_documents at all;
+    // it now checks requested_tier and platform_fee_acknowledged_at
+    // instead, alongside the same program/university/student/tuition
+    // fields as before.
     const baseCtx = {
       tenantId: 'tenant-1',
       universityId: 'uni-1',
@@ -38,32 +44,32 @@ describe('PipelineService — stage gates', () => {
       studentId: 'student-1',
       application: {
         tuition_amount: 5000, university_id: 'uni-1', student_id: 'student-1', program_id: 'prog-1',
+        requested_tier: 'silver', platform_fee_acknowledged_at: '2026-01-01T00:00:00Z',
       },
     };
 
-    it('blocks when required documents are missing', async () => {
-      query
-        .mockResolvedValueOnce([{ document_type_code: 'national_id', status: 'verified' }]) // uploaded docs
-        ;
+    it('blocks when requested_tier is missing', async () => {
+      const ctx = { ...baseCtx, application: { ...baseCtx.application, requested_tier: null } };
       policyService.getBoolean.mockResolvedValue(false); // guarantor not required
 
-      const result = await (service as any).stage1Completeness(baseCtx);
+      const result = await (service as any).stage1Completeness(ctx);
 
       expect(result.status).toBe('blocked');
-      expect(result.outputs.missingDocuments).toEqual(
-        expect.arrayContaining(['bac_diploma', 'university_acceptance', 'income_proof']),
-      );
+      expect(result.outputs.missingFields).toContain('requested_tier');
+    });
+
+    it('blocks when the platform fee has not been acknowledged', async () => {
+      const ctx = { ...baseCtx, application: { ...baseCtx.application, platform_fee_acknowledged_at: null } };
+      policyService.getBoolean.mockResolvedValue(false);
+
+      const result = await (service as any).stage1Completeness(ctx);
+
+      expect(result.status).toBe('blocked');
+      expect(result.outputs.missingFields).toContain('platform_fee_acknowledgment');
     });
 
     it('blocks when the policy requires a guarantor and none is linked', async () => {
-      query
-        .mockResolvedValueOnce([
-          { document_type_code: 'national_id', status: 'verified' },
-          { document_type_code: 'bac_diploma', status: 'verified' },
-          { document_type_code: 'university_acceptance', status: 'verified' },
-          { document_type_code: 'income_proof', status: 'verified' },
-        ])
-        .mockResolvedValueOnce([]); // no active student_guarantors row
+      query.mockResolvedValueOnce([]); // no active student_guarantors row
       policyService.getBoolean.mockResolvedValue(true); // guarantor required
 
       const result = await (service as any).stage1Completeness(baseCtx);
@@ -78,14 +84,7 @@ describe('PipelineService — stage gates', () => {
     // Stage 1 never actually enforced a guarantor on file at all. Now
     // defaults to required when unconfigured.
     it('defaults to requiring a guarantor when no policy is configured', async () => {
-      query
-        .mockResolvedValueOnce([
-          { document_type_code: 'national_id', status: 'verified' },
-          { document_type_code: 'bac_diploma', status: 'verified' },
-          { document_type_code: 'university_acceptance', status: 'verified' },
-          { document_type_code: 'income_proof', status: 'verified' },
-        ])
-        .mockResolvedValueOnce([]); // no guarantor linked
+      query.mockResolvedValueOnce([]); // no guarantor linked
       policyService.getBoolean.mockResolvedValue(null); // unconfigured
 
       const result = await (service as any).stage1Completeness(baseCtx);
@@ -99,41 +98,23 @@ describe('PipelineService — stage gates', () => {
     // reaching a human reviewer — only a genuinely absent guarantor
     // relationship should block Stage 1.
     it('does not block on a guarantor invitation still pending acceptance', async () => {
-      query
-        .mockResolvedValueOnce([
-          { document_type_code: 'national_id', status: 'verified' },
-          { document_type_code: 'bac_diploma', status: 'verified' },
-          { document_type_code: 'university_acceptance', status: 'verified' },
-          { document_type_code: 'income_proof', status: 'verified' },
-        ])
-        .mockResolvedValueOnce([{ id: 'sg-1' }]); // pending_invitation guarantor link found
+      query.mockResolvedValueOnce([{ id: 'sg-1' }]); // pending_invitation guarantor link found
       policyService.getBoolean.mockResolvedValue(true);
 
       const result = await (service as any).stage1Completeness(baseCtx);
 
       expect(result.status).toBe('passed');
-      const guarantorQueryCall = query.mock.calls[1];
+      const guarantorQueryCall = query.mock.calls[0];
       expect(guarantorQueryCall[0]).toContain("'active', 'pending_invitation'");
     });
 
-    it('passes when all required documents are uploaded and no guarantor is required', async () => {
-      query.mockResolvedValueOnce([
-        { document_type_code: 'national_id', status: 'verified' },
-        { document_type_code: 'bac_diploma', status: 'verified' },
-        { document_type_code: 'university_acceptance', status: 'verified' },
-        { document_type_code: 'income_proof', status: 'verified' },
-      ]);
+    it('passes when all required fields are present and no guarantor is required', async () => {
       policyService.getBoolean.mockResolvedValue(false);
 
       const result = await (service as any).stage1Completeness(baseCtx);
 
       expect(result.status).toBe('passed');
-      // T-208/T-209 — the query itself must exclude expired documents at
-      // the SQL level (a document verified 18 months ago can be stale
-      // without ever being re-reviewed) — confirm this safety clause isn't
-      // silently dropped by a future refactor of this query.
-      const docsQueryCall = query.mock.calls[0];
-      expect(docsQueryCall[0]).toContain('expires_at');
+      expect(result.outputs.allFieldsPresent).toBe(true);
     });
   });
 

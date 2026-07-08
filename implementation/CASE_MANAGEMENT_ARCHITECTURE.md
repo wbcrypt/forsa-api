@@ -164,3 +164,17 @@ Full live verification against the running stack (see `MANUAL_TESTING_GUIDE.md` 
 - Completed a guarantor's Financial Responsibility Profile via the portal; confirmed the same data appeared immediately in the admin Case Summary (same underlying row, no sync step).
 - Confirmed the student's Application page correctly renders the Next Required Action and meeting details from the same data the admin and guarantor views use.
 - Full backend regression: 185/185 tests passing (17 new tests added for the stage/milestone computation logic in the previous phase remain green; this phase added schema and endpoint coverage without touching that logic). All 6 portals smoke-tested clean after redeploy.
+
+## Addendum — Phase 14 (Final Case Flow Refinement)
+
+The Case model above gained fields, not structure — everything in "The central design decision" and "Entity relationships" above still holds exactly as written. Summary of what Phase 14 added to the Case:
+
+- **`applications.requested_tier`** — the plan (Silver/Gold) the student requests at submission, distinct from `financing_tier` (the admin's actual decision at approval). A preference, never an auto-approval.
+- **`applications.platform_fee_acknowledged_at`** — set only when the student explicitly checks the 30 TND/month fee acknowledgment; required by `createForSelf` and checked again by the pipeline's Stage 1 Completeness Gate.
+- **`applications.forsa_choice_reason`** — optional, analytics-only.
+- **`applications.stability_score_overall` / `stability_score_breakdown` / `stability_ai_explanation`** — the V1 internal FORSA Stability Score (full model: `STABILITY_SCORE_MODEL.md`), computed deterministically and automatically the moment the guarantor completes their Financial Responsibility Profile (`guarantors.service.ts#recomputeStabilityScore`). This is what "AI Analysis" in the admin Case Summary now actually shows, alongside (not replacing) the interview-based `ai_report`/`ai_score_overall` from the AI Readiness Interview step, which remains but no longer drives the decision.
+- **`programs.tuition_amount`** — the single authoritative tuition figure, looked up server-side by `createForSelf` and never trusted from the client. This is what makes "the student must not manually enter tuition" an integrity guarantee rather than just a missing input field.
+
+**Removed from the Case's intake requirements:** the Phase 12 document-upload gate. No document is ever uploaded during the application; CIN (student) and CIN/income proof/كمبيالة (guarantor) are verified in person at the activation meeting instead — reflected in `case_meetings.required_documents`'s default list and the meeting notification emails.
+
+**Unaffected by Phase 14:** the Case-is-not-a-new-table decision, `case_meetings`'s own lifecycle, every permission, and the operational pipeline's stage structure (Stage 1 checks *different* things now, but the pipeline still has the same 10 stages in the same order).

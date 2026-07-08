@@ -131,9 +131,10 @@ export class ApplicationsService {
          academic_year, current_status, lead_date, is_renewal,
          previous_application_id, assigned_to_user_id, created_by,
          ai_score_overall, ai_recommendation, ai_report,
-         interview_language, interview_transcript, expected_graduation_date)
+         interview_language, interview_transcript, expected_graduation_date,
+         requested_tier, platform_fee_acknowledged_at, forsa_choice_reason)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'new_lead',CURRENT_DATE,$12,$13,$14,$15,
-               $16,$17,$18,$19,$20,$21)
+               $16,$17,$18,$19,$20,$21,$22,$23,$24)
        RETURNING *`,
       [
         tenantId, dto.studentId, dto.universityId, dto.programId,
@@ -145,6 +146,9 @@ export class ApplicationsService {
         dto.aiReport ? (typeof dto.aiReport === 'string' ? dto.aiReport : JSON.stringify(dto.aiReport)) : null,
         dto.interviewLanguage ?? null, dto.interviewTranscript ?? null,
         dto.expectedGraduationDate ?? null,
+        dto.requestedTier ?? null,
+        dto.platformFeeAcknowledged ? new Date() : null,
+        dto.forsaChoiceReason ?? null,
       ],
     );
 
@@ -217,66 +221,47 @@ export class ApplicationsService {
       );
     }
 
-    // Required-field completeness — the same fields Stage 1 checks,
-    // enforced before an application is ever created rather than
-    // discovered blocked afterward.
+    // Required-field completeness — enforced before an application is
+    // ever created rather than discovered blocked afterward.
+    // Phase 14 (Final Case Flow Refinement) — tuitionAmount is
+    // deliberately NOT in this list, and is never read from dto below:
+    // "the student must NOT manually enter tuition amount or requested
+    // support amount. Tuition and plan values must come from the
+    // university/program configuration." The server looks it up itself
+    // from programs.tuition_amount, ignoring whatever (if anything) the
+    // client sent for it — this is an integrity guarantee, not just a UI
+    // nicety, matching this codebase's "never trust client input for a
+    // figure a decision depends on" pattern.
     const missingFields: string[] = [];
     if (!dto.programId) missingFields.push('program');
     if (!dto.universityId) missingFields.push('university');
-    if (!dto.tuitionAmount) missingFields.push('tuition amount');
     if (!dto.academicYear) missingFields.push('academic year');
+    if (!dto.requestedTier || !['silver', 'gold'].includes(dto.requestedTier)) missingFields.push('requested plan (Silver or Gold)');
+    if (!dto.platformFeeAcknowledged) missingFields.push('administrative fee acknowledgment');
     if (missingFields.length) {
       throw new BadRequestException(
         `Please complete the following before submitting: ${missingFields.join(', ')}.`,
       );
     }
 
-    // Required-document completeness — uploaded via the student's own
-    // pre-application document upload (documents.entity_type = 'student',
-    // documents.entity_id = student.id — see documents.service.ts's
-    // generateMyUploadUrl/confirmMyUpload). Only a genuinely completed
-    // upload (status = 'uploaded') counts; a still-'uploading' row (the
-    // client never confirmed) does not.
-    const uploadedDocs = await this.dataSource.query<any[]>(
-      `SELECT document_type_code, id FROM documents
-       WHERE entity_type = 'student' AND entity_id = $1 AND tenant_id = $2
-         AND status = 'uploaded' AND document_type_code = ANY($3)
-       ORDER BY created_at DESC`,
-      [student.id, tenantId, ApplicationsService.REQUIRED_DOCUMENT_TYPES],
+    const [program] = await this.dataSource.query<any[]>(
+      `SELECT tuition_amount FROM programs WHERE id = $1 AND university_id = $2`,
+      [dto.programId, dto.universityId],
     );
-    const uploadedTypeCodes = new Set(uploadedDocs.map(d => d.document_type_code));
-    const missingDocs = ApplicationsService.REQUIRED_DOCUMENT_TYPES.filter(
-      code => !uploadedTypeCodes.has(code),
-    );
-    if (missingDocs.length) {
-      throw new BadRequestException(
-        `Please upload the following required documents before submitting: ${missingDocs.join(', ')}.`,
-      );
+    if (!program || program.tuition_amount === null) {
+      throw new BadRequestException('The selected program does not have a tuition amount configured yet. Please contact FORSA staff.');
     }
 
-    const application = await this.create({ ...dto, studentId: student.id }, tenantId, userId);
-
-    // Attach the pre-uploaded documents to the now-real application — one
-    // per required type (the most recent upload if a type was uploaded
-    // more than once), reassigning them from the student-scoped holding
-    // area to this specific application so Stage 1's own query
-    // (application_documents joined by application_id) can see them.
-    const attachedByType = new Map<string, any>();
-    for (const doc of uploadedDocs) {
-      if (!attachedByType.has(doc.document_type_code)) attachedByType.set(doc.document_type_code, doc);
-    }
-    for (const doc of attachedByType.values()) {
-      await this.dataSource.query(
-        `UPDATE documents SET entity_type = 'application', entity_id = $2 WHERE id = $1`,
-        [doc.id, application.id],
-      );
-      await this.dataSource.query(
-        `INSERT INTO application_documents (application_id, document_id, document_type_code, status)
-         VALUES ($1, $2, $3, 'uploaded')
-         ON CONFLICT (application_id, document_type_code) DO UPDATE SET document_id = $2, status = 'uploaded'`,
-        [application.id, doc.id, doc.document_type_code],
-      );
-    }
+    // Phase 14 — "No document upload during the application. Documents
+    // are verified physically during the meeting." The Phase 12
+    // pre-application document-completeness gate (uploaded-then-attached
+    // student docs) has been deliberately removed — CIN and other
+    // paperwork are now verified in person at the activation meeting
+    // (case_meetings.required_documents), not uploaded here.
+    const application = await this.create(
+      { ...dto, studentId: student.id, tuitionAmount: program.tuition_amount },
+      tenantId, userId,
+    );
 
     return application;
   }
@@ -606,6 +591,12 @@ export class ApplicationsService {
         tuition_amount: application.tuition_amount, academic_year: application.academic_year,
         expected_graduation_date: application.expected_graduation_date,
         financing_tier: application.financing_tier, created_at: application.created_at,
+        // Phase 14 (Final Case Flow Refinement) — "Admin must see:
+        // selected plan Silver/Gold requested by student, system-loaded
+        // tuition amount, 30 TND/month fee acknowledgment."
+        requested_tier: application.requested_tier,
+        platform_fee_acknowledged_at: application.platform_fee_acknowledged_at,
+        forsa_choice_reason: application.forsa_choice_reason,
       },
       student: student || null,
       guarantor: guarantor || null,
@@ -615,6 +606,15 @@ export class ApplicationsService {
         report: application.ai_report || null,
         recommendation: application.ai_recommendation || null,
         score: application.ai_score_overall || null,
+      },
+      // Phase 14 — "internal FORSA Stability Score, AI explanation."
+      // Computed deterministically (guarantors.service.ts#
+      // recomputeStabilityScore) once the guarantor completes their
+      // Financial Responsibility Profile — never by the AI itself.
+      stabilityScore: {
+        overall: application.stability_score_overall,
+        breakdown: application.stability_score_breakdown,
+        explanation: application.stability_ai_explanation,
       },
       meeting,
       paymentSchedule: schedule ? { ...schedule, installments } : null,
@@ -650,7 +650,18 @@ export class ApplicationsService {
       [
         tenantId, applicationId, referenceNumber, dto.scheduledAt, dto.officeLocation,
         dto.assignedOfficerUserId || null, dto.estimatedDurationMinutes || 30,
-        JSON.stringify(dto.requiredDocuments || ['National ID', 'Original diploma/acceptance letter']),
+        // Phase 14 — "Student meeting paperwork: CIN only. Academic
+        // verification (university/program/enrollment/tuition) is
+        // confirmed by the university, not uploaded by the student.
+        // Guarantor meeting paperwork: CIN, employment/income proof
+        // according to their situation, signed and completed كمبيالة
+        // according to FORSA instructions/template."
+        JSON.stringify(dto.requiredDocuments || [
+          'Student: National ID (CIN)',
+          'Guarantor: National ID (CIN)',
+          'Guarantor: Employment / income proof (as applicable)',
+          'Guarantor: Signed and completed كمبيالة (per FORSA template)',
+        ]),
         JSON.stringify(dto.requiredAttendees || ['student', 'guarantor']),
         dto.specialInstructions || null, createdBy,
       ],
@@ -711,12 +722,22 @@ export class ApplicationsService {
 
   private async notifyMeeting(templateCode: string, application: any, meeting: any, tenantId: string) {
     const studentName = `${application.first_name} ${application.last_name}`.trim();
+
+    let assignedOfficerName = 'A FORSA officer will be assigned';
+    if (meeting.assigned_officer_user_id) {
+      const [officer] = await this.dataSource.query<any[]>(
+        `SELECT full_name FROM users WHERE id = $1`, [meeting.assigned_officer_user_id],
+      );
+      if (officer?.full_name) assignedOfficerName = officer.full_name;
+    }
+
     const variables = {
       studentName,
       meetingDate: new Date(meeting.scheduled_at).toLocaleDateString(),
       meetingTime: new Date(meeting.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       officeLocation: meeting.office_location,
       referenceNumber: meeting.reference_number,
+      assignedOfficerName,
       estimatedDuration: meeting.estimated_duration_minutes,
       requiredAttendees: Array.isArray(meeting.required_attendees) ? meeting.required_attendees.join(', ') : meeting.required_attendees,
       requiredDocuments: Array.isArray(meeting.required_documents) ? meeting.required_documents.join(', ') : meeting.required_documents,

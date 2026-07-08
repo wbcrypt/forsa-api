@@ -242,38 +242,31 @@ export class PipelineService {
   private async stage1Completeness(ctx: any): Promise<any> {
     const policyVersionIds: string[] = [];
 
-    // Get required documents policy
-    const requiredDocsPolicy = await this.policyService.resolve(
-      'document.requirements.standard', { tenantId: ctx.tenantId, universityId: ctx.universityId },
-    );
-    if (requiredDocsPolicy) policyVersionIds.push(requiredDocsPolicy.policyVersionId);
+    // Phase 14 (Final Case Flow Refinement) — "No document upload during
+    // the application. Documents are verified physically during the
+    // meeting." The pre-Phase-14 document-completeness check (required
+    // national_id/bac_diploma/university_acceptance/income_proof, all
+    // uploaded digitally before submission) is deliberately removed: no
+    // application created after this phase will ever have those rows, so
+    // this gate would otherwise block every single one of them. Physical
+    // paperwork (CIN for the student; CIN, income proof, and a signed
+    // كمبيالة for the guarantor) is now verified in person and tracked via
+    // case_meetings, checked at Stage 8 (Human Decision)/admin review, not
+    // here. This is a change to what Stage 1 checks, not to the pipeline's
+    // stage structure or its order.
+    const missingDocs: string[] = [];
 
-    const requiredDocs = (requiredDocsPolicy?.value as string[]) || [
-      'national_id', 'bac_diploma', 'university_acceptance', 'income_proof',
-    ];
-
-    // Check uploaded documents — T-208/T-209: an expired document does not
-    // satisfy the requirement even if its verification status is still
-    // 'verified'/'under_review' (a document verified 18 months ago can be
-    // stale without ever being re-reviewed). d.expires_at IS NULL means
-    // that document type never expires (see migrations/009).
-    const uploadedDocs = await this.dataSource.query<any[]>(
-      `SELECT ad.document_type_code, ad.status FROM application_documents ad
-       LEFT JOIN documents d ON d.id = ad.document_id
-       WHERE ad.application_id = $1 AND ad.status IN ('verified','under_review')
-         AND (d.expires_at IS NULL OR d.expires_at > CURRENT_DATE)`,
-      [ctx.applicationId],
-    );
-
-    const uploadedCodes = uploadedDocs.map(d => d.document_type_code);
-    const missingDocs = requiredDocs.filter((code: string) => !uploadedCodes.includes(code));
-
-    // Check required fields on application
+    // Check required fields on application — tuitionAmount is now always
+    // server-derived from programs.tuition_amount (applications.service.ts
+    // #createForSelf), never client-supplied, so this check also
+    // implicitly confirms a real program configuration was used.
     const missingFields: string[] = [];
     if (!ctx.application.tuition_amount) missingFields.push('tuition_amount');
     if (!ctx.application.university_id) missingFields.push('university_id');
     if (!ctx.application.student_id) missingFields.push('student_id');
     if (!ctx.application.program_id) missingFields.push('program_id');
+    if (!ctx.application.requested_tier) missingFields.push('requested_tier');
+    if (!ctx.application.platform_fee_acknowledged_at) missingFields.push('platform_fee_acknowledgment');
 
     // Check guarantor completeness (if required by policy — defaults to
     // required, since no 'guarantor.required' policy row has ever existed
@@ -313,7 +306,7 @@ export class PipelineService {
 
     return {
       status: 'passed',
-      outputs: { documentsVerified: uploadedCodes, allFieldsPresent: true },
+      outputs: { allFieldsPresent: true, paperworkNote: 'CIN/income proof/كمبيالة verified in person at the activation meeting, not digitally at this stage' },
       policyVersionIds,
     };
   }

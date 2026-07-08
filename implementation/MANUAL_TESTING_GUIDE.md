@@ -83,27 +83,29 @@ Recommended order: **A → B → C → D → E → F → G**. A and B use a bran
 
 ### Scenario B — Bronze to Tuition Facilitation (continue with the same account from Scenario A)
 
-**Updated** — the wizard now has 6 steps and directly enforces the documents and guarantor the admin pipeline actually requires; you can no longer reach submission without them. Have 4 small PDF/JPG/PNG files ready to use as stand-ins for National ID, Bac Diploma, University Acceptance Letter, and Income Proof before you start.
+**Updated in Phase 14 (Final Case Flow Refinement)** — the validated final V1 workflow. The wizard now has 5 steps; there is no document upload anywhere in it, and no field anywhere lets you type a tuition amount.
 
 | Step | Action | Expected Result |
 |---|---|---|
 | B1 | On the Dashboard, click the checklist's current step ("Complete Profile") | Goes to Profile page |
 | B2 | Fill in the remaining profile fields, save | Back on Dashboard, checklist now shows "Complete Profile" done, "Invite Guarantor" highlighted next |
-| B3 | Click through to Apply (or `/apply` directly) | 6-step wizard begins: Your Profile |
-| B4 | Fill in personal + academic info (university, program, tuition amount) and continue | Step 2: Financial Situation |
-| B5 | Fill in financial questions and continue | Step 3: Documents |
-| B6 | Try clicking Next with no documents uploaded | Blocked with an error — documents are mandatory before continuing |
-| B7 | Upload all 4 required documents, then Next | Each shows a green checkmark and "Replace" once uploaded; step 4: Guarantor |
-| B8 | Fill in guarantor first name, last name, email, continue | Step 5: Legal Consent |
-| B9 | Accept all consent items, continue | Step 6: AI Interview begins |
-| B10 | Complete the interview | Confirmation screen; **check for a guarantor-invite warning banner** — if you see one, the invite failed and needs sending manually from `/guarantor` |
-| B11 | Check MailHog | A "You've Been Invited as a FORSA Guarantor" email arrived — sent only now, after the application was created, not earlier |
-| B12 | Log into Admin, find your new application (Applications list) | Notice the **Queue** column — should show a tag like "Ready for Review" once it reaches Under Review |
-| B13 | Open the application | See the new **Completeness Checklist** card — Program selected, all 4 documents (status "uploaded", not yet reviewed), Guarantor "Pending" — badge reads "Incomplete" until documents are reviewed |
-| B14 | Go to the Documents tab, mark each document Verified | Back on Overview, the Completeness Checklist badge should flip to "Ready for Stage 1" |
-| B15 | Approve at Silver or Gold tier | Confirm the tier selector is required before confirming |
-| B16 | Back in the Student Portal, refresh the Dashboard | Membership tier tile now shows Silver/Gold — matching whatever you picked, automatically, with no separate "upgrade" step |
+| B3 | Click through to Apply (or `/apply` directly) | 5-step wizard begins: Your Profile |
+| B4 | Fill in personal info, select a university, then select a program from the dropdown | **No free-text program field exists** — if the university has no programs configured, you'll see an amber notice instead of a dropdown. Once a program is selected, a **read-only "Tuition amount" row appears** — try to find a way to type into it; there isn't one |
+| B5 | Select a requested plan — Silver or Gold | A panel appears showing plan structure (months), estimated monthly payment, the 30 TND/month administrative fee, and the total — the numbers should update if you switch between Silver and Gold |
+| B6 | Try clicking Next without checking the fee acknowledgment | Blocked with an error |
+| B7 | Check "I understand that FORSA charges 30 TND/month as an administrative platform fee," optionally answer "Why are you choosing FORSA?", continue | Step 2: Financial Situation |
+| B8 | Fill in financial questions and continue | Step 3: Guarantor |
+| B9 | Fill in guarantor first name, last name, email, continue | Step 4: Legal Consent |
+| B10 | Accept all consent items, continue | Step 5: AI Interview begins |
+| B11 | Complete the interview | Confirmation screen; **check for a guarantor-invite warning banner** — if you see one, the invite failed and needs sending manually from `/guarantor` |
+| B12 | Check MailHog | A "You've Been Invited as a FORSA Guarantor" email arrived — sent only now, after the application was created, not earlier |
+| B13 | Log into Admin, find your new application (Applications list) | Notice the **Queue** column — should show a tag like "Ready for Review" once it reaches Under Review |
+| B14 | Open the application → **Case Summary tab** | See the new **Case Request** card (requested plan, system-loaded tuition, plan structure, estimated monthly payment, fee acknowledgment) and an **Internal FORSA Stability Score** card reading "Not yet generated — computed automatically once the guarantor completes their Financial Responsibility Profile" |
+| B15 | Approve at Silver or Gold tier | Confirm the tier selector is required before confirming — note this is the admin's own decision, independent of what the student requested in B5 |
+| B16 | Back in the Student Portal, refresh the Dashboard | Membership tier tile now shows Silver/Gold — matching whatever the admin picked, automatically, with no separate "upgrade" step |
 | B17 | Go to `/pass` | Digital Pass visually reflects the new tier |
+
+**Try to break it:** open your browser's dev tools, find the network request for `POST /applications/me`, and see if you can intercept/resend it with a forged `tuitionAmount`. It should have no effect — the created application should always show the real program's tuition amount.
 
 **Alternative guarantor path:** a guarantor can also be invited independently at any time via the standalone `/guarantor` page (reachable from the Dashboard checklist) — useful before starting an application, or to replace one who declined. Both paths send the identical invitation.
 
@@ -116,9 +118,10 @@ Recommended order: **A → B → C → D → E → F → G**. A and B use a bran
 | C3 | Look at the guarantor dashboard | Shows the linked student's name and application status |
 | C4 | **Decline test (use a second, fresh invite):** open a new invite link and click Decline instead | Confirms decline with an optional reason; **no account is created** — try logging in with that email afterward and confirm it fails |
 | C5 | **Resend test:** as the student who sent the still-pending invite, click "Resend Invitation" from `/guarantor` | A new email arrives; the old invite link (if you saved it) should now say "invalid" if you try it |
-| C6 | **(Phase 13 — Case Management)** On the guarantor dashboard, look for the "Statut de mon dossier (Case)" card | Shows three checkpoints — Profil financier, Documents, Réunion — and a single next-action line |
-| C7 | Click "Compléter mon profil financier" and fill in the Financial Responsibility Profile (salary range, marital status, dependents, home ownership, etc.), save | Checkpoint flips to done; the next-action line updates |
-| C8 | As admin, open this guarantor's linked application → Case Summary tab | The exact same Financial Responsibility Profile values you just entered as the guarantor should appear in the Guarantor Summary card — same data, not a re-entry |
+| C6 | On the guarantor dashboard, look for the "Statut de mon dossier (Case)" card | **Updated in Phase 14** — shows two checkpoints (Profil financier, Réunion — no separate Documents checkpoint; paperwork is verified in person at the meeting instead) and a single next-action line |
+| C7 | Click "Compléter mon profil financier" and fill in the Financial Responsibility Profile (salary range, marital status, dependents, home ownership, etc.), save | Checkpoint flips to done; the next-action line updates. **Phase 14:** this save also triggers the internal FORSA Stability Score computation for the linked application |
+| C8 | As admin, open this guarantor's linked application → Case Summary tab | The exact same Financial Responsibility Profile values you just entered as the guarantor should appear in the Guarantor Summary card (same data, not a re-entry) — and the **Internal FORSA Stability Score** card should now show a real score, 4 sub-scores, risk/positive factors, and suggested meeting questions instead of "Not yet generated" |
+| C9 | Click the AR/FR/EN switcher in the guarantor portal's header | **New in Phase 14** — the whole layout should mirror to right-to-left for Arabic, and the Case Status card / Financial Profile form should translate. (The pre-existing student-summary card and payment KPIs below it remain French-only for now — a known, documented gap, not something to log as a new bug.) |
 
 ### Scenario D — Admin Journey
 
@@ -131,10 +134,11 @@ Recommended order: **A → B → C → D → E → F → G**. A and B use a bran
 | D5 | Open Sarra Jendoubi's application (`under_review`) | Review her AI report / documents |
 | D6 | Approve her at a tier, or reject her | Watch her `membership_status` / rejection state change — log into her account afterward (or check the Students list) to confirm |
 | D7 | Go to Audit Log | Every action you just took (D2, D6) should appear with your identity and a timestamp |
-| D8 | **(Phase 13 — Case Management)** Open any application, click the new "📋 Case Summary" tab | Shows Student Summary, Guarantor Summary, Risk Flags (if any), and Meeting Status in one place — no need to hop across Documents/Payments/AI Report tabs to reconstruct the picture |
-| D9 | From the Case Summary tab, schedule a meeting (date/time, office location) | Both the student and the guarantor should receive a "Your FORSA Activation Meeting" email in MailHog with the same reference number, date, and location |
-| D10 | Confirm the meeting, then try Reschedule | Confirming updates the status in place; rescheduling issues a **new** reference number (check MailHog for a second email) rather than silently editing the old one |
-| D11 | Check the student's `/application` page and the guarantor's dashboard | Both should show the same meeting date/time/location/reference number you just scheduled |
+| D8 | Open any application, click the "📋 Case Summary" tab | Shows the **Case Request** card (requested plan, system tuition, fee acknowledgment — Phase 14), Student Summary, Guarantor Summary, the **Internal FORSA Stability Score** card (Phase 14), and Meeting Status in one place — no need to hop across Documents/Payments/AI Report tabs to reconstruct the picture |
+| D9 | From the Case Summary tab, schedule a meeting (date/time, office location) | Both the student and the guarantor should receive a "Your FORSA Activation Meeting" email in MailHog with the same reference number, date, location, and **assigned officer name** (Phase 14) — and the email should explicitly state that original documents are verified in person |
+| D10 | Check the required-paperwork line in that email | Should read something like: Student — National ID (CIN); Guarantor — National ID (CIN), employment/income proof, and a signed كمبيالة (Phase 14 wording, not the old 4-document list) |
+| D11 | Confirm the meeting, then try Reschedule | Confirming updates the status in place; rescheduling issues a **new** reference number (check MailHog for a second email) rather than silently editing the old one |
+| D12 | Check the student's `/application` page and the guarantor's dashboard | Both should show the same meeting date/time/location/reference number you just scheduled |
 
 ### Scenario E — University Journey
 
@@ -204,6 +208,9 @@ These are intentionally incomplete or out of scope — **not bugs**, don't log t
 11. **The Admin Applications page's queue-tag filter chips only filter the current page** of results, not the full dataset across pages — accurate at the pilot's current scale (a handful of applications), but if you load a page with many applications and page forward, the filter resets per page.
 12. **Uploading a document only gets it to "uploaded," not "verified."** A staff member must review it (Documents tab → mark Verified) before the Completeness Checklist shows "Ready for Stage 1" — this is an intentional staff gate, not a bug.
 13. **If you click "Run Pipeline" instead of manually approving,** it may block at Stage 3 with "no active university agreement found" for a university that doesn't have one on file. That's unrelated to document/guarantor completeness (Stage 1, which should now pass) — it's a separate, pre-existing requirement. Use the manual Advance/Approve action instead if you just want to test the Silver/Gold assignment.
-14. **Any new university you add for testing needs at least one program seeded** (`programs` table) before a student can select it in the Apply wizard's Program field — otherwise the field falls back to free text, which does not satisfy `program_id` and will correctly block submission.
-15. **(Phase 13) A guarantor's `documents_remaining`/`documentsStatus` on the Case Status card has no real upload flow behind it yet.** The column exists and is surfaced, but nothing currently writes to it from the guarantor's own portal — it will show "pending" indefinitely in testing unless set directly in the database. This is a known, documented gap (`FORSA_OPERATIONS_MANUAL.md` §4, `CASE_MANAGEMENT_ARCHITECTURE.md`), not something to log as a new bug.
+14. **Any new university you add for testing needs at least one program seeded** (`programs` table, with a real `tuition_amount` set — Phase 14) before a student can select it in the Apply wizard's Program field. **Updated in Phase 14:** there is no longer a free-text fallback at all — if a university has zero programs configured, the student sees an amber "no programs configured" notice and genuinely cannot proceed, by design (tuition must come from a real program's configuration).
+15. **(Phase 13) A guarantor's `documents_remaining`/`documentsStatus` on the Case Status card has no real upload flow behind it — and, as of Phase 14, has no meaningful path to become "verified" digitally at all**, since paperwork is now verified in person at the meeting instead. This field is effectively vestigial going forward; don't log it as a bug if it shows "pending" indefinitely.
 16. **(Phase 13) Scheduling a meeting is not gated by `current_status`** — you can schedule one on any application regardless of its stage (deliberately; see `CASE_MANAGEMENT_ARCHITECTURE.md`'s state machine section). Don't be surprised if it's possible to schedule a meeting on an application that isn't actually at Pre-Approval yet — that's expected in this implementation, not a bug to log.
+17. **(Phase 14) The backend-computed "next action" sentence (student Application page and guarantor Case Status card) is always in English**, regardless of the viewer's selected language — a known, documented gap (`PHASE14_FINAL_CASE_FLOW_REPORT.md`'s remaining risks), not something to log as a new bug.
+18. **(Phase 14) The guarantor portal's newly-added language switcher only translates the Case Status card and Financial Profile form.** The rest of that dashboard (student summary card, payment KPIs, payment ledger) remains hardcoded French regardless of which language you select — a known, pre-existing gap this phase didn't fully close, not a regression.
+19. **(Phase 14) Silver = 10 months, Gold = 12 months is a hardcoded assumption**, not configurable via any policy screen. If you need a different split for a real pilot, it currently requires a code change (`stability-score.util.ts`'s `PLAN_MONTHS`, mirrored client-side in `ApplyPage.tsx`).

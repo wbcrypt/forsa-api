@@ -8,6 +8,7 @@ import { hashToken } from '../common/utils/encryption.util'
 import { UserStatus } from '../common/enums'
 import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto'
 import { UpdateFinancialProfileDto } from './dto/financial-profile.dto'
+import { computeStabilityScore, explainStabilityScore } from '../ai/stability-score.util'
 
 @Injectable()
 export class GuarantorsService {
@@ -293,12 +294,18 @@ export class GuarantorsService {
       [link.application_id],
     ) : [null]
 
+    // Phase 14 (Final Case Flow Refinement) — "No document upload during
+    // the application. Documents are verified physically during the
+    // meeting." documentsStatus is still surfaced below for visibility,
+    // but next-action guidance no longer routes the guarantor toward a
+    // digital upload step that doesn't exist for the guarantor either —
+    // CIN, income proof, and the signed كمبيالة are verified in person.
     const profileStatus = g?.financial_profile_completed_at ? 'completed' : 'pending'
     let nextAction = 'Complete your Financial Responsibility Profile'
-    if (profileStatus === 'completed' && g?.document_status !== 'verified') nextAction = 'Upload your supporting documents'
-    else if (profileStatus === 'completed' && g?.document_status === 'verified' && !meeting) nextAction = 'Waiting for FORSA to review the case'
-    else if (meeting && ['scheduled', 'confirmed'].includes(meeting.status)) nextAction = `Attend your meeting on ${new Date(meeting.scheduled_at).toLocaleDateString()}`
-    else if (meeting?.status === 'completed') nextAction = 'Waiting for the university to confirm enrollment'
+    if (profileStatus === 'completed' && !meeting) nextAction = 'Waiting for FORSA to review the case'
+    else if (meeting && ['scheduled', 'confirmed'].includes(meeting.status)) {
+      nextAction = `Attend your meeting on ${new Date(meeting.scheduled_at).toLocaleDateString()} — bring your CIN, income/employment proof, and signed كمبيالة`
+    } else if (meeting?.status === 'completed') nextAction = 'Waiting for the university to confirm enrollment'
 
     return {
       invitationStatus: 'active', // this method only reachable once accepted — declined/pending never call it
@@ -337,7 +344,56 @@ export class GuarantorsService {
         dto.otherGuarantees, dto.supportingOtherStudents,
       ],
     )
+
+    // Phase 14 — "guarantor completes Financial Responsibility Profile ->
+    // internal FORSA Stability Score generated." The score is computed
+    // deterministically the moment the piece it depends on most (60%
+    // weight) becomes available — never by the AI itself.
+    await this.recomputeStabilityScore(g.id, tenantId)
+
     return { status: 'completed' }
+  }
+
+  private async recomputeStabilityScore(guarantorId: string, tenantId: string) {
+    const [app] = await this.db.query<any[]>(
+      `SELECT a.id, a.tuition_amount, a.requested_tier, a.student_id
+       FROM applications a
+       JOIN student_guarantors sg ON sg.student_id = a.student_id
+       WHERE sg.guarantor_id = $1 AND sg.status != 'withdrawn' AND a.tenant_id = $2
+       ORDER BY a.created_at DESC LIMIT 1`,
+      [guarantorId, tenantId],
+    )
+    if (!app) return // guarantor not yet linked to any application — nothing to score
+
+    const [guarantor] = await this.db.query<any[]>(
+      `SELECT employment_status, employment_duration_years, salary_range, home_ownership,
+              monthly_expenses, existing_loans_amount, number_of_dependents, marital_status
+       FROM guarantors WHERE id = $1`,
+      [guarantorId],
+    )
+    const [student] = await this.db.query<any[]>(
+      `SELECT employment_status, monthly_income, has_scholarship, living_situation, emergency_contact_name
+       FROM students WHERE id = $1`,
+      [app.student_id],
+    )
+
+    const input = {
+      guarantor: guarantor || null,
+      student: student || null,
+      tuitionAmount: app.tuition_amount ? Number(app.tuition_amount) : null,
+      requestedTier: app.requested_tier || null,
+    }
+    const result = computeStabilityScore(input)
+    const explanation = explainStabilityScore(input, result)
+
+    await this.db.query(
+      `UPDATE applications SET
+         stability_score_overall = $2,
+         stability_score_breakdown = $3,
+         stability_ai_explanation = $4
+       WHERE id = $1`,
+      [app.id, result.overall, JSON.stringify(result.breakdown), JSON.stringify(explanation)],
+    )
   }
 
   /**
