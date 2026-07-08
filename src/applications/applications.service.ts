@@ -184,6 +184,23 @@ export class ApplicationsService {
       );
     }
 
+    // Phase 8 workflow audit — no check existed here at all: a student
+    // could submit any number of Tuition Facilitation requests while one
+    // was already in flight. Only block on a request still actively being
+    // processed; rejected/completed/withdrawn are all terminal and a fresh
+    // request from any of those is exactly the intended "Apply Again" path.
+    const [existing] = await this.dataSource.query<any[]>(
+      `SELECT id FROM applications
+       WHERE student_id = $1 AND tenant_id = $2
+         AND current_status NOT IN ('rejected', 'completed', 'withdrawn')`,
+      [student.id, tenantId],
+    );
+    if (existing) {
+      throw new BadRequestException(
+        'You already have a Tuition Facilitation request in progress. Please wait for a decision before submitting another.',
+      );
+    }
+
     return this.create({ ...dto, studentId: student.id }, tenantId, userId);
   }
 
