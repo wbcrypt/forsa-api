@@ -146,20 +146,21 @@ From the homepage to an active, funded student — every page, every decision po
 4. **Approval email** (`membership_approved`) — contains the FORSA ID and a set-password link.
 5. **`/set-password?token=...`** — the student sets a real password. Single-use token; a second click on the same link (or an expired one) shows a specific, distinct message rather than a generic failure.
 6. **`/login`** — first real authenticated entry into the product.
-7. **Dashboard (`/`)** — shows Bronze status, FORSA ID, the primary CTA ("Apply for Tuition Facilitation"), and a decision-tree "Next Action" card that adapts to whatever the student's current application state actually is (no application yet / in review / approved / rejected).
-8. **`/apply`** — the one canonical entry point into the Tuition Facilitation wizard (see §5 for every step). A second, incomplete flow (`/application/new`) existed until Phase 7 and has been retired; it now redirects here.
-9. **`/application`** — status page for whatever the student's most recent application is. Shows a pipeline-stage tracker (Received → Documents → Under Review → Decision → Active) and, if rejected, a reassurance section (Bronze membership fully intact, "what's included," "what happens next") plus a working "Apply Again" button.
-10. **`/documents`** — upload required documents; also shows Activation Meeting logistics once pre-approved.
-11. **`/payments`** — payment schedule, installment status, bank-transfer instructions, receipt upload.
-12. **`/pass`** — the Digital Student Pass (QR code), visually reflecting the current membership tier.
-13. **`/profile`** — personal information, password change, language switcher (EN/FR/AR, with Arabic RTL support).
-14. **`/notifications`** — in-app notification history.
+7. **Dashboard (`/`)** — before any application exists, shows a **progress checklist** (Phase 10): Membership Approved, FORSA ID Issued, Digital Pass Issued, Complete Profile, Invite Guarantor, Submit Tuition Facilitation Request — with the one current required step always highlighted. Once an application exists, this is replaced by a decision-tree "Next Action" card adapting to the application's real state (in review / approved / rejected / waiting list / payment due).
+8. **`/guarantor`** (Phase 10) — invite a guarantor directly (first name, last name, email, relationship), no staff action required; shows live status (pending/active/declined) with a resend action. Reachable from the Dashboard checklist.
+9. **`/apply`** — the one canonical entry point into the Tuition Facilitation wizard (see §5 for every step). A second, incomplete flow (`/application/new`) existed until Phase 7 and has been retired; it now redirects here.
+10. **`/application`** — status page for whatever the student's most recent application is. Shows a pipeline-stage tracker (Received → Documents → Under Review → Decision → Active); if rejected, a reassurance section (Bronze intact, "what's included," "what happens next") plus a working "Apply Again" button; if waitlisted (Phase 10), an explanation, Bronze-intact reassurance, an estimated queue position, and while-you-wait guidance.
+11. **`/documents`** — upload required documents; also shows Activation Meeting logistics once pre-approved.
+12. **`/payments`** — payment schedule, installment status, bank-transfer instructions, receipt upload.
+13. **`/pass`** — the Digital Student Pass (QR code), visually reflecting the current membership tier.
+14. **`/profile`** — personal information, password change, language switcher (EN/FR/AR, with Arabic RTL support).
+15. **`/notifications`** — in-app notification history (see §11's caveat — this page is currently always empty; see Cross-cutting notes).
 
 **Every possible outcome from an application decision:**
 - **Approved** at Silver or Gold → tier updates automatically, `application_approved` email, journey continues toward contract → enrollment confirmation → active student.
 - **Rejected** → Bronze membership fully intact, `application_rejected` email (explicitly reassuring, mentions Bronze is unaffected), reapply available immediately via `/apply`.
 - **On hold / more info required** → student is asked for something specific, returns to review once resolved.
-- **Waiting list (capital queue)** → explicitly, deliberately worded as *not* a rejection — "placed on FORSA's Waiting List while capital becomes available," with its own `waiting_list` notification distinct from `application_rejected`.
+- **Waiting list (capital queue)** → explicitly, deliberately worded as *not* a rejection — "placed on FORSA's Waiting List while capital becomes available," with its own `waiting_list` notification distinct from `application_rejected`. Since Phase 10, the student-facing detail page also shows a real estimated queue position and explicit while-you-wait guidance rather than a bare status label.
 - **Fraud-flagged** → terminal, no further transition possible (a deliberate design choice protecting the integrity of a permanent-blacklist guarantee).
 
 Graduation / plan completion: `active_student` → `completed` (the plan is fully paid and closed) or `withdrawn` (the student leaves the program before completion). Neither of these currently triggers a distinct notification template of its own — see §14.
@@ -170,8 +171,11 @@ Graduation / plan completion: `active_student` → `completed` (the plan is full
 
 Guarantors **never self-register**. The only way into the guarantor portal is a secure, single-use invitation created by a student or by staff.
 
+**Updated in Phase 10**: a student can now create this invitation directly, with no staff action required — `POST /students/me/guarantors` (surfaced in the student portal's `/guarantor` page), resolving the student from their own login identity. Staff retain the same ability via the student record in the admin dashboard, for cases where a student needs help or staff are entering the guarantor on their behalf (e.g., phone intake). Both paths produce the identical invitation mechanism described below.
+
 ```
-Invitation created (by student/admin, via Student record)
+Invitation created (by student, self-service — or by admin, on the
+student's behalf)
    │  secure random token generated, SHA-256 hash stored,
    │  raw token emailed, 7-day expiry
    ▼
@@ -204,7 +208,7 @@ Preview  (public, read-only — sees who invited them and for whom,
           admin sees the decline + reason
 ```
 
-- **Invitation:** created via the admin (or, per the intended student-facing flow, the "do you have a guarantor?" step of `/apply` — though as of this writing that step only *asks the question*; the actual invite-creation action is an admin/staff action against the student record, not something the student does directly mid-application. See §14/§15 for the gap this leaves.) Requires a real first name, last name, and email; rejects a duplicate email already added as a guarantor for that student.
+- **Invitation:** created via the student's own `/guarantor` page (self-service, added in Phase 10 — `POST /students/me/guarantors`) or, equivalently, by an admin against the student record. Requires a real first name, last name, and email; rejects a duplicate email already added as a guarantor for that student. The `/apply` wizard's "do you have a guarantor?" question is still a separate, informational yes/no answer (context for the AI interview) rather than a form embedded in the wizard itself — the actual invitation happens on the dedicated `/guarantor` page, reachable directly from the Bronze Dashboard checklist.
 - **Preview:** `GET /guarantors/invite/:token`, public, no auth. Distinguishes four distinct failure states with four distinct messages: invalid/no-such-token, already used, already declined, expired.
 - **Accept:** password only (their profile — first/last name, relationship — was already captured at invitation time by whoever added them). Creates the `users` row, sets `portal_activated = true`, clears the invite token, and (if linked to a specific student) flips `student_guarantors.status` to `active`.
 - **Decline:** optional reason, no password needed. No account, ever. `student_guarantors.status = 'declined'`.
@@ -224,7 +228,7 @@ The student, from their own Dashboard, via the single canonical `/apply` entry p
 
 ### The wizard, in order
 
-1. **Your Profile** — personal details, academic info (university, program, tuition amount), financial info (payment-responsible party, household income, employment status, and a yes/no "do you have a guarantor?" question — this question does *not* itself create the guarantor invitation; see §4's noted gap).
+1. **Your Profile** — personal details, academic info (university, program, tuition amount), financial info (payment-responsible party, household income, employment status, and a yes/no "do you have a guarantor?" question — this question is informational context for the AI interview; the actual invitation is sent separately from the student's `/guarantor` page, reachable from the Bronze Dashboard checklist. See §4.).
 2. **Legal Consent** — explicit, itemized consent that a human review committee decides, not the AI.
 3. **AI Readiness Interview** — a real conversational interview producing a per-dimension score report (household stability, financial capacity, academic commitment, documentation quality). If run without a live Anthropic key (demo mode), the score is honestly left `null` with a "manual review required" flag rather than fabricated.
 4. **Submit** → `POST /applications/me`. The backend resolves the student from the caller's own JWT — a client-supplied student ID in the request body is never trusted.
@@ -327,6 +331,7 @@ Every action a FORSA staff member (`SUPER_ADMIN`) can take:
   - The **pipeline / human-decision** screen (`ApplicationDetailPage.tsx`), which goes through the AI-scored pipeline review flow.
   - The **manual workflow** screen (`ApplicationWorkflowPage.tsx`), a simpler direct status-transition UI.
   Both now correctly ratchet the student's membership tier on approval (fixed in Phase 7 after being found broken in the second screen only).
+- **Queue triage (Phase 10)** — the Applications list computes a per-row queue tag (Urgent, Missing Guarantor, Waiting Documents, Waiting Student, Waiting University, Waiting List, Ready for Review) and offers quick-filter chips, so staff can immediately spot which applications are blocked and why without opening each one individually. The tag is computed fresh on every load (current status, time since last update, and whether a live guarantor relationship exists) — not a stored field, so it can never go stale. Filtering is client-side over the current page today, accurate at pilot scale but worth revisiting if application volume grows past a page size.
 - **Rejection** — of either a Membership Request or a Tuition Facilitation application, each with its own notification template and its own "this is not the end of the relationship" framing.
 - **Document requests** — mark a required document as needing resubmission, triggering `document_requested`.
 - **Notifications** — every email the system sends is recorded in `notification_logs` with a sent/failed status per attempt, and (locally) visible in real time via MailHog.
@@ -499,20 +504,28 @@ Columns represent the four self-scoped portals (Student, Guarantor, University, 
 
 **Would every employee know exactly what to do?** For the two roles that actually exist (`SUPER_ADMIN`, `FINANCE_TEAM`), yes — this manual and the underlying product cover their real responsibilities completely. But because only two roles exist against a 61-permission catalog, "every employee" in practice means "every employee who isn't finance gets full admin authority." For a first pilot with a small, trusted staff, this is workable. It stops being workable the moment FORSA hires someone who should see applications but not, say, manage user accounts or approve university agreements — that distinction cannot be expressed today.
 
-**Would every workflow be understandable?** Yes, for the workflows that exist as documented above. The state machines are explicit and enforced in code, not left to convention. The one place understandability breaks down is the guarantor's mid-application invitation step (§4) — the product asks "do you have a guarantor?" during `/apply` but doesn't actually trigger an invitation from that answer; a staff member has to separately go add the guarantor on the student's record afterward. A first-time user reasonably expects answering "yes" to *do* something.
+**Would every workflow be understandable?** Yes. The state machines are explicit and enforced in code, not left to convention. The guarantor mid-application understandability gap noted in earlier drafts of this manual — the product asked "do you have a guarantor?" during `/apply` but didn't trigger anything from that answer — was closed in Phase 10: a student can now invite their own guarantor directly from a dedicated `/guarantor` page, reachable from the Bronze Dashboard checklist, with no staff action required. The Bronze Dashboard itself was also ambiguous about the next required action before Phase 10; it now shows an explicit progress checklist that always highlights the one current step.
 
 **Would every decision be documented?** Yes — every approval, rejection, and status change is captured in `audit_logs`, and the state machine forbids undocumented/invalid transitions outright rather than allowing silent shortcuts.
 
-### Operational gaps to resolve before (or explicitly accept for) the first pilot
+### Operational gaps — status after Phase 10
 
-1. **Partner commissions never auto-create** (§7) — a real gap if a referral partner is part of this specific pilot; irrelevant if not. Needs a product decision on trigger timing before building.
-2. **Guarantor invitation is not actually triggered by the student's "yes" answer during `/apply`** (§4/§13) — currently requires a separate staff action. Either wire the two together, or change the application wording so it doesn't imply the invite is sent immediately.
-3. **Role granularity doesn't match the permission catalog** (§1/§12) — only two roles exist against 61 defined permissions. Fine for a small pilot team; a blocker the moment staff needs to be differentiated (e.g., a reviewer who shouldn't manage user accounts).
-4. **No database-level enforcement of the membership-tier ratchet** (§10) — the "never downgrade" rule lives only in application code, with no `CHECK` constraint as a second line of defense. Low risk today (no direct-SQL admin tooling exists), but worth hardening before more people have database access.
-5. **Unclaimed Bronze accounts never expire** (§14) — not disruptive at pilot scale, but a scheduled cleanup job should exist before a wider rollout.
-6. **Konnect online payment is unverified** (§8) — fine if the pilot only uses manual bank transfer (verified working); needs a dedicated test pass if online payment is expected on day one.
-7. **No SMS/push notifications actually send today** (§11) — the schema is ready; the sending logic isn't built. Don't describe this capability as live to a pilot partner.
-8. **No renewal flow, despite the field existing** (§8/§13) — a returning student cannot flag "this is a renewal" from the UI. If renewals are expected during the pilot's timeframe, this needs to be built.
-9. **Fraud-flagged accounts have no reinstatement path** (§13) — acceptable if this is truly meant to be a permanent, human-reviewed-before-flagging decision; worth confirming that's the actual intent before the first real fraud flag happens.
+Full detail and verification evidence for everything below is in `PILOT_BLOCKERS_STATUS.md` and `PHASE10_IMPLEMENTATION_REPORT.md`. Summary:
 
-None of the above are Critical in the sense of corrupting a business process today — every one of them is either a scoping question (partner commissions, renewals, SMS) or a hardening recommendation (schema-level tier enforcement, account expiry) rather than a live bug. The core membership → application → tier-assignment → payment loop that a first pilot actually needs was fully verified working end-to-end in Phase 8 (`BROWSER_TEST_REPORT.md`) and remains so as of this manual.
+**Closed in Phase 10:**
+- Guarantor invitation is now genuinely student-initiated, no staff action required.
+- The Bronze Dashboard's ambiguous single next-action card replaced with a real progress checklist.
+- The waiting list (`capital_queue`) experience now explains what's happening, confirms Bronze is intact, gives an estimated queue position, and says what to do while waiting — instead of falling through to a generic "in progress" message.
+- The admin Applications list now surfaces computed queue-blocker tags (Urgent, Missing Guarantor, Waiting Documents, Waiting Student, Waiting University, Waiting List, Ready for Review) so staff can spot stuck applications without opening each one.
+
+**Still open, deliberately (each is a scoping question or hardening recommendation, not a live defect):**
+1. **Partner commissions never auto-create** (§7) — a real gap only if a referral partner is part of this specific pilot. Needs a product decision on trigger timing before building.
+2. **Role granularity doesn't match the permission catalog** (§1/§12) — only two roles exist against 61 defined permissions. Fine for a small pilot team; a blocker the moment staff needs to be differentiated.
+3. **No database-level enforcement of the membership-tier ratchet** (§10) — the "never downgrade" rule lives only in application code. Low risk today, worth hardening before more people have database access.
+4. **Unclaimed Bronze accounts never expire** (§14) — not disruptive at pilot scale.
+5. **Konnect online payment is unverified** (§8) — fine if the pilot only uses manual bank transfer (verified working).
+6. **No SMS/push notifications actually send today** (§11) — schema-ready, not built. Don't describe this as live to a pilot partner.
+7. **No renewal flow, despite the field existing** (§8/§13) — only relevant if a returning student is expected during the pilot window.
+8. **Fraud-flagged accounts have no reinstatement path** (§13) — acceptable if fraud-flagging is genuinely meant to be permanent and human-reviewed before it's ever applied.
+
+None of the above are Critical in the sense of corrupting a business process today. The core membership → guarantor → application → tier-assignment → payment loop that a first pilot actually needs was verified working end-to-end in Phase 8 (`BROWSER_TEST_REPORT.md`), and the four gaps closed in Phase 10 were re-verified live against the same running stack (see `PHASE10_IMPLEMENTATION_REPORT.md`).
