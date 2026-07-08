@@ -248,6 +248,41 @@ export class ApplicationsService {
     return this.getStatusHistory(applicationId, tenantId);
   }
 
+  /**
+   * Phase 10 — Waiting List Experience. "Students should never feel
+   * abandoned" (FORSA_OPERATIONS_MANUAL.md §3) — an estimated review order
+   * so a waitlisted student sees concrete progress rather than a bare
+   * "you're waiting" message. `updated_at` is used as the entry-into-queue
+   * timestamp: transitionStatus sets it to NOW() on every status change, so
+   * for an application currently sitting in capital_queue it reflects the
+   * moment it entered the queue in the common case (a genuine estimate, not
+   * an exact FIFO guarantee — flagged as such to the caller).
+   */
+  async getQueuePositionForMe(userId: string, tenantId: string, applicationId: string) {
+    const [app] = await this.dataSource.query<any[]>(
+      `SELECT a.id, a.current_status, a.updated_at FROM applications a
+       JOIN students s ON s.id = a.student_id
+       WHERE a.id = $1 AND a.tenant_id = $2 AND s.user_id = $3`,
+      [applicationId, tenantId, userId],
+    );
+    if (!app) throw new NotFoundException('Application not found');
+    if (app.current_status !== ApplicationStatus.CAPITAL_QUEUE) {
+      return { inQueue: false, position: null, total: null };
+    }
+
+    const [{ total }] = await this.dataSource.query<any[]>(
+      `SELECT count(*)::int AS total FROM applications
+       WHERE tenant_id = $1 AND current_status = $2`,
+      [tenantId, ApplicationStatus.CAPITAL_QUEUE],
+    );
+    const [{ ahead }] = await this.dataSource.query<any[]>(
+      `SELECT count(*)::int AS ahead FROM applications
+       WHERE tenant_id = $1 AND current_status = $2 AND updated_at < $3`,
+      [tenantId, ApplicationStatus.CAPITAL_QUEUE, app.updated_at],
+    );
+    return { inQueue: true, position: ahead + 1, total };
+  }
+
   async findAll(tenantId: string, pagination: PaginationDto, filters: any = {}) {
     const { page = 1, limit = 20 } = pagination;
     const offset = getSkip(page, limit);
@@ -278,14 +313,39 @@ export class ApplicationsService {
     const [data, [count]] = await Promise.all([
       this.dataSource.query(
         `SELECT a.id, a.current_status, a.current_financing_level, a.tuition_amount,
-                a.lead_date, a.academic_year, a.is_renewal,
+                a.lead_date, a.academic_year, a.is_renewal, a.updated_at,
                 a.ai_score_overall, a.ai_recommendation, a.ai_report,
                 s.first_name, s.last_name, s.email,
                 u.name AS university_name,
                 p.name AS program_name,
                 rs.display_name AS referral_source,
                 usr.full_name AS assigned_to,
-                fs.aggregate_score, fs.score_band
+                fs.aggregate_score, fs.score_band,
+                has_g.has_guarantor,
+                -- Phase 10 — Administrator Queue visibility
+                -- (FORSA_OPERATIONS_MANUAL.md §9/§15). Priority order:
+                -- an overdue decision matters more than a routine "ready"
+                -- tag; a missing guarantor blocks the same review a
+                -- "ready" application doesn't. Deliberately NOT based on
+                -- application_documents (that table has zero rows across
+                -- the entire tenant today — nothing populates a
+                -- required-documents checklist yet, so a documents-based
+                -- tag would be fabricated, not real; see
+                -- OPERATIONS_AUDIT_REPORT.md).
+                CASE
+                  WHEN a.current_status IN ('new_lead','contacted','under_review','more_info_required')
+                       AND a.updated_at < NOW() - INTERVAL '5 days'
+                    THEN 'urgent'
+                  WHEN a.current_status IN ('under_review','more_info_required','on_hold','approved_level1','approved_level2','approved_level3')
+                       AND NOT has_g.has_guarantor
+                    THEN 'missing_guarantor'
+                  WHEN a.current_status = 'waiting_for_documents' THEN 'waiting_documents'
+                  WHEN a.current_status = 'more_info_required' THEN 'waiting_student'
+                  WHEN a.current_status = 'contract_signed' THEN 'waiting_university'
+                  WHEN a.current_status = 'capital_queue' THEN 'waiting_list'
+                  WHEN a.current_status = 'under_review' THEN 'ready_for_review'
+                  ELSE NULL
+                END AS queue_tag
          FROM applications a
          JOIN students s ON s.id = a.student_id
          JOIN universities u ON u.id = a.university_id
@@ -293,6 +353,12 @@ export class ApplicationsService {
          LEFT JOIN referral_sources rs ON rs.id = a.referral_source_id
          LEFT JOIN users usr ON usr.id = a.assigned_to_user_id
          LEFT JOIN forsa_scores fs ON fs.student_id = a.student_id
+         LEFT JOIN LATERAL (
+           SELECT EXISTS (
+             SELECT 1 FROM student_guarantors sg
+             WHERE sg.student_id = a.student_id AND sg.status IN ('active', 'pending_invitation')
+           ) AS has_guarantor
+         ) has_g ON true
          WHERE a.tenant_id = $1 ${whereExtra}
          ORDER BY a.created_at DESC
          LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,

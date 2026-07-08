@@ -118,6 +118,27 @@ export class StudentsController {
     return this.service.openExceptionalEvent(id, t, { ...dto, openedBy: u });
   }
 
+  // Phase 10 — self-service guarantor invitation. Same self-scoped pattern
+  // as findMe/findMyApplications: the studentId is resolved server-side
+  // from the caller's own JWT, never trusted from the request. Closes the
+  // "no manual admin intervention required" pilot blocker.
+  @Post('me/guarantors')
+  @ApiOperation({ summary: 'Invite a guarantor as the logged-in student, no staff action required' })
+  addMyGuarantor(@Body() dto: any, @CurrentTenant() t: string, @CurrentUser('id') u: string) {
+    return this.service.addMyGuarantor(u, t, dto);
+  }
+
+  @Post('me/guarantors/:guarantorId/resend-invite')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Resend one of the logged-in student's own guarantor invitations" })
+  resendMyGuarantorInvite(
+    @Param('guarantorId', ParseUUIDPipe) guarantorId: string,
+    @CurrentTenant() t: string,
+    @CurrentUser('id') u: string,
+  ) {
+    return this.service.resendMyGuarantorInvite(u, t, guarantorId);
+  }
+
   @Post(':id/guarantors')
   @RequirePermissions('student.edit')
   addGuarantor(

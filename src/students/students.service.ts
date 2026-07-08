@@ -63,16 +63,48 @@ export class StudentsService {
    * pattern. Never trust a client-supplied student id here.
    */
   async findMe(userId: string, tenantId: string) {
+    // Phase 10 — the Bronze Dashboard checklist (§ FORSA_OPERATIONS_MANUAL.md
+    // "Bronze Dashboard Next Steps") needs to know whether the student has
+    // any guarantor relationship at all (and its status) without a second
+    // round trip, so the "Invite Guarantor" checklist item can reflect
+    // reality instead of always showing as incomplete.
     const [student] = await this.dataSource.query<any[]>(
-      `SELECT s.*, fs.aggregate_score, fs.score_band
+      `SELECT s.*, fs.aggregate_score, fs.score_band,
+              json_agg(DISTINCT jsonb_build_object(
+                'id', sg.id, 'status', sg.status, 'guarantorId', g.id,
+                'fullName', g.first_name || ' ' || g.last_name, 'email', g.email,
+                'portalActivated', g.portal_activated
+              )) FILTER (WHERE sg.id IS NOT NULL AND sg.status != 'withdrawn') AS guarantors
        FROM students s
        LEFT JOIN forsa_scores fs ON fs.student_id = s.id
-       WHERE s.user_id = $1 AND s.tenant_id = $2`,
+       LEFT JOIN student_guarantors sg ON sg.student_id = s.id
+       LEFT JOIN guarantors g ON g.id = sg.guarantor_id
+       WHERE s.user_id = $1 AND s.tenant_id = $2
+       GROUP BY s.id, fs.id`,
       [userId, tenantId],
     );
     if (!student) throw new NotFoundException('No student profile linked to this user');
     delete student.national_id_reference;
     return student;
+  }
+
+  /**
+   * Phase 10 — closes the gap flagged in FORSA_OPERATIONS_MANUAL.md: the
+   * "do you have a guarantor?" question in the Apply wizard never actually
+   * triggered an invitation, and adding one otherwise required a staff
+   * member acting on the student's behalf. This lets the student invite
+   * their own guarantor directly — same validation, same secure-token
+   * invite, same email — with the studentId resolved from the caller's own
+   * JWT identity, never trusted from the request body.
+   */
+  async addMyGuarantor(userId: string, tenantId: string, dto: any) {
+    const student = await this.findMe(userId, tenantId);
+    return this.addGuarantor(student.id, tenantId, dto, userId);
+  }
+
+  async resendMyGuarantorInvite(userId: string, tenantId: string, guarantorId: string) {
+    const student = await this.findMe(userId, tenantId);
+    return this.resendGuarantorInvite(student.id, guarantorId, tenantId, userId);
   }
 
   async findAll(tenantId: string, pagination: PaginationDto, filters: any = {}) {

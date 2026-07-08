@@ -66,6 +66,13 @@ export class ApplicationsController {
     return this.service.getStatusHistoryForMe(u, t, id);
   }
 
+  // Phase 10 — Waiting List Experience (FORSA_OPERATIONS_MANUAL.md §3).
+  @Get('me/:id/queue-position')
+  @ApiOperation({ summary: "Get the logged-in student's own application's estimated waiting-list position" })
+  getQueuePositionForMe(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('id') u: string, @CurrentTenant() t: string) {
+    return this.service.getQueuePositionForMe(u, t, id);
+  }
+
   @Get()
   @RequirePermissions('application.view')
   @ApiOperation({ summary: 'List applications with filters' })
