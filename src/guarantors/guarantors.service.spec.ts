@@ -40,3 +40,132 @@ describe('GuarantorsService.getLinkedStudent', () => {
     expect(findLinkedStudentCall[0]).not.toContain('a.program_name');
   });
 });
+
+// Phase 8 workflow audit — the invite/preview/accept/decline lifecycle
+// (built in Phase 7 to replace public self-registration) had zero test
+// coverage. These lock down the distinct error messages for each invalid
+// state and the "no orphan account on decline" invariant.
+describe('GuarantorsService invite lifecycle', () => {
+  function makeService(query: jest.Mock) {
+    return new GuarantorsService(
+      { query, transaction: (fn: any) => fn({ query }) } as unknown as DataSource,
+      {} as unknown as KonnectService,
+      {} as unknown as DocumentsService,
+    );
+  }
+
+  const futureDate = new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString();
+  const pastDate = new Date(Date.now() - 1000 * 60 * 60).toISOString();
+
+  describe('previewInvite', () => {
+    it('rejects a token that matches no invite', async () => {
+      const query = jest.fn().mockResolvedValueOnce([]);
+      const service = makeService(query);
+      await expect(service.previewInvite('bad-token')).rejects.toThrow('This invite link is invalid.');
+    });
+
+    it('rejects an already-used invite (user_id already set)', async () => {
+      const query = jest.fn().mockResolvedValueOnce([{ user_id: 'user-1', invite_token_expires_at: futureDate }]);
+      const service = makeService(query);
+      await expect(service.previewInvite('used-token')).rejects.toThrow('This invite has already been used. Please log in instead.');
+    });
+
+    it('rejects a declined invite', async () => {
+      const query = jest.fn().mockResolvedValueOnce([{ user_id: null, link_status: 'declined', invite_token_expires_at: futureDate }]);
+      const service = makeService(query);
+      await expect(service.previewInvite('declined-token')).rejects.toThrow('This invitation was already declined.');
+    });
+
+    it('rejects an expired invite', async () => {
+      const query = jest.fn().mockResolvedValueOnce([{ user_id: null, link_status: 'pending_invitation', invite_token_expires_at: pastDate }]);
+      const service = makeService(query);
+      await expect(service.previewInvite('expired-token')).rejects.toThrow('This invite link has expired');
+    });
+
+    it('returns the preview for a valid, pending invite', async () => {
+      const query = jest.fn().mockResolvedValueOnce([{
+        id: 'g-1', tenant_id: 'tenant-1', email: 'g@example.com', first_name: 'Mohamed', last_name: 'Ali',
+        user_id: null, link_status: 'pending_invitation', invite_token_expires_at: futureDate,
+        student_id: 's-1', student_first_name: 'Amina',
+      }]);
+      const service = makeService(query);
+      const result = await service.previewInvite('good-token');
+      expect(result).toEqual(expect.objectContaining({
+        guarantorFirstName: 'Mohamed', email: 'g@example.com', studentFirstName: 'Amina',
+      }));
+    });
+  });
+
+  describe('acceptInvite', () => {
+    it('rejects a weak password before ever touching the database', async () => {
+      const query = jest.fn();
+      const service = makeService(query);
+      await expect(service.acceptInvite('token', { password: 'short' })).rejects.toThrow();
+      expect(query).not.toHaveBeenCalled();
+    });
+
+    it('rejects accepting an already-used invite', async () => {
+      const query = jest.fn().mockResolvedValueOnce([{ user_id: 'user-1', invite_token_expires_at: futureDate }]);
+      const service = makeService(query);
+      await expect(service.acceptInvite('token', { password: 'GoodPass2026!' })).rejects.toThrow('This invite has already been used. Please log in instead.');
+    });
+
+    it('rejects accepting an expired invite', async () => {
+      const query = jest.fn().mockResolvedValueOnce([{ user_id: null, invite_token_expires_at: pastDate }]);
+      const service = makeService(query);
+      await expect(service.acceptInvite('token', { password: 'GoodPass2026!' })).rejects.toThrow('This invite link has expired');
+    });
+
+    it('creates a real user account, activates the portal, and links the student on success', async () => {
+      const query = jest.fn()
+        .mockResolvedValueOnce([{
+          id: 'g-1', tenant_id: 'tenant-1', email: 'g@example.com', first_name: 'Mohamed', last_name: 'Ali',
+          user_id: null, link_status: 'pending_invitation', invite_token_expires_at: futureDate, student_id: 's-1',
+        }]) // findInviteByToken
+        .mockResolvedValueOnce([]) // no existing user with this email
+        .mockResolvedValueOnce([{ id: 'user-new', email: 'g@example.com' }]) // INSERT users
+        .mockResolvedValueOnce(undefined) // UPDATE guarantors — clears invite_token, single-use
+        .mockResolvedValueOnce(undefined) // UPDATE student_guarantors -> active
+        .mockResolvedValueOnce(undefined); // INSERT audit_logs
+
+      const service = makeService(query);
+      const result = await service.acceptInvite('token', { password: 'GoodPass2026!' });
+
+      expect(result).toEqual({ guarantorId: 'g-1', userId: 'user-new', email: 'g@example.com' });
+      const clearTokenCall = query.mock.calls[3];
+      expect(clearTokenCall[0]).toContain('invite_token = NULL');
+      const linkCall = query.mock.calls[4];
+      expect(linkCall[0]).toContain("SET status = 'active'");
+    });
+  });
+
+  describe('declineInvite', () => {
+    it('rejects a token that matches no invite', async () => {
+      const query = jest.fn().mockResolvedValueOnce([]);
+      const service = makeService(query);
+      await expect(service.declineInvite('bad-token', {})).rejects.toThrow('This invite link is invalid.');
+    });
+
+    it('is idempotent when the invite is already declined', async () => {
+      const query = jest.fn().mockResolvedValueOnce([{ user_id: null, link_status: 'declined' }]);
+      const service = makeService(query);
+      await expect(service.declineInvite('token', {})).resolves.toEqual({ success: true });
+    });
+
+    it('marks the link declined and never creates a user account', async () => {
+      const query = jest.fn()
+        .mockResolvedValueOnce([{ id: 'g-1', tenant_id: 'tenant-1', email: 'g@example.com', user_id: null, link_status: 'pending_invitation', student_id: 's-1' }])
+        .mockResolvedValueOnce(undefined) // UPDATE student_guarantors -> declined
+        .mockResolvedValueOnce(undefined) // UPDATE guarantors invite_token = NULL
+        .mockResolvedValueOnce(undefined); // INSERT audit_logs
+
+      const service = makeService(query);
+      const result = await service.declineInvite('token', { reason: 'Changed my mind' });
+
+      expect(result).toEqual({ success: true });
+      expect(query.mock.calls.some(call => call[0].includes('INSERT INTO users'))).toBe(false);
+      const declineCall = query.mock.calls[1];
+      expect(declineCall[0]).toContain("status = 'declined'");
+    });
+  });
+});

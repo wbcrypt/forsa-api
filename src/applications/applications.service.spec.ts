@@ -153,10 +153,14 @@ describe('ApplicationsService.transitionStatus', () => {
   it('includes the financing tier in the approval notification when provided', async () => {
     const underReview = { ...baseApplication, current_status: ApplicationStatus.UNDER_REVIEW };
     query
-      .mockResolvedValueOnce([underReview])
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([underReview])       // findOne
+      .mockResolvedValueOnce(undefined)            // UPDATE current_status
+      .mockResolvedValueOnce(undefined)            // INSERT history
+      .mockResolvedValueOnce(undefined)            // INSERT audit_logs
+      .mockResolvedValueOnce(undefined)            // UPDATE applications.financing_tier
+      .mockResolvedValueOnce([{ membership_status: 'bronze' }]) // SELECT student's current tier
+      .mockResolvedValueOnce(undefined)            // UPDATE students.membership_status (ratchets up)
+      .mockResolvedValueOnce(undefined)            // INSERT membership_status_history
       .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
 
     await service.transitionStatus('app-1', 'tenant-1', ApplicationStatus.APPROVED_LEVEL2, 'staff-1', undefined, undefined, 'gold');
@@ -165,6 +169,52 @@ describe('ApplicationsService.transitionStatus', () => {
       templateCode: 'application_approved',
       variables: expect.objectContaining({ tierSuffix: ' (Gold tier)' }),
     }));
+  });
+
+  // Phase 8 workflow audit — the gap this closes: approving via the manual
+  // admin screen (this same transitionStatus method the pipeline's
+  // human-decision path also shares logic with) used to only word the
+  // email; the student's real membership_status never moved. Now it must
+  // ratchet up to match, exactly like the automated pipeline path already
+  // did, and never move down for a lower/equal tier.
+  it('ratchets the student membership_status up to match the approved tier', async () => {
+    const underReview = { ...baseApplication, current_status: ApplicationStatus.UNDER_REVIEW };
+    query
+      .mockResolvedValueOnce([underReview])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ membership_status: 'bronze' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
+
+    await service.transitionStatus('app-1', 'tenant-1', ApplicationStatus.APPROVED_LEVEL2, 'staff-1', undefined, undefined, 'silver');
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE students SET membership_status'),
+      ['student-1', 'silver'],
+    );
+  });
+
+  it('never lowers membership_status when the approved tier ranks below the student\'s current one', async () => {
+    const underReview = { ...baseApplication, current_status: ApplicationStatus.UNDER_REVIEW };
+    query
+      .mockResolvedValueOnce([underReview])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([{ membership_status: 'gold' }])
+      .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
+
+    await service.transitionStatus('app-1', 'tenant-1', ApplicationStatus.APPROVED_LEVEL1, 'staff-1', undefined, undefined, 'silver');
+
+    expect(query).not.toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE students SET membership_status'),
+      expect.anything(),
+    );
   });
 
   // T-225/D-004 — Waiting List must never read like a rejection.
@@ -250,6 +300,7 @@ describe('ApplicationsService.createForSelf', () => {
   it('resolves studentId from the caller identity and never trusts a client-supplied one', async () => {
     query
       .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }]) // membership check
+      .mockResolvedValueOnce([]) // in-flight duplicate check — none found
       .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }]) // INSERT applications
       .mockResolvedValueOnce(undefined) // INSERT application_status_history
       .mockResolvedValueOnce(undefined) // audit
@@ -259,10 +310,40 @@ describe('ApplicationsService.createForSelf', () => {
     // ignored — the resolved identity always wins.
     await service.createForSelf('user-1', 'tenant-1', { studentId: 'someone-elses-student-id', tuitionAmount: 5000 });
 
-    const insertCall = query.mock.calls[1];
+    const insertCall = query.mock.calls[2];
     expect(insertCall[0]).toContain('INSERT INTO applications');
     expect(insertCall[1]).toContain('student-1');
     expect(insertCall[1]).not.toContain('someone-elses-student-id');
+  });
+
+  // Phase 8 workflow audit — no check existed at all before this: a
+  // student could submit any number of Tuition Facilitation requests
+  // while one was already in flight. Terminal states (rejected/
+  // completed/withdrawn) must NOT block — that's exactly the "Apply
+  // Again" path a rejected student is meant to use.
+  it('blocks a second submission while one is already in flight', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+      .mockResolvedValueOnce([{ id: 'existing-app-1' }]); // an in-flight application exists
+
+    await expect(service.createForSelf('user-1', 'tenant-1', { tuitionAmount: 5000 })).rejects.toThrow(
+      'You already have a Tuition Facilitation request in progress. Please wait for a decision before submitting another.',
+    );
+  });
+
+  it('does not block a resubmission when the only prior application is a terminal state', async () => {
+    query
+      .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+      .mockResolvedValueOnce([]) // rejected/completed/withdrawn excluded server-side, so none found
+      .mockResolvedValueOnce([{ id: 'app-2', student_id: 'student-1' }])
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce([]);
+
+    await expect(service.createForSelf('user-1', 'tenant-1', { tuitionAmount: 5000 })).resolves.toBeDefined();
+
+    const dupCheckCall = query.mock.calls[1];
+    expect(dupCheckCall[0]).toContain("NOT IN ('rejected', 'completed', 'withdrawn')");
   });
 });
 

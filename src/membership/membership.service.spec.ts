@@ -52,6 +52,7 @@ describe('MembershipService', () => {
     it('creates a pending request when none already exists', async () => {
       query
         .mockResolvedValueOnce([]) // no existing pending request
+        .mockResolvedValueOnce([]) // no existing active member with this email
         .mockResolvedValueOnce([{ id: 'new-req', created_at: new Date() }]);
 
       const result = await service.createRequest({
