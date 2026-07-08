@@ -174,6 +174,12 @@ const NOTIFICATION_TEMPLATES = [
    '<p>Dear {{studentName}},</p><p>Your application for {{programName}} has not been rejected — you’ve been placed on FORSA’s Waiting List while capital becomes available. We will notify you as soon as your application can move forward.</p>',true],
   ['guarantor_invited','email','You\'ve Been Invited as a FORSA Guarantor','You\'ve been invited to be {{studentFirstName}}\'s FORSA guarantor',
    '<p>Dear {{guarantorFirstName}},</p><p>{{studentFirstName}} has listed you as their guarantor for a FORSA Tuition Facilitation Plan. As a guarantor, you\'ll be able to track their plan and make payments on their behalf.</p><p>Please review and respond to this invitation: <a href="{{inviteUrl}}">{{inviteUrl}}</a></p><p>This link expires in 7 days. If you don\'t recognize this request, you can safely decline it from the link above.</p>',true],
+  // Phase 8 workflow audit — membership.service.ts#reject() updated the
+  // request's status but never called NotificationsService at all (unlike
+  // every other decision point in the product): a rejected visitor got no
+  // email whatsoever and was left silently wondering what happened.
+  ['membership_rejected','email','Update on Your FORSA Membership Request','Update on your FORSA membership request',
+   '<p>Dear {{firstName}},</p><p>Thank you for your interest in FORSA. After review, we are unable to approve your membership request at this time.</p>{{reasonBlock}}<p>You are welcome to submit a new request if your situation changes.</p>',true],
 ];
 
 async function main() {

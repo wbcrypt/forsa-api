@@ -198,6 +198,23 @@ describe('MembershipService', () => {
       const result = await service.reject('req-1', 'tenant-1', 'staff-1', 'Incomplete info');
       expect(result).toEqual({ id: 'req-1', status: 'rejected' });
     });
+
+    // Phase 8 workflow audit — this was the one decision point in the
+    // product with no applicant-facing notification at all; a rejected
+    // visitor got silence instead of an email telling them what happened.
+    it('emails the applicant that their request was not approved', async () => {
+      query
+        .mockResolvedValueOnce([pendingRequest])
+        .mockResolvedValueOnce(undefined);
+
+      await service.reject('req-1', 'tenant-1', 'staff-1', 'Incomplete info');
+
+      expect(notifications.send).toHaveBeenCalledWith(expect.objectContaining({
+        templateCode: 'membership_rejected',
+        recipientEmail: 'amina@example.com',
+        variables: expect.objectContaining({ firstName: 'Amina' }),
+      }));
+    });
   });
 
   describe('findOne', () => {

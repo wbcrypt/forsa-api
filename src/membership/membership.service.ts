@@ -271,6 +271,25 @@ export class MembershipService {
       [id, rejectedBy, reason],
     );
 
+    // Phase 8 workflow audit — this was the one decision point in the
+    // whole product with zero applicant-facing notification at all: a
+    // rejected visitor got no email and was left silently wondering what
+    // happened, unlike every other approval/rejection path.
+    await this.notifications.send({
+      tenantId,
+      recipientId: id,
+      recipientEmail: request.email,
+      channel: NotificationChannel.EMAIL,
+      templateCode: 'membership_rejected',
+      variables: {
+        firstName: request.first_name,
+        reasonBlock: reason ? `<p><strong>Reason:</strong> ${reason}</p>` : '',
+      },
+      triggeredBy: rejectedBy,
+      referenceId: id,
+      referenceType: 'membership_request',
+    }).catch(err => this.logger.error('membership_rejected notification failed', err));
+
     return { id, status: MembershipRequestStatus.REJECTED };
   }
 }
