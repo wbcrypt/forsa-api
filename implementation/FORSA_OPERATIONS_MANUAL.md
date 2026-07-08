@@ -149,7 +149,7 @@ From the homepage to an active, funded student — every page, every decision po
 7. **Dashboard (`/`)** — before any application exists, shows a **progress checklist** (Phase 10): Membership Approved, FORSA ID Issued, Digital Pass Issued, Complete Profile, Invite Guarantor, Submit Tuition Facilitation Request — with the one current required step always highlighted. Once an application exists, this is replaced by a decision-tree "Next Action" card adapting to the application's real state (in review / approved / rejected / waiting list / payment due).
 8. **`/guarantor`** (Phase 10) — invite a guarantor directly (first name, last name, email, relationship), no staff action required; shows live status (pending/active/declined) with a resend action. Reachable from the Dashboard checklist.
 9. **`/apply`** — the one canonical entry point into the Tuition Facilitation wizard (see §5 for every step). A second, incomplete flow (`/application/new`) existed until Phase 7 and has been retired; it now redirects here.
-10. **`/application`** — status page for whatever the student's most recent application is. Shows a pipeline-stage tracker (Received → Documents → Under Review → Decision → Active); if rejected, a reassurance section (Bronze intact, "what's included," "what happens next") plus a working "Apply Again" button; if waitlisted (Phase 10), an explanation, Bronze-intact reassurance, an estimated queue position, and while-you-wait guidance.
+10. **`/application`** — status page for whatever the student's most recent application is. Shows the **Application Timeline** (workflow architecture redesign — see §10's "Two views of one application"): Application Started → Application Submitted → Documents Verified → Guarantor Status → Under Review → Decision → University Confirmation → Active Student, in plain language with no internal CRM terms; if rejected, a reassurance section (Bronze intact, "what's included," "what happens next") plus a working "Apply Again" button; if waitlisted (Phase 10), an explanation, Bronze-intact reassurance, an estimated queue position, and while-you-wait guidance.
 11. **`/documents`** — upload required documents; also shows Activation Meeting logistics once pre-approved.
 12. **`/payments`** — payment schedule, installment status, bank-transfer instructions, receipt upload.
 13. **`/pass`** — the Digital Student Pass (QR code), visually reflecting the current membership tier.
@@ -344,6 +344,7 @@ Every action a FORSA staff member (`SUPER_ADMIN`) can take:
   - The **manual workflow** screen (`ApplicationWorkflowPage.tsx`), a simpler direct status-transition UI.
   Both now correctly ratchet the student's membership tier on approval (fixed in Phase 7 after being found broken in the second screen only).
 - **Queue triage (Phase 10)** — the Applications list computes a per-row queue tag (Urgent, Missing Guarantor, Waiting Documents, Waiting Student, Waiting University, Waiting List, Ready for Review) and offers quick-filter chips, so staff can immediately spot which applications are blocked and why without opening each one individually. The tag is computed fresh on every load (current status, time since last update, and whether a live guarantor relationship exists) — not a stored field, so it can never go stale. Filtering is client-side over the current page today, accurate at pilot scale but worth revisiting if application volume grows past a page size.
+- **Admin Pipeline tracker (workflow architecture redesign)** — the application detail page's Overview tab shows a 12-stage internal-operations tracker (Draft through Active Student — see §10's "Two views of one application") in place of the raw `current_status` string, alongside the Completeness Checklist. This is a genuinely different vocabulary from what a student sees on the exact same application — see §3's `/application` timeline.
 - **Rejection** — of either a Membership Request or a Tuition Facilitation application, each with its own notification template and its own "this is not the end of the relationship" framing.
 - **Document requests** — mark a required document as needing resubmission, triggering `document_requested`.
 - **Notifications** — every email the system sends is recorded in `notification_logs` with a sent/failed status per attempt, and (locally) visible in real time via MailHog.
@@ -354,6 +355,44 @@ Every action a FORSA staff member (`SUPER_ADMIN`) can take:
 ---
 
 ## 10. State Machine
+
+### Two views of one application: Admin Pipeline vs. Student Timeline
+
+**Workflow architecture redesign.** `applications.current_status` (documented in full below) is, and remains, the one real stored state machine — it is genuinely internally consistent. But it mixes CRM-intake vocabulary (`new_lead`, `contacted`, `waiting_for_documents`) with automated-gate vocabulary (`capital_queue`, `more_info_required`) with post-decision operational vocabulary (`contract_signed`, `university_confirmed`) in a single flat enum, because that mixture genuinely reflects how the internal process works. The mistake was ever showing that same vocabulary to a student — "capital_queue"? "more_info_required"? — which is exactly the kind of raw, uninterpreted internal state this platform's own first principle (§ FORSA_PRINCIPLES.md — "students always know the next step") exists to prevent.
+
+The fix is **not** a second stored status. It's two pure, stateless functions (`applications/application-stages.util.ts`) that each take the same input — `current_status` plus document/guarantor completeness (which `current_status` alone doesn't capture) — and produce two different, audience-appropriate vocabularies:
+
+**Admin Pipeline** (internal operational process — `computeAdminStage`, surfaced as `application.adminStage` on the admin detail view):
+
+```
+Draft → Submitted → Completeness Verification → Guarantor → AI Review →
+Internal Review → Pre-Approval → Contract → University Confirmation →
+Approved → University Payment → Active Student
+```
+
+- **Draft** — not a stored state at all; it's the wizard in progress, before the student has completed all mandatory information. The admin pipeline never receives anything before this point — `createForSelf` rejects incomplete submissions outright (§5).
+- **Completeness Verification** / **Guarantor** — precedence-ordered checks applied while an application is still at `new_lead`/`contacted`/`waiting_for_documents`/`documents_received`: documents not all reviewed yet takes priority display over guarantor not yet accepted, which takes priority over "just hasn't been picked up by staff yet."
+- **AI Review** — documents and guarantor are both settled, but the application hasn't formally moved to `under_review`. (In the current implementation the AI interview itself runs client-side during the wizard, before submission — this stage represents the gap between "everything's in" and "a human is now actively looking at it," not a separate backend AI processing step.)
+- **Internal Review** — `under_review`, `more_info_required`, `on_hold`, `capital_queue`, `appealing` all collapse into this one stage; `capital_queue` additionally carries its own "Waiting List" badge (never worded as a rejection, per §3/§13).
+- **Pre-Approval** — `approved_level1/2/3`, before a contract exists.
+- **Contract** — `contract_sent`, `contract_signed`.
+- **University Confirmation** — `university_confirmed`.
+- **Approved** — has no distinct stored status of its own (there is no real gap between `university_confirmed` and `university_paid` to hold it). It completes together with University Confirmation once the application has progressed to University Payment or beyond, rather than inventing a new stored value for what is, in the current implementation, a single instantaneous checkpoint rather than a lingering state.
+- **University Payment** — `university_paid`.
+- **Active Student** — `active_student`, `completed`.
+- `rejected`, `fraud_flagged`, `withdrawn` are modeled as **exceptions**, shown as a distinct badge outside the linear sequence — never as "stuck at stage N," because none of them are a stalled happy path; they're real, different outcomes (and rejection specifically is never terminal — §2/§13).
+
+**Student Timeline** (customer journey, plain language — `computeStudentMilestone`, served via the self-scoped `GET /applications/me/:id/timeline`):
+
+```
+Application Started → Application Submitted → Documents Verified →
+Guarantor Status → Under Review → Decision → University Confirmation →
+Active Student
+```
+
+Every internal CRM term is absent by construction — a student's `current_status` might be `capital_queue` or `more_info_required` and they will only ever see "Under Review." "Guarantor Status" and "Decision" carry a live detail line (the guarantor's real status; "Approved"/reassuring not-approved copy) rather than just a checkmark, since those two milestones are as much about *what's true right now* as about *progress*.
+
+**Why this guarantees synchronization rather than just achieving it once:** both functions are computed fresh on every read, from the same two inputs, with no second stored value anywhere for either one. There is nothing to keep in sync by hand and nothing that can silently drift — the two views can describe an application differently, but they cannot disagree about where it actually stands, because they're both looking at the exact same ground truth. Verified live against real applications in every representative state (early review with no guarantor, and fully active) — see `MANUAL_TESTING_FINDINGS.md` for the specific side-by-side checks performed.
 
 ### `applications.current_status` (the primary entity state machine)
 
