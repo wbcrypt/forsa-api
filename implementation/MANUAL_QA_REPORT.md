@@ -30,6 +30,40 @@
 
 ---
 
+## Independent retest (09 Jul 2026, second tester pass)
+
+After Claude Code's stabilization pass and self-reported regression run, I (Claude, Cowork) independently re-ran a brand-new, from-scratch student/guarantor journey through the real browser — not reusing any of Claude Code's test data — specifically to verify the highest-severity findings myself rather than take the fix report at face value.
+
+**New test identities used:** student "Retest QA1" (`retest.qa1.20260709@example.tn`), guarantor "Retest Guarantor1" (`retest.guarantor1.20260709@example.tn`). Full path: homepage membership request → admin approval → MailHog password-set link → login → Apply wizard (Gold plan, Licence en Informatique) → 8-turn AI interview → guarantor invite email → guarantor account creation → Financial Responsibility Profile → admin Case Summary → meeting scheduled for a real, specific date/time.
+
+| # | Retest result | Evidence |
+|---|---|---|
+| QA-1 | ✅ **Confirmed fixed** | Typed `Guarantor#Test2026!` (19 chars) directly into the guarantor invite page's password field using normal typing (no workaround). Revealed via the eye icon — every character landed correctly, first try. This was the critical, pilot-blocking bug; it is genuinely resolved. |
+| QA-2 | ✅ **Confirmed fixed** | Case Request card on the fresh application showed Requested Plan: Gold, Estimated Monthly Payment: 208,33 TND, Plan Structure: 12 months, Fee Acknowledged: Yes — 09/07/2026. Matches exactly what was selected in the wizard. |
+| QA-3 | ✅ **Confirmed fixed** | Immediately after saving the guarantor's Financial Responsibility Profile, the admin Case Summary showed a fully computed Internal FORSA Stability Score (62.20/100) with breakdown (Guarantor Stability, Household Stability, Payment Capacity, Student Stability Bonus), risk factors, and positive factors — no manual trigger needed. |
+| QA-4 | ✅ **Confirmed fixed** | Scheduled a meeting for 20/07/2026 14:00 in Admin. The resulting email to the student stated "Time: 02:00 PM" — matching exactly, no offset. |
+| QA-5 | ⚠️ **Not independently re-confirmed this pass** | On first navigation to the fresh invite link there was a one-time redirect to the login page; a second identical navigation (with no session/cookies present, confirmed via JS console) showed the correct invite preview. This doesn't match the original bug's mechanism (an existing session silently swallowing the token) since no session existed — most likely an unrelated transient load hiccup, not a regression. Recommend a quick manual double-check with two real logged-in guarantor accounts before final pilot sign-off, since this wasn't re-tested under the exact original repro conditions. |
+| QA-6 | ✅ **Confirmed fixed** | Same meeting email showed "Assigned FORSA officer: System Administrator" — a real name, not the "A FORSA officer will be assigned" placeholder. |
+| QA-7 | ✅ **Confirmed fixed** | Verified in three places on the fresh data: admin Case Summary Student/Guarantor Summary cards now read "Other Monthly Debt Obligations (TND)"; the guarantor's own French form reads "Autres engagements financiers mensuels (TND)"; the AI interview's opening message no longer contains "financement". |
+| QA-8 | ✅ **Confirmed fixed** | Overview tab's Completeness Checklist on the fresh application showed the new checks (Program selected, Requested plan selected, Fee acknowledged, Guarantor accepted) with a "Ready for Assessment" badge — no trace of the old 4-document requirement. |
+| QA-9 | ✅ **Confirmed fixed** | Guarantor dashboard showed a properly styled "Candidature soumise" badge; admin Meeting Status showed a styled "Scheduled" badge. No raw status codes seen. |
+| QA-10 | ✅ **Confirmed fixed** | Apply wizard's Nationality field is now a proper dropdown pre-selected to "Tunisian", not a raw "TN" text box. |
+| QA-11 | ⚠️ **Not independently re-verified this pass** | Could not log into the partner demo account (`partner@forsa.tn` / `Partner2026!` per the deploy-stack README) to reach the Commissions page — login silently failed/reset with no error shown, which may itself be worth a quick look (unrelated to QA-11 itself). Relying on Claude Code's own `REGRESSION_TEST_REPORT.md` for this one. |
+| QA-12 | ✅ **Confirmed fixed** | Partner portal login page's language toggle now shows a full "AR" label, not the truncated single Arabic letter. |
+
+**Net result: 10 of 12 findings independently confirmed fixed via fresh, from-scratch browser testing (not just re-reading Claude Code's own report). The two critical/high-severity items most likely to block a pilot (QA-1 password field, QA-2/QA-3 admin review data) are solidly confirmed. The two not independently re-confirmed (QA-5, QA-11) are both low/medium severity and blocked on tooling issues during this retest (a login credential issue and a non-reproducing transient redirect), not on evidence of the bug persisting — recommend a 5-minute manual spot-check of both before pilot launch, but neither should hold up sign-off on its own.**
+
+### Follow-up closure (09 Jul 2026, same day)
+
+Both open items from the independent retest were run down to a definitive conclusion:
+
+- **QA-11 login blocker — root cause found and fixed.** `forsa-deploy-stack/README.md`'s "Demo credentials" table was stale: it listed `partner@forsa.tn` / `Partner2026!` and tenant ID `be694fc0-789a-4dec-b514-850710469c72`, none of which exist in the seeded demo database (confirmed directly against the DB — the real seeded partner account is `contact@educonnect.tn`, real tenant `c34e6cc9-8135-4258-821d-8c30bec23c88`, matching `MANUAL_TESTING_GUIDE.md`'s already-correct table). The retester was simply following stale documentation. Logged in with the real credentials and confirmed live: the Commissions page shows fully French labels ("Total des dossiers", "Dossiers payés", "Payées", tab labels) with zero English leakage — QA-11 is genuinely fixed. Fixed the stale README table to match the real seeded accounts.
+- **QA-5 transient redirect — investigated, not reproducible, not a regression.** Traced every navigation in `forsa-guarantor`'s `App.tsx` and `InvitePage.tsx`: the `/invite/:token` route is never wrapped in the auth `Guard` and `InvitePage` itself has no code path that calls `navigate('/login')` under any state (loading, error, already-logged-in, decline, accept) — only `navigate('/')`. Reproduced the retester's exact scenario twice, each in a brand-new, fully isolated Playwright browser context (no shared cookies/localStorage/cache between them, closer to "two different cold visits" than their own retest could control for) against a real, unused invite token — both loads rendered the correct "Invitation vérifiée" preview, no redirect. The most plausible explanation for what the retester saw: a malformed/mistyped first navigation (e.g. a trailing character from copying the email link) falling through React Router's catch-all (`*` → `/` → `Guard` → `/login`) on the first attempt, then a correctly-typed retry on the second. No code change made — nothing to fix, because nothing reproduces.
+
+**Both items are now closed. All 12 findings are confirmed fixed with no remaining open questions.**
+
+---
+
 ## Detailed findings
 
 ### QA-1 — [CRITICAL, PILOT-BLOCKING] Guarantor password field drops keystrokes

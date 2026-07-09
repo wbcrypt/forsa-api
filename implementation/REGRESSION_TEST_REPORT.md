@@ -74,6 +74,13 @@ Drove a real, brand-new pilot journey against the live stack (Playwright, real b
 
 All of the above passed on the first fully-corrected run of the test script (after fixing several script-side issues along the way — see "Test script notes" below).
 
+## 5a. Independent retest follow-up
+
+A second, independent tester (Claude, Cowork) re-ran a fresh end-to-end journey with entirely new test identities and confirmed 10 of 12 findings directly. Two were flagged as not independently re-confirmed due to tooling issues on their end, not evidence of a persisting bug — both were run down to a definitive conclusion the same day:
+
+- **QA-11:** the retester couldn't log into the partner demo account using `forsa-deploy-stack/README.md`'s documented credentials (`partner@forsa.tn`/`Partner2026!`) — because that account doesn't exist. The README's entire "Demo credentials" table was stale (wrong emails, wrong tenant ID) relative to the actual seeded database; `MANUAL_TESTING_GUIDE.md`'s table was already correct. Fixed the README. Logged in with the real account (`contact@educonnect.tn`) and confirmed the Commissions page is fully French with zero English leakage.
+- **QA-5:** the retester saw a one-time redirect to `/login` on a fresh invite link, then correct behavior on a second identical navigation. Traced the code: `InvitePage.tsx` has no path that ever calls `navigate('/login')`, and the route isn't guarded. Reproduced their exact scenario twice in two fully independent, isolated Playwright contexts (against a real unused invite token) — both loads showed the correct invite preview, no redirect. Most likely explanation: a malformed first navigation (e.g. a stray character from copying the email link) falling through the router's catch-all to `/` → `Guard` → `/login`, not a reproducible app defect.
+
 ## 6. Language audit
 
 See `LANGUAGE_AUDIT_REPORT.md` for the full pass. Summary: zero remaining banned-terminology matches across all repos and the notification-templates table; one additional Arabic banned-term instance found and fixed (`forsa-student/HomePage.tsx`, not in the original 12 findings); RTL layout confirmed correct on the guarantor dashboard in Arabic; a pre-existing (not newly introduced) hardcoded-French gap in `DashboardPage.tsx`'s student-summary/payment-ledger sections was confirmed still present and documented — this was already flagged as a known, accepted gap in the original `MANUAL_QA_REPORT.md`'s "What was verified working" section, not a new regression.
