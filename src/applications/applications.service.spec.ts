@@ -549,30 +549,38 @@ describe('ApplicationsService.findOneForAdmin — completeness checklist', () =>
     );
   });
 
-  const baseApp = { id: 'app-1', student_id: 'student-1', program_id: 'program-1' };
+  // QA-8 fix — Phase 14 (Final Case Flow Refinement) removed document
+  // upload from the application entirely, so allComplete no longer
+  // depends on application_documents rows (which no application created
+  // after Phase 14 will ever have) — it depends on requested_tier and
+  // platform_fee_acknowledged_at instead, matching exactly what
+  // pipeline.service.ts#stage1Completeness itself checks. documents is
+  // still returned (informational — staff may record what was verified
+  // in person at the meeting) but is inert with respect to allComplete.
+  const baseApp = {
+    id: 'app-1', student_id: 'student-1', program_id: 'program-1',
+    requested_tier: 'gold', platform_fee_acknowledged_at: '2026-01-01T00:00:00Z',
+  };
 
-  it('reports allComplete: true only when program, all 4 verified documents, and a live guarantor all exist', async () => {
+  it('reports allComplete: true when program, requested tier, fee acknowledgment, and a live guarantor all exist', async () => {
     query
       .mockResolvedValueOnce([baseApp]) // findOne
-      .mockResolvedValueOnce([
-        { document_type_code: 'national_id', status: 'verified' },
-        { document_type_code: 'bac_diploma', status: 'verified' },
-        { document_type_code: 'university_acceptance', status: 'under_review' },
-        { document_type_code: 'income_proof', status: 'verified' },
-      ])
+      .mockResolvedValueOnce([]) // no documents at all — irrelevant to allComplete now
       .mockResolvedValueOnce([{ status: 'pending_invitation', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
 
     const result = await service.findOneForAdmin('app-1', 'tenant-1');
 
     expect(result.completeness.programSelected).toBe(true);
+    expect(result.completeness.requestedTierSelected).toBe(true);
+    expect(result.completeness.platformFeeAcknowledged).toBe(true);
     expect(result.completeness.guarantor).toEqual(expect.objectContaining({ status: 'pending_invitation', name: 'Mohamed Ali' }));
     expect(result.completeness.allComplete).toBe(true);
   });
 
-  it('reports each missing document as absent and allComplete: false when documents are missing', async () => {
+  it('still returns document statuses for informational display, but they never block allComplete', async () => {
     query
       .mockResolvedValueOnce([baseApp])
-      .mockResolvedValueOnce([{ document_type_code: 'national_id', status: 'verified' }]) // only 1 of 4
+      .mockResolvedValueOnce([{ document_type_code: 'national_id', status: 'verified' }]) // only 1 of 4, none of them required anymore
       .mockResolvedValueOnce([{ status: 'active', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
 
     const result = await service.findOneForAdmin('app-1', 'tenant-1');
@@ -580,23 +588,30 @@ describe('ApplicationsService.findOneForAdmin — completeness checklist', () =>
     const byType = Object.fromEntries(result.completeness.documents.map((d: any) => [d.type, d.status]));
     expect(byType.national_id).toBe('verified');
     expect(byType.bac_diploma).toBe('absent');
-    expect(result.completeness.allComplete).toBe(false);
+    expect(result.completeness.allComplete).toBe(true);
   });
 
   it('reports guarantor: null and allComplete: false when no guarantor has ever been added', async () => {
     query
       .mockResolvedValueOnce([baseApp])
-      .mockResolvedValueOnce([
-        { document_type_code: 'national_id', status: 'verified' },
-        { document_type_code: 'bac_diploma', status: 'verified' },
-        { document_type_code: 'university_acceptance', status: 'verified' },
-        { document_type_code: 'income_proof', status: 'verified' },
-      ])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]); // no guarantor link
 
     const result = await service.findOneForAdmin('app-1', 'tenant-1');
 
     expect(result.completeness.guarantor).toBeNull();
+    expect(result.completeness.allComplete).toBe(false);
+  });
+
+  it('reports allComplete: false when the platform fee has not been acknowledged, even with everything else present', async () => {
+    query
+      .mockResolvedValueOnce([{ ...baseApp, platform_fee_acknowledged_at: null }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ status: 'active', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
+
+    const result = await service.findOneForAdmin('app-1', 'tenant-1');
+
+    expect(result.completeness.platformFeeAcknowledged).toBe(false);
     expect(result.completeness.allComplete).toBe(false);
   });
 });

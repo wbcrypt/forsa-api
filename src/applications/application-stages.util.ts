@@ -64,8 +64,21 @@ interface CompletenessInput {
   guarantor: { status: string } | null;
 }
 
-function docsAllVerified(completeness: CompletenessInput): boolean {
-  return completeness.documents.every(d => ['verified', 'under_review'].includes(d.status));
+// QA-8 fix — Phase 14 (Final Case Flow Refinement) removed document
+// upload from the application entirely ("no document upload during the
+// application; documents are verified physically during the meeting").
+// This function used to gate both the Admin Pipeline stage and the
+// Student Timeline milestone on application_documents rows that no
+// application created after Phase 14 will ever have, permanently
+// stalling every new Case at "Completeness Verification" /
+// "Documents Verified" — exactly the stale-checklist symptom reported
+// in manual QA. Documents are no longer a completeness dimension at
+// all; always true so this stage/milestone is satisfied immediately,
+// consistent with pipeline.service.ts#stage1Completeness (which Phase 14
+// already correctly updated to check requested_tier/
+// platform_fee_acknowledged_at instead of documents).
+function docsAllVerified(_completeness: CompletenessInput): boolean {
+  return true;
 }
 function guarantorActive(completeness: CompletenessInput): boolean {
   return completeness.guarantor?.status === 'active';

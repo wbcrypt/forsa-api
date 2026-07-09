@@ -143,7 +143,7 @@ export class AiService {
 const DEMO_SCRIPTS = {
   fr: {
     opening: (firstName: string, university: string, program: string) =>
-      `Bonjour ${firstName} ! Je suis vraiment heureux de vous rencontrer aujourd'hui.\n\nJe sais que faire une demande de financement peut sembler intimidant, mais je suis là pour apprendre à vous connaître — pas pour vous juger. Notre conversation restera confidentielle et sera transmise à l'équipe FORSA pour compléter l'évaluation de votre dossier.\n\nVous souhaitez étudier ${program} à ${university} — c'est un beau projet. Pour commencer, j'aimerais simplement vous entendre : **parlez-moi de vous**. Qui êtes-vous, et qu'est-ce qui vous a amené vers ce domaine ?`,
+      `Bonjour ${firstName} ! Je suis vraiment heureux de vous rencontrer aujourd'hui.\n\nJe sais que demander un plan de facilitation des frais universitaires peut sembler intimidant, mais je suis là pour apprendre à vous connaître — pas pour vous juger. Notre conversation restera confidentielle et sera transmise à l'équipe FORSA pour compléter l'évaluation de votre dossier.\n\nVous souhaitez étudier ${program} à ${university} — c'est un beau projet. Pour commencer, j'aimerais simplement vous entendre : **parlez-moi de vous**. Qui êtes-vous, et qu'est-ce qui vous a amené vers ce domaine ?`,
 
     educational1: (program: string) =>
       `C'est vraiment intéressant ! Je sens une réelle motivation dans vos mots.\n\nQuand vous imaginez dans 5 ou 10 ans, après avoir terminé vos études en ${program}, **quelle carrière espérez-vous construire ?** Qu'est-ce que vous voulez accomplir concrètement ?`,
@@ -177,7 +177,7 @@ const DEMO_SCRIPTS = {
 
   en: {
     opening: (firstName: string, university: string, program: string) =>
-      `Hello ${firstName}! I'm really glad to meet you today.\n\nI know that applying for financing can feel like a big step, but I'm here to get to know you — not to judge you. Our conversation is confidential and will be shared with the FORSA team to complete your application review.\n\nYou'd like to study ${program} at ${university} — that's a great project. To start, I'd just love to hear from you: **tell me about yourself**. Who are you, and what drew you to this field?`,
+      `Hello ${firstName}! I'm really glad to meet you today.\n\nI know applying for a Tuition Facilitation Plan can feel like a big step, but I'm here to get to know you — not to judge you. Our conversation is confidential and will be shared with the FORSA team to complete your application review.\n\nYou'd like to study ${program} at ${university} — that's a great project. To start, I'd just love to hear from you: **tell me about yourself**. Who are you, and what drew you to this field?`,
 
     educational1: (program: string) =>
       `That's really interesting! I can feel a genuine motivation in what you're sharing.\n\nWhen you picture yourself in 5 or 10 years after completing your studies in ${program}, **what career do you hope to build?** What do you want to achieve?`,
@@ -211,7 +211,7 @@ const DEMO_SCRIPTS = {
 
   ar: {
     opening: (firstName: string, university: string, program: string) =>
-      `مرحباً ${firstName}! يسعدني جداً لقاؤك اليوم.\n\nأعلم أن التقدم بطلب تمويل قد يبدو خطوة كبيرة، لكنني هنا لأتعرف عليك — وليس لأحكم عليك. محادثتنا سرية وستُشارك مع فريق FORSA لإتمام مراجعة طلبك.\n\nتودّ دراسة ${program} في ${university} — هذا مشروع رائع. للبدء، أودّ أن أسمع منك ببساطة: **أخبرني عن نفسك**. من أنت، وما الذي جذبك إلى هذا المجال؟`,
+      `مرحباً ${firstName}! يسعدني جداً لقاؤك اليوم.\n\nأعلم أن طلب خطة تيسير المعاليم الجامعية قد يبدو خطوة كبيرة، لكنني هنا لأتعرف عليك — وليس لأحكم عليك. محادثتنا سرية وستُشارك مع فريق FORSA لإتمام مراجعة طلبك.\n\nتودّ دراسة ${program} في ${university} — هذا مشروع رائع. للبدء، أودّ أن أسمع منك ببساطة: **أخبرني عن نفسك**. من أنت، وما الذي جذبك إلى هذا المجال؟`,
 
     educational1: (program: string) =>
       `هذا مثير للاهتمام حقاً! أشعر بدافعية حقيقية في كلامك.\n\nعندما تتخيل نفسك بعد 5 أو 10 سنوات من إتمام دراستك في ${program}، **ما المسار المهني الذي تأمل في بنائه؟** ماذا تريد أن تحقق؟`,

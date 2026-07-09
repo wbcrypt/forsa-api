@@ -321,13 +321,18 @@ export class ApplicationsService {
    */
   async getMyApplicationTimeline(userId: string, tenantId: string, applicationId: string) {
     const [owned] = await this.dataSource.query<any[]>(
-      `SELECT a.id, a.current_status, a.student_id, a.program_id FROM applications a
+      `SELECT a.id, a.current_status, a.student_id, a.program_id,
+              a.requested_tier, a.platform_fee_acknowledged_at
+       FROM applications a
        JOIN students s ON s.id = a.student_id
        WHERE a.id = $1 AND a.tenant_id = $2 AND s.user_id = $3`,
       [applicationId, tenantId, userId],
     );
     if (!owned) throw new NotFoundException('Application not found');
-    const completeness = await this.getCompleteness(owned.id, owned.student_id, !!owned.program_id);
+    const completeness = await this.getCompleteness(
+      owned.id, owned.student_id, !!owned.program_id,
+      owned.requested_tier, !!owned.platform_fee_acknowledged_at,
+    );
     const meeting = await this.getCurrentMeeting(owned.id);
     return computeStudentMilestone(owned.current_status, completeness, meeting);
   }
@@ -520,7 +525,10 @@ export class ApplicationsService {
    */
   async findOneForAdmin(id: string, tenantId: string) {
     const application = await this.findOne(id, tenantId);
-    application.completeness = await this.getCompleteness(application.id, application.student_id, !!application.program_id);
+    application.completeness = await this.getCompleteness(
+      application.id, application.student_id, !!application.program_id,
+      application.requested_tier, !!application.platform_fee_acknowledged_at,
+    );
     // Workflow architecture redesign — the Admin Pipeline view: internal
     // operational stages, not the raw CRM current_status. See
     // application-stages.util.ts for why this is computed rather than
@@ -649,7 +657,15 @@ export class ApplicationsService {
        RETURNING *`,
       [
         tenantId, applicationId, referenceNumber, dto.scheduledAt, dto.officeLocation,
-        dto.assignedOfficerUserId || null, dto.estimatedDurationMinutes || 30,
+        // QA-6 fix — the admin scheduling form has no UI field to pick a
+        // different officer, so dto.assignedOfficerUserId was always
+        // undefined and every meeting email fell back to the generic "A
+        // FORSA officer will be assigned" placeholder even though a real
+        // officer (whoever scheduled it) was right there. Defaulting to
+        // the scheduler themselves is the correct behavior for a small
+        // pilot team; an explicit assignedOfficerUserId (once a real
+        // "assign to" UI field exists) still overrides this.
+        dto.assignedOfficerUserId || createdBy, dto.estimatedDurationMinutes || 30,
         // Phase 14 — "Student meeting paperwork: CIN only. Academic
         // verification (university/program/enrollment/tuition) is
         // confirmed by the university, not uploaded by the student.
@@ -731,10 +747,21 @@ export class ApplicationsService {
       if (officer?.full_name) assignedOfficerName = officer.full_name;
     }
 
+    // QA-4 fix — this server (and any container it runs in) has no
+    // guarantee of running in Tunisia's timezone; the API container in
+    // this exact environment runs in UTC, one hour behind Africa/Tunis
+    // (UTC+1, no DST), which produced a meeting email showing "09:00"
+    // for a meeting an admin in Tunis scheduled and saw as "10:00" in
+    // their own browser. Formatting explicitly in Africa/Tunis — rather
+    // than relying on whatever OS timezone happens to be configured on
+    // the machine running this code — makes the email match what a
+    // Tunisia-based admin/student/guarantor actually sees, regardless of
+    // server deployment environment.
+    const meetingTz = 'Africa/Tunis';
     const variables = {
       studentName,
-      meetingDate: new Date(meeting.scheduled_at).toLocaleDateString(),
-      meetingTime: new Date(meeting.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      meetingDate: new Date(meeting.scheduled_at).toLocaleDateString('fr-TN', { timeZone: meetingTz }),
+      meetingTime: new Date(meeting.scheduled_at).toLocaleTimeString('fr-TN', { hour: '2-digit', minute: '2-digit', timeZone: meetingTz }),
       officeLocation: meeting.office_location,
       referenceNumber: meeting.reference_number,
       assignedOfficerName,
@@ -773,7 +800,20 @@ export class ApplicationsService {
     }
   }
 
-  private async getCompleteness(applicationId: string, studentId: string, programSelected: boolean) {
+  // QA-8 fix — Phase 14 (Final Case Flow Refinement) removed document
+  // upload from the application entirely, but this method's allComplete
+  // calculation still required all 4 documents to be verified — meaning
+  // it could never be true for any application created after Phase 14,
+  // permanently showing "Incomplete" on the admin Completeness Checklist
+  // regardless of the actual (now tier/fee-acknowledgment-based) Stage 1
+  // gate. documents is still returned (harmless, informational — staff
+  // may still record what was verified in person at the meeting) but no
+  // longer factors into allComplete; requestedTier/platformFeeAcknowledged
+  // now do, matching pipeline.service.ts#stage1Completeness exactly.
+  private async getCompleteness(
+    applicationId: string, studentId: string, programSelected: boolean,
+    requestedTier?: string | null, platformFeeAcknowledged?: boolean,
+  ) {
     const docs = await this.dataSource.query<any[]>(
       `SELECT document_type_code, status FROM application_documents WHERE application_id = $1`,
       [applicationId],
@@ -795,14 +835,15 @@ export class ApplicationsService {
 
     return {
       programSelected,
+      requestedTierSelected: !!requestedTier,
+      platformFeeAcknowledged: !!platformFeeAcknowledged,
       documents,
       guarantor: guarantorLink ? {
         status: guarantorLink.status, // pending_invitation | active | declined
         name: `${guarantorLink.first_name} ${guarantorLink.last_name}`,
         email: guarantorLink.email,
       } : null,
-      allComplete: programSelected
-        && documents.every(d => ['verified', 'under_review'].includes(d.status))
+      allComplete: programSelected && !!requestedTier && !!platformFeeAcknowledged
         && !!guarantorLink && ['active', 'pending_invitation'].includes(guarantorLink.status),
     };
   }

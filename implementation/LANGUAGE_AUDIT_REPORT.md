@@ -1,5 +1,115 @@
 # FORSA — Legal Language & Terminology Audit Report
 
+## Stabilization Phase addendum — 09 Jul 2026
+
+This section covers the language audit required alongside the 12-item
+`MANUAL_QA_REPORT.md` stabilization fixes. It supplements, not replaces,
+the 6 July audit below — this pass re-swept everything after the QA fixes
+landed and specifically checked that each fix works correctly in all
+three languages, not just French.
+
+**Scope:** every file touched by QA-1 through QA-12 (`forsa-student`,
+`forsa-guarantor`, `forsa-dashboard`, `forsa-partner`, `forsa-university`,
+`forsa-os`), plus a full repeat of the banned-terminology sweep across all
+five frontend repos, the backend, and the `notification_templates` DB
+table.
+
+### Missing translation keys / raw keys / mixed languages
+
+None found in QA-fixed code paths. Specifically checked:
+- `forsa-partner/lib/i18n.ts`'s new QA-11 keys (`totalRecords`,
+  `paidRecords`, `allLabel`, `paidOn`) — present in all 3 locale blocks.
+- `forsa-guarantor/DashboardPage.tsx`'s QA-9 `STATUS_LABELS` map — all 21
+  real `ApplicationStatus` values present in `en`/`fr`/`ar`.
+- `forsa-student/ApplyPage.tsx`'s QA-10 `NATIONALITIES` array — all 5
+  entries have `en`/`fr`/`ar` labels.
+- `forsa-partner`/`forsa-university`'s QA-12 locale-code labels ('EN' /
+  'FR' / 'AR') — consistent across both files.
+
+### Banned terminology — full re-sweep
+
+Re-ran the complete sweep (EN: `loan`/`credit`/`financing`; FR:
+`prêt`/`crédit`/`financement`; AR: `قرض`/`ائتمان`/`تمويل`) across all five
+frontend repos, the NestJS backend, and the `notification_templates` DB
+table (`body_template`/`subject_template` columns, all channels).
+
+**Found one previously-missed instance:** `forsa-student/src/pages/HomePage.tsx`
+had a second, separate hardcoded copy of the "waiting list" message (not
+pulled from the shared `i18n.ts` dict QA-7 already fixed) — its Arabic
+version used **تمويل** ("waiting for financing") while the EN/FR versions
+in the same card already used safe wording ("funding"/"fonds"). Fixed by
+changing the Arabic string to **الأموال اللازمة** ("necessary funds"),
+matching the tone of the EN/FR strings already in place.
+
+One non-issue confirmed intentional: `forsa-dashboard`'s internal
+double-entry ledger table (`PaymentsPage.tsx`) uses "Total Debit (DR)" /
+"Total Credit (CR)" column headers — standard IFRS accounting
+terminology for an internal finance ledger, not a consumer-facing lending
+reference. Left unchanged.
+
+Zero remaining matches after the HomePage.tsx fix, across all five
+frontend repos, the backend, and the notification templates table.
+
+### RTL layout
+
+Confirmed correct on the guarantor dashboard with Arabic selected
+(`document.documentElement`'s `dir` attribute correctly flips to `rtl`;
+sidebar, header, and the QA-9 status badge / QA-4 meeting-time card all
+mirror and render correctly). No RTL-specific layout breakage found in
+any QA-touched component.
+
+### Language switcher
+
+Verified functional on every QA-touched portal: `forsa-student` (apply
+wizard, home), `forsa-guarantor` (dashboard, invite page), `forsa-partner`
+(commissions), `forsa-university` (layout). The QA-12 fix specifically
+addressed the switcher's own Arabic label rendering as a single truncated
+letter in `forsa-partner` and `forsa-university`.
+
+### Known, pre-existing gap (documented, not fixed — out of stabilization scope)
+
+`forsa-guarantor/DashboardPage.tsx`'s student-summary card ("Université",
+"Programme", "Niveau"), payment-overview KPIs, and payment-ledger section
+("Calendrier des paiements", "Aucun calendrier de paiement disponible",
+etc.) are hardcoded French only — they don't route through the locale
+system at all, unlike the `CaseStatusCard`/`FinancialProfileForm`/
+`StatusBadge` sections of the same page (which are QA-9's fix and prior
+Phase 13/14 work, and are correctly localized). This is **not a
+regression introduced by any QA fix** — it's a pre-existing gap that
+`MANUAL_QA_REPORT.md` itself already flagged under "What was verified
+working" ("the pre-existing French-only sections below it are exactly
+the documented, intentional gap — not a new bug"). Fully localizing this
+section would mean rewriting a large, unrelated part of the dashboard —
+out of scope for a "fix only what each QA finding requires" stabilization
+pass. Flagged here for visibility, not actioned.
+
+Similarly, the Admin Case Detail page (`forsa-dashboard/
+ApplicationDetailPage.tsx`) has never localized its data-field labels
+(`STUDENT_FIELD_LABELS`, `GUARANTOR_FIELD_LABELS`, `DOCUMENT_LABELS`,
+and now `MEETING_STATUS_LABELS`) — this is a longstanding, consistent
+convention in that specific file (chrome/navigation is localized, data
+labels are not), and the QA-9 fix intentionally matched the existing
+convention rather than introducing inconsistent partial localization.
+
+Meeting "required documents" instruction text generated server-side
+(e.g. "Signed and completed كمبيالة") is always in the same fixed
+language regardless of the viewer's UI locale. كمبيالة itself is an
+intentionally-untranslated Tunisian legal-document term (no common
+English/French equivalent), not a translation bug — but the surrounding
+English sentence not adapting to the guarantor's chosen locale is a
+genuine, pre-existing gap, unrelated to any of the 12 QA findings.
+
+### Conclusion (stabilization phase)
+
+All 12 QA fixes work correctly in English, French, and Arabic. One
+additional banned-term instance was found and fixed. Two pre-existing,
+out-of-scope localization gaps were confirmed still present and
+documented for future work, not fixed in this pass.
+
+---
+
+# FORSA — Legal Language & Terminology Audit Report (original, 6 July 2026)
+
 **Date**: 6 July 2026
 **Scope**: `forsa-student`, `forsa-dashboard`, `forsa-university`, `forsa-partner`, `forsa-finance`, `forsa-guarantor`, `forsa-os`
 

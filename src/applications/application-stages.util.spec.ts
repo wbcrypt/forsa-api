@@ -20,9 +20,15 @@ const guarantorPending = { ...allVerified, guarantor: { status: 'pending_invitat
 const noGuarantor = { ...allVerified, guarantor: null };
 
 describe('computeAdminStage', () => {
-  it('shows Completeness Verification when documents are uploaded but not yet reviewed, even at new_lead', () => {
+  // QA-8 fix — Phase 14 removed document upload from the application
+  // entirely; documents are no longer a completeness dimension, so an
+  // application with only-uploaded (not yet reviewed) documents but an
+  // active guarantor is no longer stalled at Completeness Verification —
+  // it correctly proceeds to AI Review, matching what pipeline.service.ts
+  // #stage1Completeness itself has already stopped checking.
+  it('does not stall at Completeness Verification over document status anymore (Phase 14 removed document upload)', () => {
     const result = computeAdminStage('new_lead', onlyUploaded);
-    expect(result.currentKey).toBe('completeness_verification');
+    expect(result.currentKey).toBe('ai_review');
   });
 
   it('shows Guarantor once documents are verified but the guarantor has not yet accepted', () => {
@@ -95,10 +101,19 @@ describe('computeStudentMilestone', () => {
     expect(current.detail).toBe('Not added yet');
   });
 
-  it('shows Documents Verified as current once a guarantor is invited but documents are still just uploaded', () => {
+  // QA-8 fix — Phase 14 removed document upload from the application
+  // entirely, so "Documents Verified" can no longer be a real blocking
+  // step for the student. A guarantor invitation still pending was
+  // already sufficient to satisfy the Guarantor Status milestone before
+  // this fix (guarantorAtLeastInvited treats "pending" as invited) — with
+  // documents no longer gating either, nothing is left to block, so the
+  // milestone correctly settles on "Application Submitted" (submitted,
+  // nothing further required of the student yet) rather than stalling on
+  // a document-verification step that no longer exists.
+  it('does not stall on Documents Verified once a guarantor invitation is at least sent (Phase 14)', () => {
     const result = computeStudentMilestone('new_lead', { ...onlyUploaded, guarantor: { status: 'pending_invitation' } });
     const current = result.milestones.find(m => m.status === 'current')!;
-    expect(current.key).toBe('documents_verified');
+    expect(current.key).toBe('application_submitted');
   });
 
   it('never shows an internal CRM term like "contacted" or "capital_queue" as a milestone label', () => {
