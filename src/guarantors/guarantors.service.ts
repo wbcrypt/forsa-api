@@ -571,7 +571,7 @@ export class GuarantorsService {
            WHEN 'application.status_changed' THEN 'Mise à jour de la candidature'
            WHEN 'payment.verified' THEN 'Paiement confirmé'
            WHEN 'payment.rejected' THEN 'Reçu rejeté — veuillez soumettre à nouveau'
-           WHEN 'activation_meeting.scheduled' THEN 'Réunion d\'activation planifiée'
+           WHEN 'activation_meeting.scheduled' THEN 'Réunion d''activation planifiée'
            WHEN 'contract.signed' THEN 'Contrat signé'
            ELSE al.action
          END AS label

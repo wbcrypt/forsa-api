@@ -32,7 +32,7 @@ export function validatePasswordComplexity(password: string, minLength = 12): vo
   const hasUppercase = /[A-Z]/.test(password);
   const hasLowercase = /[a-z]/.test(password);
   const hasDigit = /\d/.test(password);
-  const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+  const hasSpecial = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password);
 
   if (!hasUppercase || !hasLowercase || !hasDigit || !hasSpecial) {
     throw new BadRequestException(

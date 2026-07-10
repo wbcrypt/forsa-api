@@ -34,7 +34,7 @@ let PartnersService = PartnersService_1 = class PartnersService {
         await this.audit(tenantId, createdBy, 'partner.created', partner.id, null, dto);
         return partner;
     }
-    async findAll(tenantId, pagination, filters) {
+    async findAll(tenantId, pagination) {
         const { page = 1, limit = 20 } = pagination;
         const offset = (0, pagination_util_1.getSkip)(page, limit);
         const [data, [count]] = await Promise.all([
@@ -183,16 +183,16 @@ let PartnersService = PartnersService_1 = class PartnersService {
                 partnerShare = grossAmount * (structure.partner_percentage / 100);
                 forsaShare = grossAmount - partnerShare;
                 break;
-            case 'percentage_financed':
+            case 'percentage_financed': {
                 const financedAmount = application.tuition_amount;
                 grossAmount = financedAmount * (structure.percentage / 100);
                 partnerShare = grossAmount * (structure.partner_percentage / 100);
                 forsaShare = grossAmount - partnerShare;
                 break;
+            }
             default:
                 throw new common_1.BadRequestException(`Unknown commission basis: ${commissionBasis}`);
         }
-        const policyCap = await this.policyService.getNumber('commission.structure.default', { tenantId, partnerId });
         return {
             grossAmount: Math.round(grossAmount * 100) / 100,
             forsaShare: Math.round(forsaShare * 100) / 100,
@@ -262,7 +262,7 @@ let PartnersService = PartnersService_1 = class PartnersService {
         return (0, pagination_util_1.paginate)(data, parseInt(count.count), page, limit);
     }
     async getPartnerDashboard(partnerId, tenantId) {
-        const [agreement] = await this.dataSource.query(`SELECT max_visible_information FROM partner_agreements
+        const [_agreement] = await this.dataSource.query(`SELECT max_visible_information FROM partner_agreements
        WHERE partner_id = $1 AND tenant_id = $2 AND status = 'active'
        LIMIT 1`, [partnerId, tenantId]);
         const [stats] = await this.dataSource.query(`SELECT

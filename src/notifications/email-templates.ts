@@ -44,7 +44,7 @@ export const FORSA_EMAIL_STYLES = `
   .disclaimer { font-size: 12px; color: #9ca3af; font-style: italic; margin-top: 20px; padding-top: 20px; border-top: 1px solid #f3f4f6; }
 `
 
-const emailWrapper = (content: string, footer?: string) => `
+const emailWrapper = (content: string) => `
 <!DOCTYPE html>
 <html lang="fr">
 <head>

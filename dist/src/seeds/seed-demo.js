@@ -214,12 +214,11 @@ function generateAiReport(student, lang = 'fr') {
     const score = student.aiScore || 70;
     return {
         scores: {
-            educational_readiness: Math.min(100, score + Math.floor(Math.random() * 10) - 5),
-            financial_readiness: Math.min(100, score + Math.floor(Math.random() * 12) - 6),
-            planning_readiness: Math.min(100, score + Math.floor(Math.random() * 8) - 4),
-            commitment_readiness: Math.min(100, score + Math.floor(Math.random() * 10) - 5),
-            interview_quality: Math.min(100, score + Math.floor(Math.random() * 6) - 3),
-            overall_forsa_score: score,
+            householdStability: Math.min(100, score + Math.floor(Math.random() * 10) - 5),
+            financialCapacity: Math.min(100, score + Math.floor(Math.random() * 12) - 6),
+            academicCommitment: Math.min(100, score + Math.floor(Math.random() * 8) - 4),
+            documentationQuality: Math.min(100, score + Math.floor(Math.random() * 10) - 5),
+            aiInterviewAssessment: Math.min(100, score + Math.floor(Math.random() * 6) - 3),
         },
         executive_summary: `${student.firstName} ${student.lastName} demonstrated strong motivation and a clear career vision during the FORSA readiness interview. Their financial situation is stable with a committed guarantor. Their understanding of the monthly payment commitment is solid and realistic.`,
         executive_summary_fr: `${student.firstName} ${student.lastName} a démontré une forte motivation et une vision professionnelle claire lors de l'entretien FORSA. Sa situation financière est stable avec un garant engagé. Sa compréhension de l'engagement mensuel est solide et réaliste.`,

@@ -18,13 +18,20 @@ const swagger_1 = require("@nestjs/swagger");
 const jwt_auth_guard_1 = require("../auth/guards/jwt-auth.guard");
 const decorators_1 = require("../common/decorators");
 const guarantors_service_1 = require("./guarantors.service");
-const register_guarantor_dto_1 = require("./dto/register-guarantor.dto");
+const accept_guarantor_invite_dto_1 = require("./dto/accept-guarantor-invite.dto");
+const financial_profile_dto_1 = require("./dto/financial-profile.dto");
 let GuarantorsController = class GuarantorsController {
     constructor(service) {
         this.service = service;
     }
-    registerSelf(dto) {
-        return this.service.registerSelf(dto);
+    previewInvite(token) {
+        return this.service.previewInvite(token);
+    }
+    acceptInvite(token, dto) {
+        return this.service.acceptInvite(token, dto);
+    }
+    declineInvite(token, dto) {
+        return this.service.declineInvite(token, dto);
     }
     getMyStudent(userId, tenantId) { return this.service.getLinkedStudent(userId, tenantId); }
     getMyStudentPayments(userId, tenantId) { return this.service.getLinkedStudentPayments(userId, tenantId); }
@@ -33,17 +40,40 @@ let GuarantorsController = class GuarantorsController {
     submitReceipt(userId, tenantId, body) { return this.service.submitReceiptOnBehalf(userId, tenantId, body); }
     initiateKonnect(userId, tenantId, email, fullName, body) { return this.service.initiateKonnectOnBehalf(userId, tenantId, email, fullName, body); }
     getNotifications(userId, tenantId) { return this.service.getNotifications(userId, tenantId); }
+    getMyCaseStatus(userId, tenantId) { return this.service.getMyCaseStatus(userId, tenantId); }
+    updateMyFinancialProfile(userId, tenantId, dto) { return this.service.updateMyFinancialProfile(userId, tenantId, dto); }
 };
 exports.GuarantorsController = GuarantorsController;
 __decorate([
     (0, decorators_1.Public)(),
-    (0, common_1.Post)('register'),
-    (0, swagger_1.ApiOperation)({ summary: 'Public guarantor self-registration — activates portal access for an existing guarantor record (T-102)' }),
-    __param(0, (0, common_1.Body)()),
+    (0, common_1.Get)('invite/:token'),
+    (0, swagger_1.ApiOperation)({ summary: 'Preview a guarantor invite before accepting/declining — who invited you, for which student' }),
+    __param(0, (0, common_1.Param)('token')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [register_guarantor_dto_1.RegisterGuarantorDto]),
+    __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
-], GuarantorsController.prototype, "registerSelf", null);
+], GuarantorsController.prototype, "previewInvite", null);
+__decorate([
+    (0, decorators_1.Public)(),
+    (0, common_1.Post)('invite/:token/accept'),
+    (0, swagger_1.ApiOperation)({ summary: 'Accept a guarantor invite — sets a password and activates portal access' }),
+    __param(0, (0, common_1.Param)('token')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, accept_guarantor_invite_dto_1.AcceptGuarantorInviteDto]),
+    __metadata("design:returntype", void 0)
+], GuarantorsController.prototype, "acceptInvite", null);
+__decorate([
+    (0, decorators_1.Public)(),
+    (0, common_1.Post)('invite/:token/decline'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Decline a guarantor invite — no account is created' }),
+    __param(0, (0, common_1.Param)('token')),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, accept_guarantor_invite_dto_1.DeclineGuarantorInviteDto]),
+    __metadata("design:returntype", void 0)
+], GuarantorsController.prototype, "declineInvite", null);
 __decorate([
     (0, common_1.Get)('my-student'),
     __param(0, (0, decorators_1.CurrentUser)('id')),
@@ -112,6 +142,25 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], GuarantorsController.prototype, "getNotifications", null);
+__decorate([
+    (0, common_1.Get)('my-case'),
+    (0, swagger_1.ApiOperation)({ summary: "The guarantor's own Case status — profile completeness, documents, meeting" }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], GuarantorsController.prototype, "getMyCaseStatus", null);
+__decorate([
+    (0, common_1.Patch)('my-case/financial-profile'),
+    (0, swagger_1.ApiOperation)({ summary: 'Complete or update the Financial Responsibility Profile (Step 4 of the Case wizard)' }),
+    __param(0, (0, decorators_1.CurrentUser)('id')),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, financial_profile_dto_1.UpdateFinancialProfileDto]),
+    __metadata("design:returntype", void 0)
+], GuarantorsController.prototype, "updateMyFinancialProfile", null);
 exports.GuarantorsController = GuarantorsController = __decorate([
     (0, swagger_1.ApiTags)('Guarantors'),
     (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),

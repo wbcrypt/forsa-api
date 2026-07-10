@@ -1,16 +1,29 @@
 import { DataSource } from 'typeorm';
 import { KonnectService } from '../payments/konnect.service';
 import { DocumentsService } from '../documents/documents.service';
-import { RegisterGuarantorDto } from './dto/register-guarantor.dto';
+import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto';
+import { UpdateFinancialProfileDto } from './dto/financial-profile.dto';
 export declare class GuarantorsService {
     private readonly db;
     private readonly konnect;
     private readonly documents;
     constructor(db: DataSource, konnect: KonnectService, documents: DocumentsService);
-    registerSelf(dto: RegisterGuarantorDto): Promise<{
+    private findInviteByToken;
+    previewInvite(rawToken: string): Promise<{
+        guarantorFirstName: any;
+        guarantorLastName: any;
+        email: any;
+        tenantId: any;
+        studentFirstName: any;
+        expiresAt: any;
+    }>;
+    acceptInvite(rawToken: string, dto: AcceptGuarantorInviteDto): Promise<{
         guarantorId: any;
         userId: any;
         email: any;
+    }>;
+    declineInvite(rawToken: string, dto: DeclineGuarantorInviteDto): Promise<{
+        success: boolean;
     }>;
     private findLinkedStudent;
     getLinkedStudent(userId: string, tenantId: string): Promise<{
@@ -37,6 +50,17 @@ export declare class GuarantorsService {
         installments: any[];
         application: any;
     }>;
+    getMyCaseStatus(userId: string, tenantId: string): Promise<{
+        invitationStatus: string;
+        profileStatus: string;
+        documentsStatus: any;
+        meeting: any;
+        nextAction: string;
+    }>;
+    updateMyFinancialProfile(userId: string, tenantId: string, dto: UpdateFinancialProfileDto): Promise<{
+        status: string;
+    }>;
+    private recomputeStabilityScore;
     getReceiptUploadUrl(userId: string, tenantId: string, fileName: string, contentType: string): Promise<{
         uploadUrl: string;
         documentId: string;

@@ -245,9 +245,9 @@ let ScoreService = ScoreService_1 = class ScoreService {
     }
     async checkAndUpdateCeiling(studentId, tenantId) {
         const [activeFraud] = await this.dataSource.query(`SELECT id FROM score_events
-       WHERE student_id = $1 AND is_active = true
+       WHERE student_id = $1 AND tenant_id = $2 AND is_active = true
          AND (event_code LIKE 'FRAUD%' OR event_code = 'CONTRACT_BREACH_SEVERE')
-       LIMIT 1`, [studentId]);
+       LIMIT 1`, [studentId, tenantId]);
         if (!activeFraud) {
             await this.dataSource.query(`UPDATE forsa_scores SET ceiling_active = false WHERE student_id = $1`, [studentId]);
         }

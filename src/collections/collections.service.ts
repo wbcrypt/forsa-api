@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
 import { ScoreDimension, SourceTrustLevel } from '../common/enums';

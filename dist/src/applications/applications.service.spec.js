@@ -95,12 +95,44 @@ describe('ApplicationsService.transitionStatus', () => {
             .mockResolvedValueOnce(undefined)
             .mockResolvedValueOnce(undefined)
             .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce([{ membership_status: 'bronze' }])
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
             .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
         await service.transitionStatus('app-1', 'tenant-1', enums_1.ApplicationStatus.APPROVED_LEVEL2, 'staff-1', undefined, undefined, 'gold');
         expect(notifications.send).toHaveBeenCalledWith(expect.objectContaining({
             templateCode: 'application_approved',
             variables: expect.objectContaining({ tierSuffix: ' (Gold tier)' }),
         }));
+    });
+    it('ratchets the student membership_status up to match the approved tier', async () => {
+        const underReview = { ...baseApplication, current_status: enums_1.ApplicationStatus.UNDER_REVIEW };
+        query
+            .mockResolvedValueOnce([underReview])
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce([{ membership_status: 'bronze' }])
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
+        await service.transitionStatus('app-1', 'tenant-1', enums_1.ApplicationStatus.APPROVED_LEVEL2, 'staff-1', undefined, undefined, 'silver');
+        expect(query).toHaveBeenCalledWith(expect.stringContaining('UPDATE students SET membership_status'), ['student-1', 'silver']);
+    });
+    it('never lowers membership_status when the approved tier ranks below the student\'s current one', async () => {
+        const underReview = { ...baseApplication, current_status: enums_1.ApplicationStatus.UNDER_REVIEW };
+        query
+            .mockResolvedValueOnce([underReview])
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce([{ membership_status: 'gold' }])
+            .mockResolvedValueOnce([{ first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com' }]);
+        await service.transitionStatus('app-1', 'tenant-1', enums_1.ApplicationStatus.APPROVED_LEVEL1, 'staff-1', undefined, undefined, 'silver');
+        expect(query).not.toHaveBeenCalledWith(expect.stringContaining('UPDATE students SET membership_status'), expect.anything());
     });
     it('sends a waiting_list notification (not a rejection) when transitioned to CAPITAL_QUEUE', async () => {
         const underReview = { ...baseApplication, current_status: enums_1.ApplicationStatus.UNDER_REVIEW };
@@ -148,18 +180,68 @@ describe('ApplicationsService.createForSelf', () => {
         query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'blacklisted' }]);
         await expect(service.createForSelf('user-1', 'tenant-1', {})).rejects.toThrow('This account cannot submit financing requests.');
     });
+    const COMPLETE_DTO = {
+        programId: 'program-1', universityId: 'uni-1', academicYear: '2026-2027',
+        requestedTier: 'silver', platformFeeAcknowledged: true,
+    };
     it('resolves studentId from the caller identity and never trusts a client-supplied one', async () => {
         query
             .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ tuition_amount: 5000 }])
             .mockResolvedValueOnce([{ id: 'app-1', student_id: 'student-1' }])
             .mockResolvedValueOnce(undefined)
             .mockResolvedValueOnce(undefined)
             .mockResolvedValueOnce([]);
-        await service.createForSelf('user-1', 'tenant-1', { studentId: 'someone-elses-student-id', tuitionAmount: 5000 });
-        const insertCall = query.mock.calls[1];
+        await service.createForSelf('user-1', 'tenant-1', { ...COMPLETE_DTO, studentId: 'someone-elses-student-id' });
+        const insertCall = query.mock.calls[3];
         expect(insertCall[0]).toContain('INSERT INTO applications');
         expect(insertCall[1]).toContain('student-1');
         expect(insertCall[1]).not.toContain('someone-elses-student-id');
+    });
+    it('rejects submission when required fields are missing', async () => {
+        query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+            .mockResolvedValueOnce([]);
+        await expect(service.createForSelf('user-1', 'tenant-1', {}))
+            .rejects.toThrow(/program, university, academic year, requested plan \(Silver or Gold\), administrative fee acknowledgment/);
+    });
+    it('rejects submission when the selected program has no tuition amount configured', async () => {
+        query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ tuition_amount: null }]);
+        await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO))
+            .rejects.toThrow(/does not have a tuition amount configured/);
+    });
+    it('rejects submission when requestedTier is not silver or gold', async () => {
+        query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+            .mockResolvedValueOnce([]);
+        await expect(service.createForSelf('user-1', 'tenant-1', { ...COMPLETE_DTO, requestedTier: 'platinum' }))
+            .rejects.toThrow(/requested plan \(Silver or Gold\)/);
+    });
+    it('rejects submission when the platform fee has not been acknowledged', async () => {
+        query.mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+            .mockResolvedValueOnce([]);
+        await expect(service.createForSelf('user-1', 'tenant-1', { ...COMPLETE_DTO, platformFeeAcknowledged: false }))
+            .rejects.toThrow(/administrative fee acknowledgment/);
+    });
+    it('blocks a second submission while one is already in flight', async () => {
+        query
+            .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+            .mockResolvedValueOnce([{ id: 'existing-app-1' }]);
+        await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO)).rejects.toThrow('You already have a Tuition Facilitation request in progress. Please wait for a decision before submitting another.');
+    });
+    it('does not block a resubmission when the only prior application is a terminal state', async () => {
+        query
+            .mockResolvedValueOnce([{ id: 'student-1', membership_status: 'bronze' }])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ tuition_amount: 5000 }])
+            .mockResolvedValueOnce([{ id: 'app-2', student_id: 'student-1' }])
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce(undefined)
+            .mockResolvedValueOnce([]);
+        await expect(service.createForSelf('user-1', 'tenant-1', COMPLETE_DTO)).resolves.toBeDefined();
+        const dupCheckCall = query.mock.calls[1];
+        expect(dupCheckCall[0]).toContain("NOT IN ('rejected', 'completed', 'withdrawn')");
     });
 });
 describe('ApplicationsService.create — deterministic AI scoring (T-211)', () => {
@@ -249,6 +331,59 @@ describe('ApplicationsService.confirmEnrollment', () => {
         const updateCall = query.mock.calls[2];
         expect(updateCall[0]).toContain('UPDATE applications SET current_status');
         expect(updateCall[1]).toContain('university_confirmed');
+    });
+});
+describe('ApplicationsService.findOneForAdmin — completeness checklist', () => {
+    let service;
+    let query;
+    beforeEach(() => {
+        query = jest.fn();
+        service = new applications_service_1.ApplicationsService({ query }, {}, {});
+    });
+    const baseApp = {
+        id: 'app-1', student_id: 'student-1', program_id: 'program-1',
+        requested_tier: 'gold', platform_fee_acknowledged_at: '2026-01-01T00:00:00Z',
+    };
+    it('reports allComplete: true when program, requested tier, fee acknowledgment, and a live guarantor all exist', async () => {
+        query
+            .mockResolvedValueOnce([baseApp])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ status: 'pending_invitation', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
+        const result = await service.findOneForAdmin('app-1', 'tenant-1');
+        expect(result.completeness.programSelected).toBe(true);
+        expect(result.completeness.requestedTierSelected).toBe(true);
+        expect(result.completeness.platformFeeAcknowledged).toBe(true);
+        expect(result.completeness.guarantor).toEqual(expect.objectContaining({ status: 'pending_invitation', name: 'Mohamed Ali' }));
+        expect(result.completeness.allComplete).toBe(true);
+    });
+    it('still returns document statuses for informational display, but they never block allComplete', async () => {
+        query
+            .mockResolvedValueOnce([baseApp])
+            .mockResolvedValueOnce([{ document_type_code: 'national_id', status: 'verified' }])
+            .mockResolvedValueOnce([{ status: 'active', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
+        const result = await service.findOneForAdmin('app-1', 'tenant-1');
+        const byType = Object.fromEntries(result.completeness.documents.map((d) => [d.type, d.status]));
+        expect(byType.national_id).toBe('verified');
+        expect(byType.bac_diploma).toBe('absent');
+        expect(result.completeness.allComplete).toBe(true);
+    });
+    it('reports guarantor: null and allComplete: false when no guarantor has ever been added', async () => {
+        query
+            .mockResolvedValueOnce([baseApp])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([]);
+        const result = await service.findOneForAdmin('app-1', 'tenant-1');
+        expect(result.completeness.guarantor).toBeNull();
+        expect(result.completeness.allComplete).toBe(false);
+    });
+    it('reports allComplete: false when the platform fee has not been acknowledged, even with everything else present', async () => {
+        query
+            .mockResolvedValueOnce([{ ...baseApp, platform_fee_acknowledged_at: null }])
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ status: 'active', first_name: 'Mohamed', last_name: 'Ali', email: 'g@example.com' }]);
+        const result = await service.findOneForAdmin('app-1', 'tenant-1');
+        expect(result.completeness.platformFeeAcknowledged).toBe(false);
+        expect(result.completeness.allComplete).toBe(false);
     });
 });
 describe('ApplicationsService.findOneForMyUniversity / getStatusHistoryForMyUniversity', () => {

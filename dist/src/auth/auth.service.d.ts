@@ -37,10 +37,10 @@ export declare class AuthService {
     validateCredentials(email: string, password: string, tenantId: string): Promise<User | null>;
     login(loginDto: LoginDto, ipAddress: string, userAgent: string): Promise<AuthTokens>;
     verifyMfaAndLogin(dto: VerifyMfaDto, ipAddress: string, userAgent: string): Promise<AuthTokens>;
-    refreshTokens(dto: RefreshTokenDto, ipAddress: string): Promise<AuthTokens>;
+    refreshTokens(dto: RefreshTokenDto, _ipAddress: string): Promise<AuthTokens>;
     setPassword(rawToken: string, newPassword: string): Promise<void>;
     logout(sessionId: string, userId: string, ipAddress: string): Promise<void>;
-    logoutAll(userId: string, currentSessionId: string): Promise<void>;
+    logoutAll(userId: string, _currentSessionId: string): Promise<void>;
     hashPassword(password: string): Promise<string>;
     getUserPermissions(userId: string, tenantId: string): Promise<string[]>;
     validateJwtPayload(payload: JwtPayload): Promise<any>;

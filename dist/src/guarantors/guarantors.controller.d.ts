@@ -1,12 +1,24 @@
 import { GuarantorsService } from './guarantors.service';
-import { RegisterGuarantorDto } from './dto/register-guarantor.dto';
+import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto';
+import { UpdateFinancialProfileDto } from './dto/financial-profile.dto';
 export declare class GuarantorsController {
     private readonly service;
     constructor(service: GuarantorsService);
-    registerSelf(dto: RegisterGuarantorDto): Promise<{
+    previewInvite(token: string): Promise<{
+        guarantorFirstName: any;
+        guarantorLastName: any;
+        email: any;
+        tenantId: any;
+        studentFirstName: any;
+        expiresAt: any;
+    }>;
+    acceptInvite(token: string, dto: AcceptGuarantorInviteDto): Promise<{
         guarantorId: any;
         userId: any;
         email: any;
+    }>;
+    declineInvite(token: string, dto: DeclineGuarantorInviteDto): Promise<{
+        success: boolean;
     }>;
     getMyStudent(userId: string, tenantId: string): Promise<{
         student: {
@@ -61,5 +73,15 @@ export declare class GuarantorsController {
     }>;
     getNotifications(userId: string, tenantId: string): Promise<{
         notifications: any[];
+    }>;
+    getMyCaseStatus(userId: string, tenantId: string): Promise<{
+        invitationStatus: string;
+        profileStatus: string;
+        documentsStatus: any;
+        meeting: any;
+        nextAction: string;
+    }>;
+    updateMyFinancialProfile(userId: string, tenantId: string, dto: UpdateFinancialProfileDto): Promise<{
+        status: string;
     }>;
 }

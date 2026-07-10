@@ -6,7 +6,6 @@ import { ContractsService } from './contracts.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { CurrentUser, CurrentTenant, RequirePermissions } from '../common/decorators';
-import { ContractType } from '../common/enums';
 
 @ApiTags('Contracts')
 @ApiBearerAuth()

@@ -141,7 +141,7 @@ let UsersService = UsersService_1 = class UsersService {
         return updated;
     }
     async deactivate(id, tenantId, deactivatedBy, reason) {
-        const user = await this.findOne(id, tenantId);
+        await this.findOne(id, tenantId);
         if (id === deactivatedBy) {
             throw new common_1.BadRequestException('Cannot deactivate your own account');
         }
@@ -181,23 +181,25 @@ let UsersService = UsersService_1 = class UsersService {
        WHERE user_id = $1 AND invalidated_at IS NULL`, [userId]);
     }
     async getUserRolesAndPermissions(userId, tenantId) {
+        await this.findOne(userId, tenantId);
         const roles = await this.dataSource.query(`SELECT r.id, r.name, r.description
        FROM roles r
        JOIN user_roles ur ON ur.role_id = r.id
-       WHERE ur.user_id = $1
+       WHERE ur.user_id = $1 AND r.tenant_id = $2
          AND (ur.effective_until IS NULL OR ur.effective_until > CURRENT_DATE)
-         AND ur.revoked_at IS NULL`, [userId]);
+         AND ur.revoked_at IS NULL`, [userId, tenantId]);
         const permissions = await this.dataSource.query(`SELECT DISTINCT p.code, p.module, p.action, p.is_high_impact
        FROM permissions p
        JOIN role_permissions rp ON rp.permission_id = p.id
        JOIN user_roles ur ON ur.role_id = rp.role_id
-       WHERE ur.user_id = $1
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1 AND r.tenant_id = $2
          AND (ur.effective_until IS NULL OR ur.effective_until > CURRENT_DATE)
-         AND ur.revoked_at IS NULL`, [userId]);
+         AND ur.revoked_at IS NULL`, [userId, tenantId]);
         return { roles, permissions };
     }
     async assignRole(userId, roleId, tenantId, assignedBy) {
-        const [user, role] = await Promise.all([
+        const [, role] = await Promise.all([
             this.findOne(userId, tenantId),
             this.dataSource.query(`SELECT id FROM roles WHERE id = $1 AND tenant_id = $2`, [roleId, tenantId]),
         ]);
@@ -243,7 +245,7 @@ let UsersService = UsersService_1 = class UsersService {
         const hasUppercase = /[A-Z]/.test(password);
         const hasLowercase = /[a-z]/.test(password);
         const hasDigit = /\d/.test(password);
-        const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+        const hasSpecial = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password);
         if (!hasUppercase || !hasLowercase || !hasDigit || !hasSpecial) {
             throw new common_1.BadRequestException('Password must contain uppercase, lowercase, digit, and special character');
         }

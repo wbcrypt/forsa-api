@@ -91,15 +91,12 @@ export class AiService {
     studentData?: any,
   ): Promise<{ content: string; demo: true }> {
     const turnCount = messages.filter(m => m.role === 'user').length
-    const lastName = studentData?.lastName || ''
     const firstName = studentData?.firstName || ''
     const lang: 'ar' | 'fr' | 'en' = studentData?.preferredLanguage || 'fr'
     const university = studentData?.universityName || 'votre université'
     const program = studentData?.program || 'votre programme'
     const paymentBy = studentData?.paymentResponsible || 'parent'
     const hasGuarantor = studentData?.hasGuarantor === 'yes'
-
-    const lastUserMsg = messages.filter(m => m.role === 'user').slice(-1)[0]?.content?.toLowerCase() || ''
 
     // Opening message (turn 0 — before any user message)
     if (turnCount === 0) {

@@ -42,7 +42,6 @@ export class AuditInterceptor implements NestInterceptor {
       return next.handle();
     }
 
-    const startTime = Date.now();
     const user = request.user;
     const tenantId = request.tenantId;
 

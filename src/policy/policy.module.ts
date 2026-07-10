@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
 import { PolicyController } from './policy.controller';
 import { PolicyService } from './policy.service';
 

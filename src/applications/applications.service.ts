@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { ApplicationStatus, FinancingLevel, NotificationChannel } from '../common/enums';
+import { ApplicationStatus, NotificationChannel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
 import { NotificationsService } from '../notifications/notifications.service';
 import { computeHouseholdStabilityScore, deriveRecommendation } from '../ai/household-stability.util';

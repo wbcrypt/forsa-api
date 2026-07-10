@@ -72,7 +72,7 @@ let ExecutionService = ExecutionService_1 = class ExecutionService {
             throw err;
         }
     }
-    async dispatch(request, manager) {
+    async dispatch(request, _manager) {
         const { actionType, payload, tenantId, requestedBy } = request;
         switch (actionType) {
             case 'contract.generate':

@@ -9,36 +9,27 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RegisterGuarantorDto = void 0;
+exports.DeclineGuarantorInviteDto = exports.AcceptGuarantorInviteDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
-const class_transformer_1 = require("class-transformer");
-class RegisterGuarantorDto {
+class AcceptGuarantorInviteDto {
 }
-exports.RegisterGuarantorDto = RegisterGuarantorDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ description: 'Tenant UUID — must match the tenantId used for POST /auth/login' }),
-    (0, class_validator_1.IsUUID)(),
-    __metadata("design:type", String)
-], RegisterGuarantorDto.prototype, "tenantId", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'guarantor@example.com', description: 'Must match the email a staff member already entered when adding this guarantor to a student' }),
-    (0, class_validator_1.IsEmail)(),
-    (0, class_transformer_1.Transform)(({ value }) => value?.toLowerCase()?.trim()),
-    __metadata("design:type", String)
-], RegisterGuarantorDto.prototype, "email", void 0);
+exports.AcceptGuarantorInviteDto = AcceptGuarantorInviteDto;
 __decorate([
     (0, swagger_1.ApiProperty)({ minLength: 12 }),
     (0, class_validator_1.IsString)(),
     (0, class_validator_1.MinLength)(12),
     (0, class_validator_1.MaxLength)(128),
     __metadata("design:type", String)
-], RegisterGuarantorDto.prototype, "password", void 0);
+], AcceptGuarantorInviteDto.prototype, "password", void 0);
+class DeclineGuarantorInviteDto {
+}
+exports.DeclineGuarantorInviteDto = DeclineGuarantorInviteDto;
 __decorate([
-    (0, swagger_1.ApiProperty)(),
+    (0, swagger_1.ApiProperty)({ required: false, description: 'Optional reason shown to FORSA staff' }),
+    (0, class_validator_1.IsOptional)(),
     (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(1),
-    (0, class_validator_1.MaxLength)(150),
+    (0, class_validator_1.MaxLength)(500),
     __metadata("design:type", String)
-], RegisterGuarantorDto.prototype, "fullName", void 0);
-//# sourceMappingURL=register-guarantor.dto.js.map
+], DeclineGuarantorInviteDto.prototype, "reason", void 0);
+//# sourceMappingURL=accept-guarantor-invite.dto.js.map

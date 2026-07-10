@@ -1,4 +1,4 @@
-import { Entity, Column, Index, ManyToMany, JoinTable } from 'typeorm';
+import { Entity, Column, Index } from 'typeorm';
 import { TenantScopedEntity } from '../../common/entities/base.entity';
 
 @Entity('roles')

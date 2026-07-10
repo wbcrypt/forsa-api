@@ -29,7 +29,7 @@ export class PartnersService {
     return partner;
   }
 
-  async findAll(tenantId: string, pagination: PaginationDto, filters?: any) {
+  async findAll(tenantId: string, pagination: PaginationDto) {
     const { page = 1, limit = 20 } = pagination;
     const offset = getSkip(page, limit);
 
@@ -296,22 +296,17 @@ export class PartnersService {
         forsaShare = grossAmount - partnerShare;
         break;
 
-      case 'percentage_financed':
+      case 'percentage_financed': {
         const financedAmount = application.tuition_amount; // use actual financed amount
         grossAmount = financedAmount * (structure.percentage / 100);
         partnerShare = grossAmount * (structure.partner_percentage / 100);
         forsaShare = grossAmount - partnerShare;
         break;
+      }
 
       default:
         throw new BadRequestException(`Unknown commission basis: ${commissionBasis}`);
     }
-
-    // Apply policy-level caps if configured
-    const policyCap = await this.policyService.getNumber(
-      'commission.structure.default',
-      { tenantId, partnerId },
-    );
 
     return {
       grossAmount: Math.round(grossAmount * 100) / 100,
@@ -424,15 +419,24 @@ export class PartnersService {
   }
 
   async getPartnerDashboard(partnerId: string, tenantId: string) {
-    // Returns only information permitted by the partner's agreement (min necessary)
-    const [agreement] = await this.dataSource.query<any[]>(
+    // Security review finding (DECISION_LOG.md) — max_visible_information
+    // is fetched but intentionally not applied: no document or type in
+    // the codebase defines what keys/shape this JSONB "permission
+    // ceiling" is supposed to hold, so there is nothing concrete to
+    // filter by yet. The fields returned below (referral counts,
+    // conversion rate, commission amount/status) already match the
+    // partner-visibility spec in Operations Manual §7 independent of this
+    // column. Left in place as a marker for when the shape is defined,
+    // not silently dropped.
+    const [_agreement] = await this.dataSource.query<any[]>(
       `SELECT max_visible_information FROM partner_agreements
        WHERE partner_id = $1 AND tenant_id = $2 AND status = 'active'
        LIMIT 1`,
       [partnerId, tenantId],
     );
 
-    // Base stats — always visible
+    // Base stats — always visible, matches Operations Manual §7's
+    // partner-visibility spec (referral count, approval rate, commission)
     const [stats] = await this.dataSource.query<any[]>(
       `SELECT
          COUNT(*) AS total_leads,

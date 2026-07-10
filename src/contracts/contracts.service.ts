@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
@@ -55,12 +55,6 @@ export class ContractsService {
       [params.financingDecisionId, params.tenantId],
     );
     if (!decision) throw new NotFoundException('Tuition facilitation decision not found');
-
-    // Get contract template from policy
-    const templatePolicy = await this.policyService.resolve(
-      `contract.template.${params.contractType}`,
-      { tenantId: params.tenantId, universityId: decision.university_id },
-    );
 
     // Get payment terms from university agreement
     const [agreement] = await this.dataSource.query<any[]>(
@@ -229,7 +223,7 @@ export class ContractsService {
     );
   }
 
-  async getContractDownloadUrl(contractId: string, tenantId: string, requestedBy: string) {
+  async getContractDownloadUrl(contractId: string, tenantId: string, _requestedBy: string) {
     const [contract] = await this.dataSource.query<any[]>(
       `SELECT * FROM contracts WHERE id = $1 AND tenant_id = $2`,
       [contractId, tenantId],

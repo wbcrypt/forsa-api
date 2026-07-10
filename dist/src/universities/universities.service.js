@@ -128,7 +128,7 @@ let UniversitiesService = UniversitiesService_1 = class UniversitiesService {
         return updated;
     }
     async createAgreement(universityId, tenantId, dto, createdBy) {
-        const university = await this.findOne(universityId, tenantId);
+        await this.findOne(universityId, tenantId);
         if (!Object.values(enums_1.PaymentModelType).includes(dto.paymentModel)) {
             throw new common_1.BadRequestException(`Invalid payment model: ${dto.paymentModel}`);
         }
@@ -252,7 +252,7 @@ let UniversitiesService = UniversitiesService_1 = class UniversitiesService {
     async findProgramsPublic(universityId, tenantId) {
         if (!tenantId)
             throw new common_1.BadRequestException('tenantId is required');
-        return this.dataSource.query(`SELECT p.id, p.name FROM programs p
+        return this.dataSource.query(`SELECT p.id, p.name, p.tuition_amount FROM programs p
        JOIN universities u ON u.id = p.university_id
        WHERE p.university_id = $1 AND u.tenant_id = $2 AND p.status = 'active'
        ORDER BY p.name`, [universityId, tenantId]);

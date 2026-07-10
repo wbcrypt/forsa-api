@@ -17,14 +17,18 @@ exports.StudentsService = void 0;
 const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
+const date_fns_1 = require("date-fns");
 const encryption_util_1 = require("../common/utils/encryption.util");
 const config_1 = require("@nestjs/config");
 const enums_1 = require("../common/enums");
 const pagination_util_1 = require("../common/utils/pagination.util");
+const notifications_service_1 = require("../notifications/notifications.service");
+const GUARANTOR_INVITE_TTL_DAYS = 7;
 let StudentsService = StudentsService_1 = class StudentsService {
-    constructor(dataSource, configService) {
+    constructor(dataSource, configService, notifications) {
         this.dataSource = dataSource;
         this.configService = configService;
+        this.notifications = notifications;
         this.logger = new common_1.Logger(StudentsService_1.name);
     }
     async create(dto, tenantId, createdBy) {
@@ -50,14 +54,64 @@ let StudentsService = StudentsService_1 = class StudentsService {
         return student;
     }
     async findMe(userId, tenantId) {
-        const [student] = await this.dataSource.query(`SELECT s.*, fs.aggregate_score, fs.score_band
+        const [student] = await this.dataSource.query(`SELECT s.*, sp.academic_level, fs.aggregate_score, fs.score_band,
+              json_agg(DISTINCT jsonb_build_object(
+                'id', sg.id, 'status', sg.status, 'guarantorId', g.id,
+                'fullName', g.first_name || ' ' || g.last_name, 'email', g.email,
+                'portalActivated', g.portal_activated
+              )) FILTER (WHERE sg.id IS NOT NULL AND sg.status != 'withdrawn') AS guarantors
        FROM students s
+       LEFT JOIN student_profiles sp ON sp.student_id = s.id
        LEFT JOIN forsa_scores fs ON fs.student_id = s.id
-       WHERE s.user_id = $1 AND s.tenant_id = $2`, [userId, tenantId]);
+       LEFT JOIN student_guarantors sg ON sg.student_id = s.id
+       LEFT JOIN guarantors g ON g.id = sg.guarantor_id
+       WHERE s.user_id = $1 AND s.tenant_id = $2
+       GROUP BY s.id, sp.academic_level, fs.id`, [userId, tenantId]);
         if (!student)
             throw new common_1.NotFoundException('No student profile linked to this user');
         delete student.national_id_reference;
         return student;
+    }
+    async updateMyProfile(userId, tenantId, dto) {
+        const student = await this.findMe(userId, tenantId);
+        await this.dataSource.query(`UPDATE students
+       SET phone_primary = COALESCE($3, phone_primary),
+           city = COALESCE($4, city),
+           nationality = COALESCE($5, nationality),
+           date_of_birth = COALESCE($6, date_of_birth),
+           address = COALESCE($7, address),
+           employment_status = COALESCE($8, employment_status),
+           monthly_income = COALESCE($9, monthly_income),
+           has_scholarship = COALESCE($10, has_scholarship),
+           scholarship_details = COALESCE($11, scholarship_details),
+           existing_loans_amount = COALESCE($12, existing_loans_amount),
+           other_financial_commitments = COALESCE($13, other_financial_commitments),
+           living_situation = COALESCE($14, living_situation),
+           emergency_contact_name = COALESCE($15, emergency_contact_name),
+           emergency_contact_phone = COALESCE($16, emergency_contact_phone),
+           emergency_contact_relationship = COALESCE($17, emergency_contact_relationship),
+           updated_at = NOW()
+       WHERE id = $1 AND tenant_id = $2`, [
+            student.id, tenantId, dto.phonePrimary, dto.city, dto.nationality, dto.dateOfBirth, dto.address,
+            dto.employmentStatus, dto.monthlyIncome, dto.hasScholarship, dto.scholarshipDetails,
+            dto.existingLoansAmount, dto.otherFinancialCommitments, dto.livingSituation,
+            dto.emergencyContactName, dto.emergencyContactPhone, dto.emergencyContactRelationship,
+        ]);
+        if (dto.academicLevel) {
+            await this.dataSource.query(`INSERT INTO student_profiles (student_id, academic_level, preferred_language)
+         VALUES ($1, $2, 'fr')
+         ON CONFLICT (student_id) DO UPDATE SET academic_level = $2`, [student.id, dto.academicLevel]);
+        }
+        await this.audit(tenantId, userId, 'student.self_updated_profile', student.id, null, dto);
+        return this.findMe(userId, tenantId);
+    }
+    async addMyGuarantor(userId, tenantId, dto) {
+        const student = await this.findMe(userId, tenantId);
+        return this.addGuarantor(student.id, tenantId, dto, userId);
+    }
+    async resendMyGuarantorInvite(userId, tenantId, guarantorId) {
+        const student = await this.findMe(userId, tenantId);
+        return this.resendGuarantorInvite(student.id, guarantorId, tenantId, userId);
     }
     async findAll(tenantId, pagination, filters = {}) {
         const { page = 1, limit = 20 } = pagination;
@@ -78,7 +132,7 @@ let StudentsService = StudentsService_1 = class StudentsService {
         }
         const [data, [count]] = await Promise.all([
             this.dataSource.query(`SELECT s.id, s.first_name, s.last_name, s.email, s.phone_primary,
-                s.status, s.city, s.created_at,
+                s.status, s.city, s.created_at, s.membership_status, s.forsa_id,
                 fs.aggregate_score, fs.score_band,
                 a.current_status AS application_status,
                 u.name AS university_name
@@ -100,8 +154,10 @@ let StudentsService = StudentsService_1 = class StudentsService {
               json_agg(DISTINCT jsonb_build_object(
                 'id', sg.id, 'role', sg.role, 'status', sg.status,
                 'guarantorId', g.id, 'fullName', g.first_name || ' ' || g.last_name,
-                'employmentStatus', g.employment_status, 'riskLevel', g.risk_level
-              )) FILTER (WHERE sg.id IS NOT NULL AND sg.status = 'active') AS guarantors
+                'email', g.email, 'employmentStatus', g.employment_status, 'riskLevel', g.risk_level,
+                'inviteSentAt', g.invite_sent_at, 'inviteExpiresAt', g.invite_token_expires_at,
+                'portalActivated', g.portal_activated
+              )) FILTER (WHERE sg.id IS NOT NULL AND sg.status != 'withdrawn') AS guarantors
        FROM students s
        LEFT JOIN student_profiles sp ON sp.student_id = s.id
        LEFT JOIN forsa_scores fs ON fs.student_id = s.id
@@ -123,7 +179,7 @@ let StudentsService = StudentsService_1 = class StudentsService {
         return student;
     }
     async update(id, tenantId, dto, updatedBy) {
-        const student = await this.findOne(id, tenantId);
+        await this.findOne(id, tenantId);
         const [updated] = await this.dataSource.query(`UPDATE students
        SET first_name = COALESCE($3, first_name),
            last_name = COALESCE($4, last_name),
@@ -141,26 +197,72 @@ let StudentsService = StudentsService_1 = class StudentsService {
         return updated;
     }
     async addGuarantor(studentId, tenantId, dto, addedBy) {
-        await this.findOne(studentId, tenantId);
+        const student = await this.findOne(studentId, tenantId);
+        if (!dto.email) {
+            throw new common_1.BadRequestException('email is required — the invite link is sent there');
+        }
+        if (!dto.firstName || !dto.lastName) {
+            throw new common_1.BadRequestException('firstName and lastName are required');
+        }
+        const [existingByEmail] = await this.dataSource.query(`SELECT id FROM guarantors WHERE tenant_id = $1 AND email = $2`, [tenantId, dto.email]);
+        if (existingByEmail) {
+            throw new common_1.BadRequestException('A guarantor with this email has already been added');
+        }
         const nationalIdRef = dto.nationalId
             ? (0, encryption_util_1.encrypt)(dto.nationalId, this.configService.get('encryption.piiKey'))
             : null;
+        const rawToken = (0, encryption_util_1.generateSecureToken)(32);
+        const tokenHash = (0, encryption_util_1.hashToken)(rawToken);
+        const expiresAt = (0, date_fns_1.addDays)(new Date(), GUARANTOR_INVITE_TTL_DAYS);
         const [guarantor] = await this.dataSource.query(`INSERT INTO guarantors
         (tenant_id, first_name, last_name, date_of_birth, national_id_reference,
          relationship_to_student, employment_status, employer_name, income_stability,
-         email, phone_primary, contact_reliability, risk_level, document_status, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'unknown','unknown','pending',$12)
-       RETURNING id`, [
+         email, phone_primary, contact_reliability, risk_level, document_status, created_by,
+         invite_token, invite_sent_at, invite_token_expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'unknown','unknown','pending',$12,$13,NOW(),$14)
+       RETURNING id, email`, [
             tenantId, dto.firstName, dto.lastName, dto.dateOfBirth, nationalIdRef,
             dto.relationship, dto.employmentStatus, dto.employerName, dto.incomeStability,
-            dto.email, dto.phone, addedBy,
+            dto.email, dto.phone, addedBy, tokenHash, expiresAt,
         ]);
         const [link] = await this.dataSource.query(`INSERT INTO student_guarantors
         (student_id, guarantor_id, role, status, effective_date, added_by)
-       VALUES ($1,$2,$3,'active',CURRENT_DATE,$4)
+       VALUES ($1,$2,$3,'pending_invitation',CURRENT_DATE,$4)
        RETURNING *`, [studentId, guarantor.id, dto.role || 'primary', addedBy]);
         await this.audit(tenantId, addedBy, 'student.guarantor.added', studentId, null, { guarantorId: guarantor.id, role: dto.role });
+        await this.sendGuarantorInviteEmail(tenantId, guarantor.id, guarantor.email, dto.firstName, student.first_name, addedBy, rawToken);
         return { guarantor, link };
+    }
+    async sendGuarantorInviteEmail(tenantId, guarantorId, email, guarantorFirstName, studentFirstName, triggeredBy, rawToken) {
+        const inviteUrl = `${process.env.GUARANTOR_PORTAL_URL || 'https://guarantor.forsa.tn'}/invite/${rawToken}`;
+        await this.notifications.send({
+            tenantId,
+            recipientId: guarantorId,
+            recipientEmail: email,
+            channel: enums_1.NotificationChannel.EMAIL,
+            templateCode: 'guarantor_invited',
+            variables: { guarantorFirstName, studentFirstName, inviteUrl },
+            triggeredBy,
+            referenceId: guarantorId,
+            referenceType: 'guarantor',
+        }).catch(err => this.logger.error('guarantor_invited notification failed', err));
+    }
+    async resendGuarantorInvite(studentId, guarantorId, tenantId, requestedBy) {
+        const [guarantor] = await this.dataSource.query(`SELECT g.id, g.email, g.first_name, g.user_id, s.first_name AS student_first_name
+       FROM guarantors g
+       JOIN student_guarantors sg ON sg.guarantor_id = g.id AND sg.student_id = $2
+       JOIN students s ON s.id = $2
+       WHERE g.id = $1 AND g.tenant_id = $3`, [guarantorId, studentId, tenantId]);
+        if (!guarantor)
+            throw new common_1.NotFoundException('Guarantor not found for this student');
+        if (guarantor.user_id)
+            throw new common_1.BadRequestException('This guarantor has already activated their portal account');
+        const rawToken = (0, encryption_util_1.generateSecureToken)(32);
+        const tokenHash = (0, encryption_util_1.hashToken)(rawToken);
+        const expiresAt = (0, date_fns_1.addDays)(new Date(), GUARANTOR_INVITE_TTL_DAYS);
+        await this.dataSource.query(`UPDATE guarantors SET invite_token = $2, invite_sent_at = NOW(), invite_token_expires_at = $3 WHERE id = $1`, [guarantorId, tokenHash, expiresAt]);
+        await this.sendGuarantorInviteEmail(tenantId, guarantor.id, guarantor.email, guarantor.first_name, guarantor.student_first_name, requestedBy, rawToken);
+        return { success: true };
     }
     async withdrawGuarantor(studentId, guarantorId, tenantId, reason, reasonCode, withdrawnBy) {
         const [link] = await this.dataSource.query(`SELECT * FROM student_guarantors
@@ -246,6 +348,7 @@ exports.StudentsService = StudentsService = StudentsService_1 = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, typeorm_1.InjectDataSource)()),
     __metadata("design:paramtypes", [typeorm_2.DataSource,
-        config_1.ConfigService])
+        config_1.ConfigService,
+        notifications_service_1.NotificationsService])
 ], StudentsService);
 //# sourceMappingURL=students.service.js.map

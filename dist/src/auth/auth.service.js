@@ -160,7 +160,7 @@ let AuthService = AuthService_1 = class AuthService {
         });
         return this.createSession(user, ipAddress, userAgent);
     }
-    async refreshTokens(dto, ipAddress) {
+    async refreshTokens(dto, _ipAddress) {
         let payload;
         try {
             payload = this.jwtService.verify(dto.refreshToken, {
@@ -192,10 +192,16 @@ let AuthService = AuthService_1 = class AuthService {
     async setPassword(rawToken, newPassword) {
         (0, password_util_1.validatePasswordComplexity)(newPassword);
         const tokenHash = (0, encryption_util_1.hashToken)(rawToken);
-        const [tokenRow] = await this.dataSource.query(`SELECT id, user_id, tenant_id FROM password_setup_tokens
-       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()`, [tokenHash]);
+        const [tokenRow] = await this.dataSource.query(`SELECT id, user_id, tenant_id, used_at, expires_at FROM password_setup_tokens
+       WHERE token_hash = $1`, [tokenHash]);
         if (!tokenRow) {
-            throw new common_1.BadRequestException('This set-password link is invalid or has expired');
+            throw new common_1.BadRequestException('This set-password link is invalid. Please use the link from your email, or contact support for a new one.');
+        }
+        if (tokenRow.used_at) {
+            throw new common_1.BadRequestException('This link has already been used to set your password. If you already completed this step, please log in instead.');
+        }
+        if (new Date(tokenRow.expires_at) <= new Date()) {
+            throw new common_1.BadRequestException('This set-password link has expired. Please contact support for a new one.');
         }
         const passwordHash = await (0, password_util_1.hashPassword)(newPassword);
         await this.dataSource.transaction(async (manager) => {
@@ -218,7 +224,7 @@ let AuthService = AuthService_1 = class AuthService {
             details: { sessionId, reason: 'logout' },
         });
     }
-    async logoutAll(userId, currentSessionId) {
+    async logoutAll(userId, _currentSessionId) {
         await this.dataSource.query(`UPDATE user_sessions
        SET invalidated_at = NOW(), invalidation_reason = 'logout'
        WHERE user_id = $1 AND invalidated_at IS NULL`, [userId]);
@@ -236,9 +242,10 @@ let AuthService = AuthService_1 = class AuthService {
        FROM permissions p
        JOIN role_permissions rp ON rp.permission_id = p.id
        JOIN user_roles ur ON ur.role_id = rp.role_id
-       WHERE ur.user_id = $1
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1 AND r.tenant_id = $2
          AND (ur.effective_until IS NULL OR ur.effective_until > CURRENT_DATE)
-         AND ur.revoked_at IS NULL`, [userId]);
+         AND ur.revoked_at IS NULL`, [userId, tenantId]);
         return rows.map(r => r.code);
     }
     async validateJwtPayload(payload) {

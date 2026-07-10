@@ -1,5 +1,5 @@
 import {
-  Injectable, NotFoundException, BadRequestException, ConflictException, Logger,
+  Injectable, NotFoundException, ConflictException, Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -195,7 +195,6 @@ export class PipelineService {
       }
 
       // Mark run complete
-      const finalStatus = blockedAtStage ? PipelineRunStatus.COMPLETED : PipelineRunStatus.COMPLETED;
       await this.dataSource.query(
         `UPDATE pipeline_runs
          SET status = 'completed', completed_at = NOW()
@@ -1012,9 +1011,6 @@ export class PipelineService {
       [ctx.pipelineRunId],
     );
 
-    const stage7 = trace.find(t => t.stage === 7);
-    const approvalMode = stage7?.outputs.approvalMode;
-
     // Build decision
     let decisionResult: DecisionResult;
     let approvedLevel: string;
@@ -1574,7 +1570,7 @@ export class PipelineService {
     return names[stage] || `Stage ${stage}`;
   }
 
-  private extractInputs(ctx: any, stage: number): Record<string, unknown> {
+  private extractInputs(ctx: any, _stage: number): Record<string, unknown> {
     return {
       applicationId: ctx.applicationId,
       studentId: ctx.studentId,

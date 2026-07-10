@@ -37,3 +37,42 @@ describe('ScoreService.getScoreForMyUniversityStudent', () => {
     expect(result).toEqual({ id: 'score-1', aggregate_score: 700 });
   });
 });
+
+// Security review finding — checkAndUpdateCeiling's active-fraud-event
+// check filtered only on student_id, ignoring score_events.tenant_id (a
+// NOT NULL column that exists precisely to scope rows without a join).
+// student_id is a globally-unique key so this wasn't reachable
+// cross-tenant via a real student row, but nothing at the query level
+// enforced that — there's no RLS in this schema. Locks down that the
+// tenant_id the caller passes in is actually used to scope the query.
+describe('ScoreService.checkAndUpdateCeiling — tenant scope', () => {
+  let service: ScoreService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new ScoreService(
+      { query } as unknown as DataSource,
+      {} as unknown as PolicyService,
+    );
+  });
+
+  it('scopes the active-fraud-event lookup by both student_id and tenant_id', async () => {
+    query.mockResolvedValueOnce([]); // no active fraud event -> ceiling lifted
+    query.mockResolvedValueOnce(undefined); // UPDATE forsa_scores
+
+    await (service as any).checkAndUpdateCeiling('student-1', 'tenant-a');
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('tenant_id = $2');
+    expect(params).toEqual(['student-1', 'tenant-a']);
+  });
+
+  it('does not lift the ceiling when an active fraud event exists for that tenant', async () => {
+    query.mockResolvedValueOnce([{ id: 'event-1' }]); // active fraud event found
+
+    await (service as any).checkAndUpdateCeiling('student-1', 'tenant-a');
+
+    expect(query).toHaveBeenCalledTimes(1); // no UPDATE forsa_scores call
+  });
+});

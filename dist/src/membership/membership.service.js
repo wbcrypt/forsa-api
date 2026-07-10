@@ -60,7 +60,6 @@ const notifications_service_1 = require("../notifications/notifications.service"
 const digital_pass_service_1 = require("../digital-pass/digital-pass.service");
 const PASSWORD_SETUP_TOKEN_TTL_HOURS = 48;
 const FORSA_ID_MAX_ATTEMPTS = 5;
-const POSTGRES_UNIQUE_VIOLATION = '23505';
 function generateForsaId() {
     const year = new Date().getFullYear();
     const suffix = crypto.randomBytes(3).toString('hex').toUpperCase();
@@ -78,6 +77,10 @@ let MembershipService = MembershipService_1 = class MembershipService {
        WHERE tenant_id = $1 AND email = $2 AND status = 'pending'`, [dto.tenantId, dto.email]);
         if (existing.length) {
             throw new common_1.BadRequestException('A membership request for this email is already pending review');
+        }
+        const existingMember = await this.dataSource.query(`SELECT id FROM students WHERE tenant_id = $1 AND email = $2`, [dto.tenantId, dto.email]);
+        if (existingMember.length) {
+            throw new common_1.BadRequestException('An active FORSA membership already exists for this email. Please log in instead.');
         }
         const [request] = await this.dataSource.query(`INSERT INTO membership_requests
         (tenant_id, first_name, last_name, phone, email, city, university_id,
@@ -155,6 +158,7 @@ let MembershipService = MembershipService_1 = class MembershipService {
                 enums_1.UserStatus.PENDING_VERIFICATION, student.id,
             ]);
             await manager.query(`UPDATE students SET user_id = $2 WHERE id = $1`, [student.id, user.id]);
+            await manager.query(`INSERT INTO student_profiles (student_id, preferred_language) VALUES ($1, $2)`, [student.id, 'fr']);
             await this.digitalPass.issueForStudentTx(manager, student.id, tenantId);
             await manager.query(`INSERT INTO membership_status_history
           (student_id, tenant_id, previous_status, new_status, reason, changed_by)
@@ -203,6 +207,20 @@ let MembershipService = MembershipService_1 = class MembershipService {
         await this.dataSource.query(`UPDATE membership_requests
        SET status = 'rejected', reviewed_by = $2, reviewed_at = NOW(), rejection_reason = $3
        WHERE id = $1`, [id, rejectedBy, reason]);
+        await this.notifications.send({
+            tenantId,
+            recipientId: id,
+            recipientEmail: request.email,
+            channel: enums_1.NotificationChannel.EMAIL,
+            templateCode: 'membership_rejected',
+            variables: {
+                firstName: request.first_name,
+                reasonBlock: reason ? `<p><strong>Reason:</strong> ${reason}</p>` : '',
+            },
+            triggeredBy: rejectedBy,
+            referenceId: id,
+            referenceType: 'membership_request',
+        }).catch(err => this.logger.error('membership_rejected notification failed', err));
         return { id, status: enums_1.MembershipRequestStatus.REJECTED };
     }
 };

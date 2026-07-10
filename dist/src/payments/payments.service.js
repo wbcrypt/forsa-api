@@ -84,7 +84,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
                         description: 'Full advance payment',
                     }];
                 break;
-            case 'concurrent':
+            case 'concurrent': {
                 const monthsPolicy = await this.policyService.resolve('payment.concurrent.duration_months', { tenantId: params.tenantId });
                 const months = monthsPolicy?.value || 10;
                 const monthlyAmount = totalAmount.dividedBy(months).toDecimalPlaces(2);
@@ -98,8 +98,9 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
                     });
                 }
                 break;
+            }
             case 'tranche':
-            case 'hybrid':
+            case 'hybrid': {
                 const tranches = application.tranches || [];
                 for (const tranche of tranches) {
                     const trancheAmount = totalAmount.times(tranche.percentage).dividedBy(100).toDecimalPlaces(2);
@@ -111,6 +112,7 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
                     });
                 }
                 break;
+            }
         }
         const [schedule] = await this.dataSource.query(`INSERT INTO payment_schedules
         (tenant_id, application_id, contract_id, payment_model, total_amount, currency,
@@ -150,6 +152,9 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
         const installmentAmount = new decimal_js_1.default(installment.amount);
         const alreadyPaid = new decimal_js_1.default(installment.amount_paid || 0);
         const remaining = installmentAmount.minus(alreadyPaid);
+        if (paymentAmount.greaterThan(remaining)) {
+            throw new common_1.BadRequestException(`Payment amount (${paymentAmount.toFixed(2)}) exceeds the remaining balance (${remaining.toFixed(2)}) for this installment`);
+        }
         const [payment] = await this.dataSource.query(`INSERT INTO payments
         (tenant_id, installment_id, student_id, amount, currency,
          payment_method, reference_number, payment_date, status, received_by, notes)
@@ -489,6 +494,13 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
         if (payment.status === 'reversed') {
             throw new common_1.BadRequestException('Cannot verify a reversed payment');
         }
+        const verifiedAmount = new decimal_js_1.default(payment.student_amount || payment.amount);
+        const installmentAmount = new decimal_js_1.default(payment.installment_amount);
+        const alreadyPaid = new decimal_js_1.default(payment.amount_paid || 0);
+        const remaining = installmentAmount.minus(alreadyPaid);
+        if (verifiedAmount.greaterThan(remaining)) {
+            throw new common_1.BadRequestException(`Verified amount (${verifiedAmount.toFixed(2)}) exceeds the remaining balance (${remaining.toFixed(2)}) for this installment`);
+        }
         await this.dataSource.query(`UPDATE payments
        SET status = 'verified',
            verified_at = NOW(),
@@ -496,9 +508,6 @@ let PaymentsService = PaymentsService_1 = class PaymentsService {
            verification_notes = $3,
            amount = COALESCE(student_amount, amount)
        WHERE id = $1`, [paymentId, verifiedBy, notes || null]);
-        const verifiedAmount = new decimal_js_1.default(payment.student_amount || payment.amount);
-        const installmentAmount = new decimal_js_1.default(payment.installment_amount);
-        const alreadyPaid = new decimal_js_1.default(payment.amount_paid || 0);
         const newPaid = alreadyPaid.plus(verifiedAmount);
         const newInstallmentStatus = newPaid.greaterThanOrEqualTo(installmentAmount)
             ? 'paid'

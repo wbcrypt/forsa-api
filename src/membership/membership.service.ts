@@ -12,7 +12,6 @@ import { CreateMembershipRequestDto } from './dto/create-membership-request.dto'
 
 const PASSWORD_SETUP_TOKEN_TTL_HOURS = 48;
 const FORSA_ID_MAX_ATTEMPTS = 5;
-const POSTGRES_UNIQUE_VIOLATION = '23505';
 
 // Phase 2 — FORSA ID: a human-readable member identifier, assigned once on
 // Bronze issuance, never regenerated. FORSA-<year>-<6 uppercase hex chars>,

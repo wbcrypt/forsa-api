@@ -2,9 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
-  ForbiddenException,
   Logger,
-  ConflictException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -208,7 +206,7 @@ export class AuthService {
    */
   async refreshTokens(
     dto: RefreshTokenDto,
-    ipAddress: string,
+    _ipAddress: string,
   ): Promise<AuthTokens> {
     let payload: JwtPayload;
 
@@ -323,7 +321,7 @@ export class AuthService {
   /**
    * Logout from all sessions
    */
-  async logoutAll(userId: string, currentSessionId: string): Promise<void> {
+  async logoutAll(userId: string, _currentSessionId: string): Promise<void> {
     await this.dataSource.query(
       `UPDATE user_sessions
        SET invalidated_at = NOW(), invalidation_reason = 'logout'
@@ -345,7 +343,19 @@ export class AuthService {
   }
 
   /**
-   * Get all permission codes for a user
+   * Get all permission codes for a user.
+   *
+   * Security review finding — roles are tenant-owned rows but user_roles
+   * carries no tenant_id of its own, and this query previously joined
+   * straight through it with no tenant_id filter anywhere. Both call sites
+   * today always pass a (userId, tenantId) pair read off the same user
+   * row, so it isn't reachable with a mismatched pair right now — but
+   * nothing enforced that invariant at the query level (no RLS in this
+   * schema), and the identical unscoped pattern in
+   * UsersService.getUserRolesAndPermissions *was* reachable with a
+   * mismatched pair via a client-supplied :id. Scoping by tenant_id here
+   * too, for the same reason and to stop this from becoming a footgun if
+   * it's ever called with an unverified userId later.
    */
   async getUserPermissions(userId: string, tenantId: string): Promise<string[]> {
     const rows = await this.dataSource.query<{ code: string }[]>(
@@ -353,10 +363,11 @@ export class AuthService {
        FROM permissions p
        JOIN role_permissions rp ON rp.permission_id = p.id
        JOIN user_roles ur ON ur.role_id = rp.role_id
-       WHERE ur.user_id = $1
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1 AND r.tenant_id = $2
          AND (ur.effective_until IS NULL OR ur.effective_until > CURRENT_DATE)
          AND ur.revoked_at IS NULL`,
-      [userId],
+      [userId, tenantId],
     );
     return rows.map(r => r.code);
   }

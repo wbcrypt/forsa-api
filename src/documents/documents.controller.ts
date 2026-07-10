@@ -1,9 +1,8 @@
 import {
-  Controller, Get, Post, Patch, Body, Param, Query,
-  UseGuards, ParseUUIDPipe, HttpCode, HttpStatus, Req,
+  Controller, Get, Post, Patch, Body, Param,
+  UseGuards, ParseUUIDPipe, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { Request } from 'express';
 import { DocumentsService } from './documents.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';

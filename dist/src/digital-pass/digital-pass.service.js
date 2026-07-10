@@ -87,7 +87,8 @@ let DigitalPassService = DigitalPassService_1 = class DigitalPassService {
         };
     }
     async findMyPass(userId, tenantId) {
-        const [pass] = await this.dataSource.query(`SELECT dsp.* FROM digital_student_passes dsp
+        const [pass] = await this.dataSource.query(`SELECT dsp.*, s.first_name, s.last_name, s.forsa_id, s.membership_status, s.member_since
+       FROM digital_student_passes dsp
        JOIN students s ON s.id = dsp.student_id
        WHERE s.user_id = $1 AND dsp.tenant_id = $2`, [userId, tenantId]);
         if (!pass)

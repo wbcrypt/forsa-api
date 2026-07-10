@@ -21,4 +21,25 @@ describe('ScoreService.getScoreForMyUniversityStudent', () => {
         expect(result).toEqual({ id: 'score-1', aggregate_score: 700 });
     });
 });
+describe('ScoreService.checkAndUpdateCeiling — tenant scope', () => {
+    let service;
+    let query;
+    beforeEach(() => {
+        query = jest.fn();
+        service = new score_service_1.ScoreService({ query }, {});
+    });
+    it('scopes the active-fraud-event lookup by both student_id and tenant_id', async () => {
+        query.mockResolvedValueOnce([]);
+        query.mockResolvedValueOnce(undefined);
+        await service.checkAndUpdateCeiling('student-1', 'tenant-a');
+        const [sql, params] = query.mock.calls[0];
+        expect(sql).toContain('tenant_id = $2');
+        expect(params).toEqual(['student-1', 'tenant-a']);
+    });
+    it('does not lift the ceiling when an active fraud event exists for that tenant', async () => {
+        query.mockResolvedValueOnce([{ id: 'event-1' }]);
+        await service.checkAndUpdateCeiling('student-1', 'tenant-a');
+        expect(query).toHaveBeenCalledTimes(1);
+    });
+});
 //# sourceMappingURL=score.service.spec.js.map

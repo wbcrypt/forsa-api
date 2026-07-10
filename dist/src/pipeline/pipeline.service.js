@@ -131,7 +131,6 @@ let PipelineService = PipelineService_1 = class PipelineService {
                     approvedAmount = stageResult.outputs.approvedAmount;
                 }
             }
-            const finalStatus = blockedAtStage ? enums_1.PipelineRunStatus.COMPLETED : enums_1.PipelineRunStatus.COMPLETED;
             await this.dataSource.query(`UPDATE pipeline_runs
          SET status = 'completed', completed_at = NOW()
          WHERE id = $1`, [pipelineRunId]);
@@ -161,18 +160,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
     }
     async stage1Completeness(ctx) {
         const policyVersionIds = [];
-        const requiredDocsPolicy = await this.policyService.resolve('document.requirements.standard', { tenantId: ctx.tenantId, universityId: ctx.universityId });
-        if (requiredDocsPolicy)
-            policyVersionIds.push(requiredDocsPolicy.policyVersionId);
-        const requiredDocs = requiredDocsPolicy?.value || [
-            'national_id', 'bac_diploma', 'university_acceptance', 'income_proof',
-        ];
-        const uploadedDocs = await this.dataSource.query(`SELECT ad.document_type_code, ad.status FROM application_documents ad
-       LEFT JOIN documents d ON d.id = ad.document_id
-       WHERE ad.application_id = $1 AND ad.status IN ('verified','under_review')
-         AND (d.expires_at IS NULL OR d.expires_at > CURRENT_DATE)`, [ctx.applicationId]);
-        const uploadedCodes = uploadedDocs.map(d => d.document_type_code);
-        const missingDocs = requiredDocs.filter((code) => !uploadedCodes.includes(code));
+        const missingDocs = [];
         const missingFields = [];
         if (!ctx.application.tuition_amount)
             missingFields.push('tuition_amount');
@@ -182,10 +170,14 @@ let PipelineService = PipelineService_1 = class PipelineService {
             missingFields.push('student_id');
         if (!ctx.application.program_id)
             missingFields.push('program_id');
-        const guarantorRequired = await this.policyService.getBoolean('guarantor.required', { tenantId: ctx.tenantId });
+        if (!ctx.application.requested_tier)
+            missingFields.push('requested_tier');
+        if (!ctx.application.platform_fee_acknowledged_at)
+            missingFields.push('platform_fee_acknowledgment');
+        const guarantorRequired = (await this.policyService.getBoolean('guarantor.required', { tenantId: ctx.tenantId })) ?? true;
         if (guarantorRequired) {
             const [guarantor] = await this.dataSource.query(`SELECT sg.id FROM student_guarantors sg
-         WHERE sg.student_id = $1 AND sg.status = 'active' LIMIT 1`, [ctx.studentId]);
+         WHERE sg.student_id = $1 AND sg.status IN ('active', 'pending_invitation') LIMIT 1`, [ctx.studentId]);
             if (!guarantor)
                 missingFields.push('guarantor');
         }
@@ -203,7 +195,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
         }
         return {
             status: 'passed',
-            outputs: { documentsVerified: uploadedCodes, allFieldsPresent: true },
+            outputs: { allFieldsPresent: true, paperworkNote: 'CIN/income proof/كمبيالة verified in person at the activation meeting, not digitally at this stage' },
             policyVersionIds,
         };
     }
@@ -638,8 +630,6 @@ let PipelineService = PipelineService_1 = class PipelineService {
        FROM reviewer_decisions
        WHERE pipeline_run_id = $1
        ORDER BY decided_at DESC LIMIT 1`, [ctx.pipelineRunId]);
-        const stage7 = trace.find(t => t.stage === 7);
-        const approvalMode = stage7?.outputs.approvalMode;
         let decisionResult;
         let approvedLevel;
         let approvedAmount;
@@ -935,7 +925,7 @@ let PipelineService = PipelineService_1 = class PipelineService {
         };
         return names[stage] || `Stage ${stage}`;
     }
-    extractInputs(ctx, stage) {
+    extractInputs(ctx, _stage) {
         return {
             applicationId: ctx.applicationId,
             studentId: ctx.studentId,

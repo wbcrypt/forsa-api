@@ -434,14 +434,22 @@ export class ScoreService {
     return ScoreSeverity.STANDARD;
   }
 
+  // Security review finding — score_events carries its own tenant_id
+  // column (NOT NULL) precisely so rows can be scoped without a join, but
+  // this query ignored it and filtered on student_id alone. student_id is
+  // a globally-unique key owned by exactly one tenant, so this wasn't
+  // reachable cross-tenant in practice (and this method is currently only
+  // called from the unreachable-from-any-controller recordCorrectiveEvent)
+  // — but the schema clearly intends tenant_id to be checked here, so
+  // enforce it rather than relying on studentId uniqueness alone.
   private async checkAndUpdateCeiling(studentId: string, tenantId: string): Promise<void> {
     // After corrective event, check if ceiling-triggering events are still active
     const [activeFraud] = await this.dataSource.query<any[]>(
       `SELECT id FROM score_events
-       WHERE student_id = $1 AND is_active = true
+       WHERE student_id = $1 AND tenant_id = $2 AND is_active = true
          AND (event_code LIKE 'FRAUD%' OR event_code = 'CONTRACT_BREACH_SEVERE')
        LIMIT 1`,
-      [studentId],
+      [studentId, tenantId],
     );
 
     if (!activeFraud) {

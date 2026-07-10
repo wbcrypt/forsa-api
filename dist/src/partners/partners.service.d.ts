@@ -8,7 +8,7 @@ export declare class PartnersService {
     private readonly logger;
     constructor(dataSource: DataSource, policyService: PolicyService);
     create(dto: any, tenantId: string, createdBy: string): Promise<any>;
-    findAll(tenantId: string, pagination: PaginationDto, filters?: any): Promise<import("../common/utils/pagination.util").PaginatedResult<unknown>>;
+    findAll(tenantId: string, pagination: PaginationDto): Promise<import("../common/utils/pagination.util").PaginatedResult<unknown>>;
     findMe(userId: string, tenantId: string): Promise<any>;
     getMyApplications(userId: string, tenantId: string, pagination: PaginationDto): Promise<import("../common/utils/pagination.util").PaginatedResult<any>>;
     updateMe(userId: string, tenantId: string, dto: {

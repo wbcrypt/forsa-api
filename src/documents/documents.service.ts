@@ -4,10 +4,9 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { v4 as uuidv4 } from 'uuid';
-import { sha256, generateSecureToken } from '../common/utils/encryption.util';
 import { DocumentStatus, NotificationChannel } from '../common/enums';
 import { PolicyService } from '../policy/policy.service';
 import { NotificationsService } from '../notifications/notifications.service';

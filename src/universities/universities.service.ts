@@ -171,7 +171,7 @@ export class UniversitiesService {
   }
 
   async createAgreement(universityId: string, tenantId: string, dto: any, createdBy: string) {
-    const university = await this.findOne(universityId, tenantId);
+    await this.findOne(universityId, tenantId); // verify university exists (throws if not found)
 
     // Validate payment model
     if (!Object.values(PaymentModelType).includes(dto.paymentModel)) {

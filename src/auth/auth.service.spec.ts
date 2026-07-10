@@ -122,3 +122,50 @@ describe('AuthService.validateCredentials', () => {
     );
   });
 });
+
+// Security review finding — getUserPermissions joined user_roles -> roles
+// with no tenant_id filter anywhere. user_roles carries no tenant_id of
+// its own, so nothing at the query level stopped a role belonging to a
+// different tenant from being picked up if it were ever (mis)linked to
+// this user — roles.tenant_id has to be checked explicitly since there's
+// no RLS in this schema. This locks down that the query is actually
+// scoped by both user and tenant now.
+describe('AuthService.getUserPermissions — tenant scope', () => {
+  let service: AuthService;
+  let query: jest.Mock;
+
+  beforeEach(() => {
+    query = jest.fn();
+    service = new AuthService(
+      {} as unknown as Repository<User>,
+      {} as unknown as Repository<UserSession>,
+      {} as unknown as JwtService,
+      { get: jest.fn() } as unknown as ConfigService,
+      { query } as unknown as DataSource,
+      {} as unknown as SecurityEventService,
+      {} as unknown as MfaService,
+    );
+  });
+
+  it('scopes the permissions query by both user_id and tenant_id', async () => {
+    query.mockResolvedValueOnce([{ code: 'application.view' }]);
+
+    const result = await service.getUserPermissions('user-1', 'tenant-a');
+
+    expect(result).toEqual(['application.view']);
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('r.tenant_id = $2');
+    expect(params).toEqual(['user-1', 'tenant-a']);
+  });
+
+  it('returns no permissions for a user whose roles belong to a different tenant', async () => {
+    // Simulates the DB-level effect of the tenant_id filter: a role
+    // linked to this user but owned by another tenant is excluded.
+    query.mockResolvedValueOnce([]);
+
+    const result = await service.getUserPermissions('user-1', 'tenant-b');
+
+    expect(result).toEqual([]);
+    expect(query.mock.calls[0][1]).toEqual(['user-1', 'tenant-b']);
+  });
+});

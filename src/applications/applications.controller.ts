@@ -8,7 +8,6 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../auth/guards/permissions.guard';
 import { CurrentUser, CurrentTenant, RequirePermissions } from '../common/decorators';
 import { PaginationDto } from '../common/utils/pagination.util';
-import { ApplicationStatus } from '../common/enums';
 import { TransitionStatusDto } from './dto/transition-status.dto';
 import { ScheduleMeetingDto, UpdateMeetingStatusDto } from './dto/meeting.dto';
 

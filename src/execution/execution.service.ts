@@ -1,14 +1,13 @@
 import {
-  Injectable, NotFoundException, ConflictException, BadRequestException, Logger,
+  Injectable, ConflictException, BadRequestException, Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
 import { ExecutionStatus } from '../common/enums';
 import { PaymentsService } from '../payments/payments.service';
 import { ContractsService } from '../contracts/contracts.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { ContractType, NotificationChannel } from '../common/enums';
+import { ContractType } from '../common/enums';
 
 export interface ExecutionRequest {
   executionId: string; // Globally unique, caller-provided for idempotency
@@ -114,7 +113,7 @@ export class ExecutionService {
     }
   }
 
-  private async dispatch(request: ExecutionRequest, manager: any): Promise<unknown> {
+  private async dispatch(request: ExecutionRequest, _manager: any): Promise<unknown> {
     const { actionType, payload, tenantId, requestedBy } = request;
 
     switch (actionType) {

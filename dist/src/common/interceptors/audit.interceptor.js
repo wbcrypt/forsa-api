@@ -43,7 +43,6 @@ let AuditInterceptor = AuditInterceptor_1 = class AuditInterceptor {
         if (!action || !entity) {
             return next.handle();
         }
-        const startTime = Date.now();
         const user = request.user;
         const tenantId = request.tenantId;
         return next.handle().pipe((0, operators_1.tap)({

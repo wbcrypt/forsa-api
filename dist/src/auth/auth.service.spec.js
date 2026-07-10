@@ -108,4 +108,26 @@ describe('AuthService.validateCredentials', () => {
         expect(userRepository.update).toHaveBeenCalledWith('user-1', expect.objectContaining({ failedLoginAttempts: 0, lockedUntil: null }));
     });
 });
+describe('AuthService.getUserPermissions — tenant scope', () => {
+    let service;
+    let query;
+    beforeEach(() => {
+        query = jest.fn();
+        service = new auth_service_1.AuthService({}, {}, {}, { get: jest.fn() }, { query }, {}, {});
+    });
+    it('scopes the permissions query by both user_id and tenant_id', async () => {
+        query.mockResolvedValueOnce([{ code: 'application.view' }]);
+        const result = await service.getUserPermissions('user-1', 'tenant-a');
+        expect(result).toEqual(['application.view']);
+        const [sql, params] = query.mock.calls[0];
+        expect(sql).toContain('r.tenant_id = $2');
+        expect(params).toEqual(['user-1', 'tenant-a']);
+    });
+    it('returns no permissions for a user whose roles belong to a different tenant', async () => {
+        query.mockResolvedValueOnce([]);
+        const result = await service.getUserPermissions('user-1', 'tenant-b');
+        expect(result).toEqual([]);
+        expect(query.mock.calls[0][1]).toEqual(['user-1', 'tenant-b']);
+    });
+});
 //# sourceMappingURL=auth.service.spec.js.map

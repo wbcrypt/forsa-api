@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { addDays } from 'date-fns';
 import { encrypt, decrypt, generateSecureToken, hashToken } from '../common/utils/encryption.util';
 import { ConfigService } from '@nestjs/config';
-import { StudentStatus, ExceptionalEventType, SourceTrustLevel, NotificationChannel } from '../common/enums';
+import { ExceptionalEventType, NotificationChannel } from '../common/enums';
 import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -261,7 +261,7 @@ export class StudentsService {
   }
 
   async update(id: string, tenantId: string, dto: any, updatedBy: string) {
-    const student = await this.findOne(id, tenantId);
+    await this.findOne(id, tenantId); // verify student exists (throws if not found)
 
     const [updated] = await this.dataSource.query<any[]>(
       `UPDATE students

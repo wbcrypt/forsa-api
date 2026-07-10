@@ -11,12 +11,13 @@ const common_1 = require("@nestjs/common");
 const students_controller_1 = require("./students.controller");
 const students_service_1 = require("./students.service");
 const policy_module_1 = require("../policy/policy.module");
+const notifications_module_1 = require("../notifications/notifications.module");
 let StudentsModule = class StudentsModule {
 };
 exports.StudentsModule = StudentsModule;
 exports.StudentsModule = StudentsModule = __decorate([
     (0, common_1.Module)({
-        imports: [policy_module_1.PolicyModule],
+        imports: [policy_module_1.PolicyModule, notifications_module_1.NotificationsModule],
         controllers: [students_controller_1.StudentsController],
         providers: [students_service_1.StudentsService],
         exports: [students_service_1.StudentsService],

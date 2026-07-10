@@ -218,7 +218,7 @@ let PolicyService = PolicyService_1 = class PolicyService {
                 scopeGroups.set(key, []);
             scopeGroups.get(key).push(v);
         }
-        for (const [scope, group] of scopeGroups) {
+        for (const [, group] of scopeGroups) {
             if (group.length > 1) {
                 await this.dataSource.query(`INSERT INTO policy_conflicts
             (tenant_id, policy_version_a_id, policy_version_b_id, conflict_type, detected_at)

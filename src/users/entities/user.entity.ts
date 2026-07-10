@@ -2,9 +2,6 @@ import {
   Entity,
   Column,
   Index,
-  ManyToMany,
-  JoinTable,
-  OneToMany,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import { TenantScopedEntity } from '../../common/entities/base.entity';

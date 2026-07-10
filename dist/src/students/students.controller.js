@@ -27,6 +27,9 @@ let StudentsController = class StudentsController {
     findMe(u, t) {
         return this.service.findMe(u, t);
     }
+    updateMyProfile(dto, u, t) {
+        return this.service.updateMyProfile(u, t, dto);
+    }
     findMyPayments(u, t) {
         return this.service.findMyPayments(u, t);
     }
@@ -60,8 +63,17 @@ let StudentsController = class StudentsController {
     openExceptionalEvent(id, dto, t, u) {
         return this.service.openExceptionalEvent(id, t, { ...dto, openedBy: u });
     }
+    addMyGuarantor(dto, t, u) {
+        return this.service.addMyGuarantor(u, t, dto);
+    }
+    resendMyGuarantorInvite(guarantorId, t, u) {
+        return this.service.resendMyGuarantorInvite(u, t, guarantorId);
+    }
     addGuarantor(id, dto, t, u) {
         return this.service.addGuarantor(id, t, dto, u);
+    }
+    resendGuarantorInvite(id, guarantorId, t, u) {
+        return this.service.resendGuarantorInvite(id, guarantorId, t, u);
     }
     withdrawGuarantor(id, guarantorId, dto, t, u) {
         return this.service.withdrawGuarantor(id, guarantorId, t, dto.reason, dto.reasonCode, u);
@@ -77,6 +89,16 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], StudentsController.prototype, "findMe", null);
+__decorate([
+    (0, common_1.Patch)('me'),
+    (0, swagger_1.ApiOperation)({ summary: "Update the logged-in student portal user's own profile" }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, decorators_1.CurrentUser)('id')),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", void 0)
+], StudentsController.prototype, "updateMyProfile", null);
 __decorate([
     (0, common_1.Get)('me/payments'),
     (0, swagger_1.ApiOperation)({ summary: 'Get the logged-in student portal user\'s own complete payment history, across all applications (T-219)' }),
@@ -183,6 +205,27 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], StudentsController.prototype, "openExceptionalEvent", null);
 __decorate([
+    (0, common_1.Post)('me/guarantors'),
+    (0, swagger_1.ApiOperation)({ summary: 'Invite a guarantor as the logged-in student, no staff action required' }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, String, String]),
+    __metadata("design:returntype", void 0)
+], StudentsController.prototype, "addMyGuarantor", null);
+__decorate([
+    (0, common_1.Post)('me/guarantors/:guarantorId/resend-invite'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: "Resend one of the logged-in student's own guarantor invitations" }),
+    __param(0, (0, common_1.Param)('guarantorId', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __param(2, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], StudentsController.prototype, "resendMyGuarantorInvite", null);
+__decorate([
     (0, common_1.Post)(':id/guarantors'),
     (0, decorators_1.RequirePermissions)('student.edit'),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
@@ -193,6 +236,18 @@ __decorate([
     __metadata("design:paramtypes", [String, Object, String, String]),
     __metadata("design:returntype", void 0)
 ], StudentsController.prototype, "addGuarantor", null);
+__decorate([
+    (0, common_1.Post)(':id/guarantors/:guarantorId/resend-invite'),
+    (0, decorators_1.RequirePermissions)('student.edit'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Param)('guarantorId', common_1.ParseUUIDPipe)),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __param(3, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String, String]),
+    __metadata("design:returntype", void 0)
+], StudentsController.prototype, "resendGuarantorInvite", null);
 __decorate([
     (0, common_1.Delete)(':id/guarantors/:guarantorId'),
     (0, decorators_1.RequirePermissions)('student.edit'),

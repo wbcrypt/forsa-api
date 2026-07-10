@@ -1,13 +1,11 @@
 import {
   Injectable,
   NotFoundException,
-  ConflictException,
-  BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { PolicyScopeType, PolicyStatus } from '../common/enums';
+import { PolicyScopeType } from '../common/enums';
 
 export interface PolicyValue {
   [key: string]: unknown;
@@ -355,7 +353,7 @@ export class PolicyService {
       scopeGroups.get(key)!.push(v);
     }
 
-    for (const [scope, group] of scopeGroups) {
+    for (const [, group] of scopeGroups) {
       if (group.length > 1) {
         // Multiple active versions for same scope — conflict
         await this.dataSource.query(

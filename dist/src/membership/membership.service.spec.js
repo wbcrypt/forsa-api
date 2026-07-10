@@ -37,6 +37,7 @@ describe('MembershipService', () => {
         it('creates a pending request when none already exists', async () => {
             query
                 .mockResolvedValueOnce([])
+                .mockResolvedValueOnce([])
                 .mockResolvedValueOnce([{ id: 'new-req', created_at: new Date() }]);
             const result = await service.createRequest({
                 tenantId: 'tenant-1', firstName: 'Amina', lastName: 'Trabelsi', phone: '123',
@@ -70,6 +71,7 @@ describe('MembershipService', () => {
             managerQuery
                 .mockResolvedValueOnce([{ id: 'student-1', first_name: 'Amina', last_name: 'Trabelsi', email: 'amina@example.com', forsa_id: 'FORSA-2026-ABCDEF' }])
                 .mockResolvedValueOnce([{ id: 'user-1', email: 'amina@example.com' }])
+                .mockResolvedValueOnce(undefined)
                 .mockResolvedValueOnce(undefined)
                 .mockResolvedValueOnce(undefined)
                 .mockResolvedValueOnce(undefined)
@@ -110,6 +112,7 @@ describe('MembershipService', () => {
                 .mockResolvedValueOnce(undefined)
                 .mockResolvedValueOnce(undefined)
                 .mockResolvedValueOnce(undefined)
+                .mockResolvedValueOnce(undefined)
                 .mockResolvedValueOnce(undefined);
             const result = await service.approve('req-1', 'tenant-1', 'staff-1');
             expect(result.forsaId).toBe('FORSA-2026-111111');
@@ -133,6 +136,17 @@ describe('MembershipService', () => {
                 .mockResolvedValueOnce(undefined);
             const result = await service.reject('req-1', 'tenant-1', 'staff-1', 'Incomplete info');
             expect(result).toEqual({ id: 'req-1', status: 'rejected' });
+        });
+        it('emails the applicant that their request was not approved', async () => {
+            query
+                .mockResolvedValueOnce([pendingRequest])
+                .mockResolvedValueOnce(undefined);
+            await service.reject('req-1', 'tenant-1', 'staff-1', 'Incomplete info');
+            expect(notifications.send).toHaveBeenCalledWith(expect.objectContaining({
+                templateCode: 'membership_rejected',
+                recipientEmail: 'amina@example.com',
+                variables: expect.objectContaining({ firstName: 'Amina' }),
+            }));
         });
     });
     describe('findOne', () => {

@@ -21,6 +21,7 @@ const permissions_guard_1 = require("../auth/guards/permissions.guard");
 const decorators_1 = require("../common/decorators");
 const pagination_util_1 = require("../common/utils/pagination.util");
 const transition_status_dto_1 = require("./dto/transition-status.dto");
+const meeting_dto_1 = require("./dto/meeting.dto");
 let ApplicationsController = class ApplicationsController {
     constructor(service) {
         this.service = service;
@@ -43,11 +44,17 @@ let ApplicationsController = class ApplicationsController {
     getStatusHistoryForMe(id, u, t) {
         return this.service.getStatusHistoryForMe(u, t, id);
     }
+    getQueuePositionForMe(id, u, t) {
+        return this.service.getQueuePositionForMe(u, t, id);
+    }
+    getMyApplicationTimeline(id, u, t) {
+        return this.service.getMyApplicationTimeline(u, t, id);
+    }
     findAll(t, p, f) {
         return this.service.findAll(t, p, f);
     }
     findOne(id, t) {
-        return this.service.findOne(id, t);
+        return this.service.findOneForAdmin(id, t);
     }
     getPipelineHistory(id, t) {
         return this.service.getPipelineHistory(id, t);
@@ -55,8 +62,17 @@ let ApplicationsController = class ApplicationsController {
     getStatusHistory(id, t) {
         return this.service.getStatusHistory(id, t);
     }
+    getCaseSummary(id, t) {
+        return this.service.getCaseSummary(id, t);
+    }
+    scheduleMeeting(id, dto, t, u) {
+        return this.service.scheduleMeeting(id, t, dto, u);
+    }
+    updateMeetingStatus(meetingId, dto, t) {
+        return this.service.updateMeetingStatus(meetingId, t, dto);
+    }
     transitionStatus(id, body, t, u) {
-        return this.service.transitionStatus(id, t, body.status, u, body.notes);
+        return this.service.transitionStatus(id, t, body.status, u, body.notes, undefined, body.financingTier);
     }
     confirmEnrollment(id, body, t, u) {
         return this.service.confirmEnrollment(id, t, u, body?.notes);
@@ -132,6 +148,26 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], ApplicationsController.prototype, "getStatusHistoryForMe", null);
 __decorate([
+    (0, common_1.Get)('me/:id/queue-position'),
+    (0, swagger_1.ApiOperation)({ summary: "Get the logged-in student's own application's estimated waiting-list position" }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentUser)('id')),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], ApplicationsController.prototype, "getQueuePositionForMe", null);
+__decorate([
+    (0, common_1.Get)('me/:id/timeline'),
+    (0, swagger_1.ApiOperation)({ summary: "Get the logged-in student's own application's customer-journey timeline" }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentUser)('id')),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", void 0)
+], ApplicationsController.prototype, "getMyApplicationTimeline", null);
+__decorate([
     (0, common_1.Get)(),
     (0, decorators_1.RequirePermissions)('application.view'),
     (0, swagger_1.ApiOperation)({ summary: 'List applications with filters' }),
@@ -145,7 +181,7 @@ __decorate([
 __decorate([
     (0, common_1.Get)(':id'),
     (0, decorators_1.RequirePermissions)('application.view'),
-    (0, swagger_1.ApiOperation)({ summary: 'Get full application detail' }),
+    (0, swagger_1.ApiOperation)({ summary: 'Get full application detail, including the admin completeness checklist' }),
     __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
     __param(1, (0, decorators_1.CurrentTenant)()),
     __metadata("design:type", Function),
@@ -172,6 +208,39 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", void 0)
 ], ApplicationsController.prototype, "getStatusHistory", null);
+__decorate([
+    (0, common_1.Get)(':id/case'),
+    (0, decorators_1.RequirePermissions)('application.view'),
+    (0, swagger_1.ApiOperation)({ summary: 'Get the complete Case Summary — student + guarantor + documents + AI analysis + meeting + payments' }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", void 0)
+], ApplicationsController.prototype, "getCaseSummary", null);
+__decorate([
+    (0, common_1.Post)(':id/meetings'),
+    (0, decorators_1.RequirePermissions)('application.edit'),
+    (0, swagger_1.ApiOperation)({ summary: 'Schedule the Case activation meeting (after approval in principle)' }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __param(3, (0, decorators_1.CurrentUser)('id')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, meeting_dto_1.ScheduleMeetingDto, String, String]),
+    __metadata("design:returntype", void 0)
+], ApplicationsController.prototype, "scheduleMeeting", null);
+__decorate([
+    (0, common_1.Patch)('meetings/:meetingId'),
+    (0, decorators_1.RequirePermissions)('application.edit'),
+    (0, swagger_1.ApiOperation)({ summary: 'Confirm, complete, reschedule, or cancel a Case activation meeting' }),
+    __param(0, (0, common_1.Param)('meetingId', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, decorators_1.CurrentTenant)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, meeting_dto_1.UpdateMeetingStatusDto, String]),
+    __metadata("design:returntype", void 0)
+], ApplicationsController.prototype, "updateMeetingStatus", null);
 __decorate([
     (0, common_1.Patch)(':id/status'),
     (0, decorators_1.RequirePermissions)('application.edit'),

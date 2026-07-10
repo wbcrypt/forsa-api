@@ -28,4 +28,10 @@ __decorate([
     (0, class_validator_1.MaxLength)(2000),
     __metadata("design:type", String)
 ], TransitionStatusDto.prototype, "notes", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({ enum: ['silver', 'gold'] }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsEnum)(['silver', 'gold']),
+    __metadata("design:type", String)
+], TransitionStatusDto.prototype, "financingTier", void 0);
 //# sourceMappingURL=transition-status.dto.js.map

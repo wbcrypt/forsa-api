@@ -149,7 +149,7 @@ const NOTIFICATION_TEMPLATES = [
     ['application_approved', 'email', 'Application Approved', '🎉 Your Application is Approved',
         '<p>Dear {{studentName}},</p><p>Congratulations! Your application for {{programName}} at {{universityName}} has been approved at Level {{approvedLevel}}{{tierSuffix}}.</p>', true],
     ['application_rejected', 'email', 'Application Update', 'Update on Your Application',
-        '<p>Dear {{studentName}},</p><p>We regret to inform you that your application could not be approved at this time. Reason: {{rejectionReason}}</p>', true],
+        '<p>Dear {{studentName}},</p><p>Your Tuition Facilitation Plan request could not be approved at this time. Reason: {{rejectionReason}}</p><p>This does not affect your FORSA Bronze membership — you keep your FORSA ID and Digital Pass, and you are welcome to reapply once the situation above is resolved.</p><p>If you have questions, reply to this email and our team will be glad to help.</p>', true],
     ['payment_due_soon', 'email', 'Payment Reminder', 'Payment Due in {{daysUntilDue}} Days',
         '<p>Dear {{studentName}},</p><p>Your payment of {{amount}} {{currency}} is due on {{dueDate}}.</p>', true],
     ['payment_overdue', 'email', 'Payment Overdue', 'Overdue Payment Notice',
@@ -166,6 +166,10 @@ const NOTIFICATION_TEMPLATES = [
         '<p>Dear {{studentName}},</p><p>Your FORSA Digital Student Pass is ready. You can view your QR pass anytime from your student dashboard.</p>', true],
     ['waiting_list', 'email', 'Placed on the FORSA Waiting List', 'You’ve been placed on the FORSA Waiting List',
         '<p>Dear {{studentName}},</p><p>Your application for {{programName}} has not been rejected — you’ve been placed on FORSA’s Waiting List while capital becomes available. We will notify you as soon as your application can move forward.</p>', true],
+    ['guarantor_invited', 'email', 'You\'ve Been Invited as a FORSA Guarantor', 'You\'ve been invited to be {{studentFirstName}}\'s FORSA guarantor',
+        '<p>Dear {{guarantorFirstName}},</p><p>{{studentFirstName}} has listed you as their guarantor for a FORSA Tuition Facilitation Plan. As a guarantor, you\'ll be able to track their plan and make payments on their behalf.</p><p>Please review and respond to this invitation: <a href="{{inviteUrl}}">{{inviteUrl}}</a></p><p>This link expires in 7 days. If you don\'t recognize this request, you can safely decline it from the link above.</p>', true],
+    ['membership_rejected', 'email', 'Update on Your FORSA Membership Request', 'Update on your FORSA membership request',
+        '<p>Dear {{firstName}},</p><p>Thank you for your interest in FORSA. After review, we are unable to approve your membership request at this time.</p>{{reasonBlock}}<p>You are welcome to submit a new request if your situation changes.</p>', true],
 ];
 async function main() {
     await ds.initialize();

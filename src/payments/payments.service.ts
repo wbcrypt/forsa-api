@@ -7,8 +7,7 @@ import { addDays, addMonths, format, isPast } from 'date-fns';
 import Decimal from 'decimal.js';
 import { PolicyService } from '../policy/policy.service';
 import { ScoreService } from '../score/score.service';
-import { InstallmentStatus, PaymentStatus, ScoreDimension, SourceTrustLevel, NotificationChannel } from '../common/enums';
-import { PaginationDto, paginate, getSkip } from '../common/utils/pagination.util';
+import { ScoreDimension, SourceTrustLevel, NotificationChannel } from '../common/enums';
 import { NotificationsService } from '../notifications/notifications.service';
 import { LedgerService } from './ledger.service';
 
@@ -108,7 +107,7 @@ export class PaymentsService {
         }];
         break;
 
-      case 'concurrent':
+      case 'concurrent': {
         // Monthly installments — number from policy
         const monthsPolicy = await this.policyService.resolve(
           'payment.concurrent.duration_months', { tenantId: params.tenantId },
@@ -126,9 +125,10 @@ export class PaymentsService {
           });
         }
         break;
+      }
 
       case 'tranche':
-      case 'hybrid':
+      case 'hybrid': {
         // Tranches defined in agreement
         const tranches = application.tranches || [];
         for (const tranche of tranches) {
@@ -141,6 +141,7 @@ export class PaymentsService {
           });
         }
         break;
+      }
     }
 
     // Create payment schedule record
@@ -212,6 +213,17 @@ export class PaymentsService {
     const installmentAmount = new Decimal(installment.amount);
     const alreadyPaid = new Decimal(installment.amount_paid || 0);
     const remaining = installmentAmount.minus(alreadyPaid);
+
+    // No credit-balance/overpayment concept exists in the schema (payment
+    // statuses are pending/confirmed/reversed/failed/refunded — see
+    // Operations Manual §8) — reject anything past the remaining balance
+    // up front rather than silently recording an amount that can never be
+    // fully reconciled against the installment.
+    if (paymentAmount.greaterThan(remaining)) {
+      throw new BadRequestException(
+        `Payment amount (${paymentAmount.toFixed(2)}) exceeds the remaining balance (${remaining.toFixed(2)}) for this installment`,
+      );
+    }
 
     // Create payment record
     const [payment] = await this.dataSource.query<any[]>(
@@ -795,6 +807,21 @@ export class PaymentsService {
       throw new BadRequestException('Cannot verify a reversed payment');
     }
 
+    // Use the verified amount (what admin confirmed in the bank)
+    const verifiedAmount = new Decimal(payment.student_amount || payment.amount);
+    const installmentAmount = new Decimal(payment.installment_amount);
+    const alreadyPaid = new Decimal(payment.amount_paid || 0);
+    const remaining = installmentAmount.minus(alreadyPaid);
+
+    // Same no-credit-balance rule as recordPayment — verify before
+    // mutating anything so a rejected verification leaves the payment
+    // untouched (still receipt_uploaded, resubmittable).
+    if (verifiedAmount.greaterThan(remaining)) {
+      throw new BadRequestException(
+        `Verified amount (${verifiedAmount.toFixed(2)}) exceeds the remaining balance (${remaining.toFixed(2)}) for this installment`,
+      );
+    }
+
     // Mark payment as verified
     await this.dataSource.query(
       `UPDATE payments
@@ -807,10 +834,6 @@ export class PaymentsService {
       [paymentId, verifiedBy, notes || null],
     );
 
-    // Use the verified amount (what admin confirmed in the bank)
-    const verifiedAmount = new Decimal(payment.student_amount || payment.amount);
-    const installmentAmount = new Decimal(payment.installment_amount);
-    const alreadyPaid = new Decimal(payment.amount_paid || 0);
     const newPaid = alreadyPaid.plus(verifiedAmount);
 
     const newInstallmentStatus = newPaid.greaterThanOrEqualTo(installmentAmount)

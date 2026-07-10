@@ -34,7 +34,7 @@ export declare class ContractsService {
         status: ContractStatus;
     }>;
     getContractsForApplication(applicationId: string, tenantId: string): Promise<any>;
-    getContractDownloadUrl(contractId: string, tenantId: string, requestedBy: string): Promise<{
+    getContractDownloadUrl(contractId: string, tenantId: string, _requestedBy: string): Promise<{
         downloadUrl: string;
         expiresIn: number;
     }>;

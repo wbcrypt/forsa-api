@@ -52,7 +52,6 @@ let ContractsService = ContractsService_1 = class ContractsService {
        WHERE fd.id = $1 AND fd.tenant_id = $2`, [params.financingDecisionId, params.tenantId]);
         if (!decision)
             throw new common_1.NotFoundException('Tuition facilitation decision not found');
-        const templatePolicy = await this.policyService.resolve(`contract.template.${params.contractType}`, { tenantId: params.tenantId, universityId: decision.university_id });
         const [agreement] = await this.dataSource.query(`SELECT * FROM university_agreements
        WHERE university_id = $1 AND tenant_id = $2 AND status = 'active' LIMIT 1`, [decision.university_id, params.tenantId]);
         const contractTerms = {
@@ -152,7 +151,7 @@ let ContractsService = ContractsService_1 = class ContractsService {
        GROUP BY c.id
        ORDER BY c.version DESC`, [applicationId, tenantId]);
     }
-    async getContractDownloadUrl(contractId, tenantId, requestedBy) {
+    async getContractDownloadUrl(contractId, tenantId, _requestedBy) {
         const [contract] = await this.dataSource.query(`SELECT * FROM contracts WHERE id = $1 AND tenant_id = $2`, [contractId, tenantId]);
         if (!contract)
             throw new common_1.NotFoundException('Contract not found');

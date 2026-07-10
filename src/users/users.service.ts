@@ -127,7 +127,7 @@ export class UsersService {
   }
 
   async deactivate(id: string, tenantId: string, deactivatedBy: string, reason: string): Promise<void> {
-    const user = await this.findOne(id, tenantId);
+    await this.findOne(id, tenantId); // verify user exists (throws if not found)
 
     if (id === deactivatedBy) {
       throw new BadRequestException('Cannot deactivate your own account');
@@ -189,15 +189,25 @@ export class UsersService {
     );
   }
 
+  // Security review finding — this previously took a client-supplied :id
+  // (GET /users/:id/roles) straight to these queries with no tenant check
+  // at all: staff holding user.view in tenant A could pass any UUID and
+  // read another tenant's user's role names/permission codes. findOne()
+  // enforces { id, tenantId } (throws if the user isn't in this tenant)
+  // before anything else runs, and the queries themselves are now also
+  // scoped by tenant_id — roles are tenant-owned rows, so this closes the
+  // leak at both the authorization and the query-scope level.
   async getUserRolesAndPermissions(userId: string, tenantId: string) {
+    await this.findOne(userId, tenantId);
+
     const roles = await this.dataSource.query(
       `SELECT r.id, r.name, r.description
        FROM roles r
        JOIN user_roles ur ON ur.role_id = r.id
-       WHERE ur.user_id = $1
+       WHERE ur.user_id = $1 AND r.tenant_id = $2
          AND (ur.effective_until IS NULL OR ur.effective_until > CURRENT_DATE)
          AND ur.revoked_at IS NULL`,
-      [userId],
+      [userId, tenantId],
     );
 
     const permissions = await this.dataSource.query(
@@ -205,10 +215,11 @@ export class UsersService {
        FROM permissions p
        JOIN role_permissions rp ON rp.permission_id = p.id
        JOIN user_roles ur ON ur.role_id = rp.role_id
-       WHERE ur.user_id = $1
+       JOIN roles r ON r.id = ur.role_id
+       WHERE ur.user_id = $1 AND r.tenant_id = $2
          AND (ur.effective_until IS NULL OR ur.effective_until > CURRENT_DATE)
          AND ur.revoked_at IS NULL`,
-      [userId],
+      [userId, tenantId],
     );
 
     return { roles, permissions };
@@ -221,7 +232,7 @@ export class UsersService {
     assignedBy: string,
   ): Promise<void> {
     // Verify user and role belong to same tenant
-    const [user, role] = await Promise.all([
+    const [, role] = await Promise.all([
       this.findOne(userId, tenantId),
       this.dataSource.query(
         `SELECT id FROM roles WHERE id = $1 AND tenant_id = $2`,
@@ -294,7 +305,7 @@ export class UsersService {
     const hasUppercase = /[A-Z]/.test(password);
     const hasLowercase = /[a-z]/.test(password);
     const hasDigit = /\d/.test(password);
-    const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password);
+    const hasSpecial = /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password);
 
     if (!hasUppercase || !hasLowercase || !hasDigit || !hasSpecial) {
       throw new BadRequestException(

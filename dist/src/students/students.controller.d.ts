@@ -4,6 +4,7 @@ export declare class StudentsController {
     private readonly service;
     constructor(service: StudentsService);
     findMe(u: string, t: string): Promise<any>;
+    updateMyProfile(dto: any, u: string, t: string): Promise<any>;
     findMyPayments(u: string, t: string): Promise<any>;
     findMyApplications(u: string, t: string): Promise<any>;
     create(dto: any, t: string, u: string): Promise<any>;
@@ -15,9 +16,19 @@ export declare class StudentsController {
     getPaymentHistory(id: string, t: string): Promise<any>;
     getExceptionalEvents(id: string, t: string): Promise<any>;
     openExceptionalEvent(id: string, dto: any, t: string, u: string): Promise<any>;
+    addMyGuarantor(dto: any, t: string, u: string): Promise<{
+        guarantor: any;
+        link: any;
+    }>;
+    resendMyGuarantorInvite(guarantorId: string, t: string, u: string): Promise<{
+        success: boolean;
+    }>;
     addGuarantor(id: string, dto: any, t: string, u: string): Promise<{
         guarantor: any;
         link: any;
+    }>;
+    resendGuarantorInvite(id: string, guarantorId: string, t: string, u: string): Promise<{
+        success: boolean;
     }>;
     withdrawGuarantor(id: string, guarantorId: string, dto: {
         reason: string;

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.GUARANTOR_PAYMENT_CONFIRMED = exports.GUARANTOR_PAYMENT_REMINDER = exports.GUARANTOR_INVITED = exports.EMAIL_TEMPLATES = exports.bronzeMemberEmail = exports.paymentReceivedEmail = exports.paymentReminderEmail = exports.activationMeetingEmail = exports.preApprovedEmail = exports.aiInterviewCompletedEmail = exports.applicationReceivedEmail = exports.FORSA_EMAIL_STYLES = void 0;
+const STUDENT_PORTAL_URL = process.env.STUDENT_PORTAL_URL || 'https://student.forsa.tn';
 exports.FORSA_EMAIL_STYLES = `
   body { margin: 0; padding: 0; background: #EEF2FC; font-family: 'Segoe UI', Arial, sans-serif; }
   .wrapper { max-width: 600px; margin: 32px auto; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(15,28,66,0.08); }
@@ -34,7 +35,7 @@ exports.FORSA_EMAIL_STYLES = `
   .footer-text a { color: rgba(255,255,255,0.5); text-decoration: none; }
   .disclaimer { font-size: 12px; color: #9ca3af; font-style: italic; margin-top: 20px; padding-top: 20px; border-top: 1px solid #f3f4f6; }
 `;
-const emailWrapper = (content, footer) => `
+const emailWrapper = (content) => `
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -109,7 +110,7 @@ const applicationReceivedEmail = (data) => ({
       <li><span class="check">→</span> Décision de pré-approbation</li>
     </ul>
 
-    <a href="https://student.forsa.tn" class="btn">Suivre mon dossier</a>
+    <a href="${STUDENT_PORTAL_URL}" class="btn">Suivre mon dossier</a>
 
     <p class="text">
       En cas de question, écrivez-nous à <a href="mailto:students@forsa.tn">students@forsa.tn</a> en mentionnant votre référence dossier.
@@ -140,7 +141,7 @@ const aiInterviewCompletedEmail = (data) => ({
       <li><span class="check">→</span> Délai de réponse : 48–72 heures ouvrées</li>
     </ul>
 
-    <a href="https://student.forsa.tn" class="btn">Voir l'état de mon dossier</a>
+    <a href="${STUDENT_PORTAL_URL}" class="btn">Voir l'état de mon dossier</a>
 
     <p class="text">
       Notre équipe vous contactera directement avec la décision concernant votre dossier.
@@ -195,7 +196,7 @@ const preApprovedEmail = (data) => ({
       ou appelez le <strong>+216 XX XXX XXX</strong>
     </p>
 
-    <a href="https://student.forsa.tn/documents" class="btn">Voir la liste complète</a>
+    <a href="${STUDENT_PORTAL_URL}/documents" class="btn">Voir la liste complète</a>
 
     <div class="highlight-box warning">
       <div class="highlight-label">⚠️ Rappel important</div>
@@ -314,7 +315,7 @@ const paymentReminderEmail = (data) => ({
       </div>
     </div>
 
-    <a href="https://student.forsa.tn/payments" class="btn">Soumettre mon reçu</a>
+    <a href="${STUDENT_PORTAL_URL}/payments" class="btn">Soumettre mon reçu</a>
 
     <p class="text">
       Après paiement, n'oubliez pas de <strong>télécharger votre reçu</strong> sur le portail étudiant FORSA pour confirmation.
@@ -375,7 +376,7 @@ const paymentReceivedEmail = (data) => ({
     </div>
     `}
 
-    <a href="https://student.forsa.tn/payments" class="btn">Voir mon historique</a>
+    <a href="${STUDENT_PORTAL_URL}/payments" class="btn">Voir mon historique</a>
 
     <p class="text">
       Conservez cet email comme confirmation de paiement.
@@ -431,7 +432,7 @@ const bronzeMemberEmail = (data) => ({
       </div>
     </div>
 
-    <a href="https://student.forsa.tn" class="btn">Accéder à mon espace FORSA</a>
+    <a href="${STUDENT_PORTAL_URL}" class="btn">Accéder à mon espace FORSA</a>
 
     <p class="text">
       Des questions sur votre adhésion ?
