@@ -568,9 +568,6 @@ export class ApplicationsService {
     const [guarantor] = await this.dataSource.query<any[]>(
       `SELECT g.id, g.first_name, g.last_name, g.email, g.phone_primary, g.date_of_birth,
               g.relationship_to_student, g.employment_status, g.employer_name, g.income_stability,
-              g.employment_duration_years, g.salary_range, g.income_source, g.marital_status,
-              g.number_of_dependents, g.home_ownership, g.monthly_expenses, g.existing_loans_amount,
-              g.other_guarantees, g.supporting_other_students, g.financial_profile_completed_at,
               g.document_status, g.portal_activated, sg.status AS link_status
        FROM student_guarantors sg
        JOIN guarantors g ON g.id = sg.guarantor_id
@@ -578,6 +575,14 @@ export class ApplicationsService {
        ORDER BY sg.created_at DESC LIMIT 1`,
       [application.student_id],
     );
+
+    // Financial Assessment module — the guarantor's Financial Assessment
+    // (score, band, verification status) is now the single source of
+    // truth for the Case's financial risk signal, superseding the old
+    // Stability Score below. Fetched separately (GET
+    // /financial-assessment/applications/:id) rather than folded into this
+    // endpoint's response — keeps ApplicationsService from depending on
+    // FinancialAssessmentService and avoids a circular module import.
 
     const meeting = await this.getCurrentMeeting(application.id);
 
@@ -614,15 +619,6 @@ export class ApplicationsService {
         report: application.ai_report || null,
         recommendation: application.ai_recommendation || null,
         score: application.ai_score_overall || null,
-      },
-      // Phase 14 — "internal FORSA Stability Score, AI explanation."
-      // Computed deterministically (guarantors.service.ts#
-      // recomputeStabilityScore) once the guarantor completes their
-      // Financial Responsibility Profile — never by the AI itself.
-      stabilityScore: {
-        overall: application.stability_score_overall,
-        breakdown: application.stability_score_breakdown,
-        explanation: application.stability_ai_explanation,
       },
       meeting,
       paymentSchedule: schedule ? { ...schedule, installments } : null,

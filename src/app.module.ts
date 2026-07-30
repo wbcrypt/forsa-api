@@ -27,6 +27,7 @@ import { ExecutionModule } from './execution/execution.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { AiModule } from './ai/ai.module';
+import { FinancialAssessmentModule } from './financial-assessment/financial-assessment.module';
 import { TenantInterceptor } from './common/interceptors/tenant.interceptor';
 import { HealthController } from './health/health.controller';
 
@@ -62,6 +63,7 @@ import { HealthController } from './health/health.controller';
     NotificationsModule,
     ReportsModule,
     AiModule,
+    FinancialAssessmentModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: TenantInterceptor },

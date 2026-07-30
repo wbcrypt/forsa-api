@@ -7,8 +7,6 @@ import { hashPassword, validatePasswordComplexity } from '../common/utils/passwo
 import { hashToken } from '../common/utils/encryption.util'
 import { UserStatus } from '../common/enums'
 import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto'
-import { UpdateFinancialProfileDto } from './dto/financial-profile.dto'
-import { computeStabilityScore, explainStabilityScore } from '../ai/stability-score.util'
 
 @Injectable()
 export class GuarantorsService {
@@ -279,13 +277,25 @@ export class GuarantorsService {
    * guarantor should always know (invitation status, profile status,
    * documents remaining, meeting information), computed from the same
    * data the admin's Case Summary uses so the two can never disagree.
+   *
+   * Financial Assessment module — profileStatus previously read
+   * guarantors.financial_profile_completed_at (the old, coarser Financial
+   * Responsibility Profile / Stability Score system). That system has been
+   * removed; the Financial Assessment questionnaire
+   * (financial_assessments.status = 'submitted') is now the single source
+   * of truth for "has this guarantor completed their financial
+   * disclosure" — see financial-assessment.service.ts.
    */
   async getMyCaseStatus(userId: string, tenantId: string) {
     const [g] = await this.db.query<any[]>(
-      `SELECT financial_profile_completed_at, document_status FROM guarantors WHERE user_id = $1 AND tenant_id = $2`,
+      `SELECT document_status FROM guarantors WHERE user_id = $1 AND tenant_id = $2`,
       [userId, tenantId],
     )
     const link = await this.findLinkedStudent(userId, tenantId)
+    const [assessment] = link?.application_id ? await this.db.query<any[]>(
+      `SELECT status FROM financial_assessments WHERE application_id = $1`,
+      [link.application_id],
+    ) : [null]
     const [meeting] = link?.application_id ? await this.db.query<any[]>(
       `SELECT id, reference_number, scheduled_at, office_location, estimated_duration_minutes,
               required_documents, required_attendees, special_instructions, status
@@ -300,8 +310,8 @@ export class GuarantorsService {
     // but next-action guidance no longer routes the guarantor toward a
     // digital upload step that doesn't exist for the guarantor either —
     // CIN, income proof, and the signed كمبيالة are verified in person.
-    const profileStatus = g?.financial_profile_completed_at ? 'completed' : 'pending'
-    let nextAction = 'Complete your Financial Responsibility Profile'
+    const profileStatus = assessment?.status === 'submitted' ? 'completed' : 'pending'
+    let nextAction = 'Complete your Financial Assessment'
     if (profileStatus === 'completed' && !meeting) nextAction = 'Waiting for FORSA to review the case'
     else if (meeting && ['scheduled', 'confirmed'].includes(meeting.status)) {
       nextAction = `Attend your meeting on ${new Date(meeting.scheduled_at).toLocaleDateString()} — bring your CIN, income/employment proof, and signed كمبيالة`
@@ -314,86 +324,6 @@ export class GuarantorsService {
       meeting: meeting || null,
       nextAction,
     }
-  }
-
-  async updateMyFinancialProfile(userId: string, tenantId: string, dto: UpdateFinancialProfileDto) {
-    const [g] = await this.db.query<any[]>(
-      `SELECT id FROM guarantors WHERE user_id = $1 AND tenant_id = $2`,
-      [userId, tenantId],
-    )
-    if (!g) throw new NotFoundException('Guarantor profile not found')
-
-    await this.db.query(
-      `UPDATE guarantors SET
-         employment_duration_years = COALESCE($2, employment_duration_years),
-         salary_range = COALESCE($3, salary_range),
-         income_source = COALESCE($4, income_source),
-         marital_status = COALESCE($5, marital_status),
-         number_of_dependents = COALESCE($6, number_of_dependents),
-         home_ownership = COALESCE($7, home_ownership),
-         monthly_expenses = COALESCE($8, monthly_expenses),
-         existing_loans_amount = COALESCE($9, existing_loans_amount),
-         other_guarantees = COALESCE($10, other_guarantees),
-         supporting_other_students = COALESCE($11, supporting_other_students),
-         financial_profile_completed_at = now(),
-         updated_at = now()
-       WHERE id = $1`,
-      [
-        g.id, dto.employmentDurationYears, dto.salaryRange, dto.incomeSource, dto.maritalStatus,
-        dto.numberOfDependents, dto.homeOwnership, dto.monthlyExpenses, dto.existingLoansAmount,
-        dto.otherGuarantees, dto.supportingOtherStudents,
-      ],
-    )
-
-    // Phase 14 — "guarantor completes Financial Responsibility Profile ->
-    // internal FORSA Stability Score generated." The score is computed
-    // deterministically the moment the piece it depends on most (60%
-    // weight) becomes available — never by the AI itself.
-    await this.recomputeStabilityScore(g.id, tenantId)
-
-    return { status: 'completed' }
-  }
-
-  private async recomputeStabilityScore(guarantorId: string, tenantId: string) {
-    const [app] = await this.db.query<any[]>(
-      `SELECT a.id, a.tuition_amount, a.requested_tier, a.student_id
-       FROM applications a
-       JOIN student_guarantors sg ON sg.student_id = a.student_id
-       WHERE sg.guarantor_id = $1 AND sg.status != 'withdrawn' AND a.tenant_id = $2
-       ORDER BY a.created_at DESC LIMIT 1`,
-      [guarantorId, tenantId],
-    )
-    if (!app) return // guarantor not yet linked to any application — nothing to score
-
-    const [guarantor] = await this.db.query<any[]>(
-      `SELECT employment_status, employment_duration_years, salary_range, home_ownership,
-              monthly_expenses, existing_loans_amount, number_of_dependents, marital_status
-       FROM guarantors WHERE id = $1`,
-      [guarantorId],
-    )
-    const [student] = await this.db.query<any[]>(
-      `SELECT employment_status, monthly_income, has_scholarship, living_situation, emergency_contact_name
-       FROM students WHERE id = $1`,
-      [app.student_id],
-    )
-
-    const input = {
-      guarantor: guarantor || null,
-      student: student || null,
-      tuitionAmount: app.tuition_amount ? Number(app.tuition_amount) : null,
-      requestedTier: app.requested_tier || null,
-    }
-    const result = computeStabilityScore(input)
-    const explanation = explainStabilityScore(input, result)
-
-    await this.db.query(
-      `UPDATE applications SET
-         stability_score_overall = $2,
-         stability_score_breakdown = $3,
-         stability_ai_explanation = $4
-       WHERE id = $1`,
-      [app.id, result.overall, JSON.stringify(result.breakdown), JSON.stringify(explanation)],
-    )
   }
 
   /**

@@ -3,7 +3,7 @@ import {
   UseGuards, HttpCode, HttpStatus, ParseUUIDPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { IsString, IsEnum, IsOptional, IsDateString, IsNumber, IsUUID } from 'class-validator';
+import { IsString, IsEnum, IsOptional, IsDateString, IsNumber, IsUUID, IsDefined } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { PolicyService } from './policy.service';
@@ -26,7 +26,18 @@ class CreatePolicyVersionDto {
   @IsUUID()
   scopeId?: string;
 
+  // Bug found during Financial Assessment E2E testing (2026-07-30) —
+  // `value` had no class-validator decorator at all, so the global
+  // ValidationPipe's `whitelist: true` silently stripped it from every
+  // request before it reached the controller. POST /policy/versions has
+  // therefore never actually worked for any policy key in this codebase
+  // (nothing previously exercised it end-to-end) — every call 500'd on
+  // `null value in column "value" ... violates not-null constraint`.
+  // `@IsDefined()` is deliberately untyped beyond "not undefined/null":
+  // this field is genuinely polymorphic (array, object, number, boolean,
+  // or string depending on the policy's value_type).
   @ApiProperty()
+  @IsDefined()
   value: unknown;
 
   @ApiProperty()

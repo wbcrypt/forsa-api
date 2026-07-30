@@ -1,10 +1,9 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
+import { Controller, Get, Post, Body, Param, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiOperation } from '@nestjs/swagger'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { CurrentUser, CurrentTenant, Public } from '../common/decorators'
 import { GuarantorsService } from './guarantors.service'
 import { AcceptGuarantorInviteDto, DeclineGuarantorInviteDto } from './dto/accept-guarantor-invite.dto'
-import { UpdateFinancialProfileDto } from './dto/financial-profile.dto'
 
 @ApiTags('Guarantors')
 @UseGuards(JwtAuthGuard)
@@ -99,18 +98,15 @@ export class GuarantorsController {
 
   // Phase 13 (Case Management) — "Guarantor should always know: Invitation
   // Status, Profile Status, Documents Remaining, Meeting Information."
+  // profileStatus is now backed by the Financial Assessment module (see
+  // FinancialAssessmentController) — the old PATCH my-case/financial-profile
+  // route (Financial Responsibility Profile) has been removed; Financial
+  // Assessment is the single source of truth for the guarantor's financial
+  // disclosure.
   @Get('my-case')
   @ApiOperation({ summary: "The guarantor's own Case status — profile completeness, documents, meeting" })
   getMyCaseStatus(
     @CurrentUser('id') userId: string,
     @CurrentTenant() tenantId: string,
   ) { return this.service.getMyCaseStatus(userId, tenantId) }
-
-  @Patch('my-case/financial-profile')
-  @ApiOperation({ summary: 'Complete or update the Financial Responsibility Profile (Step 4 of the Case wizard)' })
-  updateMyFinancialProfile(
-    @CurrentUser('id') userId: string,
-    @CurrentTenant() tenantId: string,
-    @Body() dto: UpdateFinancialProfileDto,
-  ) { return this.service.updateMyFinancialProfile(userId, tenantId, dto) }
 }

@@ -103,6 +103,9 @@ const PERMISSIONS = [
   // Exceptional events
   ['exceptional_event.view','exceptional_events','view','View exceptional events',false],
   ['exceptional_event.open','exceptional_events','open','Open exceptional events',true],
+  // Financial Assessment (guarantor pre-qualification questionnaire + interview verification)
+  ['financial_assessment.view','financial_assessment','view','View guarantor Financial Assessments and scores',false],
+  ['financial_assessment.verify','financial_assessment','verify','Correct/verify Financial Assessment fields during interview and finalize the decision',true],
 ];
 
 const DOCUMENT_TYPES = [
